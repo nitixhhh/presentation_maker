@@ -1,4 +1,5 @@
 "use client";
+import V3DeckViewer from "@/components/V3DeckViewer";
 
 import React, { useState, useEffect, useRef } from "react";
 import {
@@ -67,6 +68,10 @@ export default function Home() {
   const [language, setLanguage] = useState<"English" | "Hindi" | "Hinglish">("English");
   const [visualStyle, setVisualStyle] = useState("modern-dark");
   const [imageSource, setImageSource] = useState<"stock" | "ai" | "none">("stock");
+  // Engine v3 (AI-designed slides) — default engine; v2 kept for comparison
+  const [engine, setEngine] = useState<"v3" | "v2">("v3");
+  const [presenter, setPresenter] = useState({ names: "", rollNo: "", department: "", institute: "", guide: "", course: "" });
+  const [formatNotes, setFormatNotes] = useState("");
   const [toggles, setToggles] = useState({
     charts: true,
     diagrams: true,
@@ -139,10 +144,12 @@ export default function Home() {
     setErrorMessage(null);
 
     try {
-      const response = await fetch("/api/pipeline/stream", {
+      const response = await fetch(engine === "v3" ? "/api/v3/generate" : "/api/pipeline/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          presenter,
+          formatNotes,
           topic,
           audience,
           tone,
@@ -464,6 +471,43 @@ export default function Home() {
                 </div>
               </div>
 
+              {/* Engine v3: academic details + format */}
+              <div className="space-y-4 border-t border-[#F0EBE0] pt-6">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#736F68]">Engine</label>
+                  <div className="flex items-center bg-[#F2ECE1] p-1 rounded-2xl border border-[#E3DBD0]">
+                    {(["v3", "v2"] as const).map((e) => (
+                      <button key={e} type="button" onClick={() => setEngine(e)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold ${engine === e ? "bg-white text-[#1F1E1D] shadow-sm" : "text-[#736F68]"}`}>
+                        {e === "v3" ? "v3 · AI designer" : "v2 · layouts"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {engine === "v3" && (
+                  <>
+                    <p className="text-xs text-[#736F68]">Title-slide details (optional — printed exactly as typed, never invented)</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {([
+                        ["names", "Presented by (names)"],
+                        ["rollNo", "Roll / Registration no."],
+                        ["department", "Department"],
+                        ["institute", "University / College"],
+                        ["guide", "Guide (name, designation)"],
+                        ["course", "Course & semester"],
+                      ] as const).map(([k, label]) => (
+                        <input key={k} value={(presenter as any)[k]} placeholder={label}
+                          onChange={(e) => setPresenter({ ...presenter, [k]: e.target.value })}
+                          className="w-full bg-[#FAF7F2] border border-[#EAE3D6] rounded-2xl px-4 py-3 text-sm text-[#1F1E1D] focus:outline-none focus:border-[#C15B3E]" />
+                      ))}
+                    </div>
+                    <textarea rows={3} value={formatNotes} onChange={(e) => setFormatNotes(e.target.value)}
+                      placeholder="University / teacher format (optional): e.g. 'Slides: Introduction, Objectives, Methodology, Results, Conclusion, References. IEEE references. Logo top-right.'"
+                      className="w-full bg-[#FAF7F2] border border-[#EAE3D6] rounded-2xl px-4 py-3 text-sm text-[#1F1E1D] focus:outline-none focus:border-[#C15B3E]" />
+                  </>
+                )}
+              </div>
+
               {errorMessage && (
                 <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 text-xs">
                   {errorMessage}
@@ -628,7 +672,10 @@ export default function Home() {
         )}
 
         {/* STEP 3: COMPLETED INTERACTIVE DECK VIEWER & EXPORT */}
-        {currentStep === "completed" && deck && (
+        {currentStep === "completed" && deck && deck.engine === "v3" && (
+          <V3DeckViewer deck={deck} onNew={() => setCurrentStep("options")} />
+        )}
+        {currentStep === "completed" && deck && deck.engine !== "v3" && (
           <div className="space-y-6 animate-fadeIn">
             {/* Header Actions */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white border border-[#E8E2D5] p-5 rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.03)]">
@@ -990,7 +1037,7 @@ export default function Home() {
             <span className="font-semibold text-[#736F68]">DeckCraft Engine</span>
           </span>
           <span className="font-mono text-[10px] bg-[#F2ECE1] px-2 py-1 rounded-full text-[#736F68]">
-            v2.0-alpha
+            v3.0
           </span>
         </div>
       </footer>

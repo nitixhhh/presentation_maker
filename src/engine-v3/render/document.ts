@@ -1,0 +1,39 @@
+/** Engine v3 — builds the standalone HTML document for a slide (preview, QA, PDF, PPTX all use it). */
+import type { Deck, DesignSystem } from "../types";
+import { COMPONENTS_CSS, COMPONENTS_JS } from "./components";
+
+export function resolveAssets(html: string, assetBase: string, deck: Pick<Deck, "assets">): string {
+  return html.replace(/asset:([a-z0-9_-]+)/gi, (m, id) => {
+    const a = deck.assets.find((x) => x.id === id);
+    return a ? `${assetBase}${a.file}` : "";
+  });
+}
+
+export function slideDocument(design: DesignSystem, innerHtml: string, opts: { assetBase: string; deck: Pick<Deck, "assets">; n?: number; extraHead?: string }): string {
+  const body = resolveAssets(innerHtml, opts.assetBase, opts.deck);
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=1280">
+${design.fontLink}
+<style>${design.css}${COMPONENTS_CSS}</style>${opts.extraHead || ""}
+</head><body><section class="slide" data-n="${opts.n ?? ""}">
+${body}
+</section><script>window.__v3ready=false;function __v3draw(){try{${COMPONENTS_JS}}finally{window.__v3ready=true;}}document.fonts && document.fonts.ready ? document.fonts.ready.then(__v3draw) : __v3draw();</script></body></html>`;
+}
+
+/** A self-contained slideshow page for the web preview / HTML download (each slide in an iframe-isolated srcdoc). */
+export function deckViewerHtml(deck: Deck, assetBase: string): string {
+  const frames = deck.slides
+    .map((s) => {
+      const doc = slideDocument(deck.design, s.html, { assetBase, deck, n: s.n });
+      return `<div class="frame"><iframe scrolling="no" srcdoc="${doc.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}"></iframe></div>`;
+    })
+    .join("\n");
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(deck.brief.title)}</title>
+<style>body{margin:0;background:#111;display:flex;flex-direction:column;align-items:center;gap:24px;padding:24px 0;font-family:sans-serif}
+.frame{width:1280px;height:720px;box-shadow:0 10px 40px #0008}.frame iframe{width:1280px;height:720px;border:0;display:block}
+@media (max-width:1320px){.frame{transform:scale(calc((100vw - 40px)/1280));transform-origin:top center;margin-bottom:calc(720px * ((100vw - 40px)/1280) - 720px)}}</style>
+</head><body>${frames}</body></html>`;
+}
+
+export function escapeHtml(s: string) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
+}

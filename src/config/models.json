@@ -60,56 +60,250 @@
         "rpd": 200,
         "tokensPerDay": 200000
       }
+    },
+    "custom": {
+      "name": "Any OpenAI-compatible provider (optional)",
+      "baseUrl": "",
+      "baseUrlEnv": "CUSTOM_LLM_BASE_URL",
+      "apiKeyEnv": "CUSTOM_LLM_API_KEY",
+      "enabled": true,
+      "allowedForProduction": true,
+      "limits": {
+        "rpm": 30,
+        "rpd": 10000,
+        "tokensPerDay": 2000000
+      }
     }
   },
   "agents": {
     "Owner": {
-      "primary": { "provider": "google", "model": "gemini-2.5-flash" },
+      "primary": {
+        "provider": "google",
+        "model": "gemini-2.5-flash"
+      },
       "fallbacks": [
-        { "provider": "groq", "model": "openai/gpt-oss-120b" }
+        {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b"
+        }
       ]
     },
     "Researcher": {
-      "primary": { "provider": "google", "model": "gemini-2.5-flash" },
+      "primary": {
+        "provider": "google",
+        "model": "gemini-2.5-flash"
+      },
       "fallbacks": [
-        { "provider": "groq", "model": "openai/gpt-oss-120b" }
+        {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b"
+        }
       ]
     },
     "SlideWriter": {
-      "primary": { "provider": "google", "model": "gemini-2.5-flash" },
+      "primary": {
+        "provider": "google",
+        "model": "gemini-2.5-flash"
+      },
       "fallbacks": [
-        { "provider": "groq", "model": "openai/gpt-oss-120b" }
+        {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b"
+        }
       ]
     },
     "ArtDirector": {
-      "primary": { "provider": "google", "model": "gemini-2.5-flash" },
+      "primary": {
+        "provider": "google",
+        "model": "gemini-2.5-flash"
+      },
       "fallbacks": [
-        { "provider": "groq", "model": "openai/gpt-oss-120b" }
+        {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b"
+        }
       ]
     },
     "DiagramCodeSpecialist": {
-      "primary": { "provider": "groq", "model": "openai/gpt-oss-120b" },
+      "primary": {
+        "provider": "groq",
+        "model": "openai/gpt-oss-120b"
+      },
       "fallbacks": [
-        { "provider": "google", "model": "gemini-2.5-flash" }
+        {
+          "provider": "google",
+          "model": "gemini-2.5-flash"
+        }
       ]
     },
     "ImagePromptWriter": {
-      "primary": { "provider": "groq", "model": "openai/gpt-oss-20b" },
+      "primary": {
+        "provider": "groq",
+        "model": "openai/gpt-oss-20b"
+      },
       "fallbacks": [
-        { "provider": "google", "model": "gemini-2.5-flash" }
+        {
+          "provider": "google",
+          "model": "gemini-2.5-flash"
+        }
       ]
     },
     "VisionQA": {
-      "primary": { "provider": "google", "model": "gemini-2.5-flash" },
+      "primary": {
+        "provider": "google",
+        "model": "gemini-2.5-flash"
+      },
       "fallbacks": [
-        { "provider": "groq", "model": "openai/gpt-oss-120b" }
+        {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b"
+        }
       ]
     },
     "ImageGenerator": {
-      "primary": { "provider": "cloudflare", "model": "@cf/black-forest-labs/flux-1-schnell" },
+      "primary": {
+        "provider": "cloudflare",
+        "model": "@cf/black-forest-labs/flux-1-schnell"
+      },
       "fallbacks": [
-        { "provider": "unsplash", "model": "stock-api" }
+        {
+          "provider": "unsplash",
+          "model": "stock-api"
+        }
       ]
     }
+  },
+  "engineV3": {
+    "_comment": "Engine v3 routes. Each role tries its routes in order; a 429/5xx/timeout moves to the next. Override everything at runtime with ENGINE_V3_ROUTES (JSON with the same shape as 'roles'). Provider base URLs can be overridden with <PROVIDER>_BASE_URL env vars (GOOGLE_AI_BASE_URL, GROQ_BASE_URL, OPENROUTER_BASE_URL, CLOUDFLARE_BASE_URL).",
+    "concurrency": {
+      "google": 3,
+      "groq": 4,
+      "openrouter": 2,
+      "cloudflare": 3,
+      "nvidia": 2,
+      "custom": 6
+    },
+    "roles": {
+      "brief": [
+        {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b"
+        },
+        {
+          "provider": "google",
+          "model": "gemini-flash-lite-latest"
+        },
+        {
+          "provider": "cloudflare",
+          "model": "@cf/openai/gpt-oss-120b"
+        },
+        {
+          "provider": "openrouter",
+          "model": "openai/gpt-oss-120b:free"
+        }
+      ],
+      "research": [
+        {
+          "provider": "google",
+          "model": "gemini-flash-latest"
+        },
+        {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b"
+        },
+        {
+          "provider": "google",
+          "model": "gemini-flash-lite-latest"
+        },
+        {
+          "provider": "cloudflare",
+          "model": "@cf/openai/gpt-oss-120b"
+        }
+      ],
+      "outline": [
+        {
+          "provider": "google",
+          "model": "gemini-flash-latest"
+        },
+        {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b"
+        },
+        {
+          "provider": "google",
+          "model": "gemini-flash-lite-latest"
+        },
+        {
+          "provider": "openrouter",
+          "model": "openai/gpt-oss-120b:free"
+        }
+      ],
+      "art": [
+        {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b"
+        },
+        {
+          "provider": "google",
+          "model": "gemini-flash-lite-latest"
+        },
+        {
+          "provider": "cloudflare",
+          "model": "@cf/openai/gpt-oss-120b"
+        }
+      ],
+      "design": [
+        {
+          "provider": "groq",
+          "model": "moonshotai/kimi-k2-instruct-0905"
+        },
+        {
+          "provider": "google",
+          "model": "gemini-flash-latest"
+        },
+        {
+          "provider": "openrouter",
+          "model": "moonshotai/kimi-k2:free"
+        },
+        {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b"
+        },
+        {
+          "provider": "google",
+          "model": "gemini-flash-lite-latest"
+        },
+        {
+          "provider": "cloudflare",
+          "model": "@cf/openai/gpt-oss-120b"
+        }
+      ],
+      "vision": [
+        {
+          "provider": "google",
+          "model": "gemini-flash-lite-latest"
+        },
+        {
+          "provider": "groq",
+          "model": "meta-llama/llama-4-scout-17b-16e-instruct"
+        },
+        {
+          "provider": "cloudflare",
+          "model": "@cf/meta/llama-4-scout-17b-16e-instruct"
+        },
+        {
+          "provider": "openrouter",
+          "model": "google/gemma-3-27b-it:free"
+        }
+      ]
+    },
+    "imageGeneration": {
+      "provider": "cloudflare",
+      "models": [
+        "@cf/black-forest-labs/flux-1-schnell",
+        "@cf/bytedance/stable-diffusion-xl-lightning"
+      ]
+    },
+    "_designNote": "Design quality depends mostly on the design model. In tests, a Kimi-class model produced designer-quality slides; gpt-oss-120b produced usable but plainer slides with more layout bugs. Keep the strongest model you have free access to first in 'design'."
   }
 }

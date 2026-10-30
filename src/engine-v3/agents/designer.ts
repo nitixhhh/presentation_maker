@@ -1,0 +1,278 @@
+/**
+ * Engine v3 — Designer agent. One per slide, run in parallel.
+ * The AI designs the slide freely as HTML/CSS on a 1280×720 canvas; the engine only renders it.
+ */
+import { chat, type Msg } from "../llm";
+import type { Asset, Brief, Deck, DesignSystem, OutlineSlide } from "../types";
+
+export function designerSystemPrompt(ds: DesignSystem, brief: Brief): string {
+  return `You are a world-class presentation designer (think Pentagram / Apple keynote / top TED decks) designing slides for a university class presentation. You design ONE slide at a time as HTML + CSS on a fixed 1280×720 px canvas. There are NO templates: you decide the composition that best communicates THIS slide's message. Make it look like a skilled human designer made it — intentional hierarchy, generous whitespace, real photography used creatively, crisp diagrams — never a generic "title + bullet list + box".
+
+DECK DESIGN SYSTEM (use it so all slides look like one family)
+- Style: ${ds.name} — ${ds.mood}
+- CSS variables: --bg ${ds.palette.bg}, --surface ${ds.palette.surface}, --ink ${ds.palette.ink}, --muted ${ds.palette.muted}, --primary ${ds.palette.primary}, --accent ${ds.palette.accent}, --accent2 ${ds.palette.accent2}. Use var(--…) for colours; tints via color-mix(in srgb, var(--primary) 20%, transparent) are fine.
+- Fonts: headings font-family: var(--font-heading) (${ds.font.heading}); body var(--font-body) (${ds.font.body}).
+- Recurring motif: ${ds.motif}
+- Rules: ${ds.rules.join(" | ") || "consistent margins, one accent per slide"}
+- Language of all slide text: ${brief.language}${brief.language === "Hindi" ? " (Devanagari script; keep technical terms in English where natural)" : brief.language === "Hinglish" ? " (Roman script)" : ""}.
+
+TECHNICAL CONTRACT (the engine renders exactly what you write; the PPTX export reads it from the browser)
+1. Output format, nothing else:
+<slide>
+<style>
+/* CSS for this slide; every selector starts with .slide */
+</style>
+<!-- markup that goes inside <section class="slide"> (1280×720, position:relative, overflow:hidden, background var(--bg)) -->
+</slide>
+<notes>speaker notes, 2–4 sentences</notes>
+2. Layout freely, but build it so text can never collide: put each text group (title block, body, presenter details, captions) in its own positioned container with an explicit width, and flow the text inside it with flex/grid (column + gap) — never stack separately-absolute-positioned text lines on top of each other. Use absolute positioning for the containers, full-bleed images, decorative shapes and big background numerals. Leave ≥ 32px between a text container and any visual. Every element must stay fully inside 0–1280 × 0–720; text at least 56px from slide edges (full-bleed images/shapes may touch edges).
+3. Text: every visible word inside h1–h4, p, li, span, strong, em, small, figcaption, blockquote, td or th. Never put text directly in a div. In SVG only short labels (≤ 4 words).
+4. Type sizes (classroom projector!): slide title 44–64px (a title-slide hero may go to 88px if ≤ 7 words); key message 28–36px; body 24–30px; labels/captions ≥ 18px; citation markers and footnotes 14–16px. Line-height 1.25–1.45 for body. Max ~55 words of body text on a slide — if content is long, tighten wording, never shrink below these sizes. Give text boxes explicit widths so lines wrap nicely (max ~55 characters per line). Fill the canvas with purpose: the main visual should usually take 40–60% of the slide; avoid big dead areas and tiny centred elements.
+5. Images: use ONLY the assets listed for this slide, as <img src="asset:ID" alt="…"> (object-fit: cover; set object-position deliberately) or background-image: url(asset:ID). No other URLs, no icon fonts, no emoji as icons, no JavaScript, no animations/transitions.
+6. Use images like a designer — choose what serves the message, e.g.:
+   • full-bleed photo with a gradient scrim (linear-gradient from var(--bg) to transparent) and text on the calm side;
+   • split composition where the photo bleeds off one edge (top/right/bottom) at 40–55% width;
+   • photo inside a clip-path shape (circle, ellipse, diagonal polygon, arch, rounded blob) with an offset outline stroke or solid accent shape behind it;
+   • duotone: photo with filter: grayscale(1) contrast(1.1) and mix-blend-mode: multiply or screen over a var(--primary) panel;
+   • tall vertical strip or wide cinematic band crop;
+   • photo behind a huge translucent number or word;
+   • framed print: thin border, soft shadow, slight caption.
+   Never place a plain rectangular photo in a plain box. Never leave an empty placeholder box or "[Image]" text. Do not print image credits (the engine puts them on the References slide).
+7. Diagrams & charts — use the engine's diagram component (it draws polished, on-brand nodes/arrows that exactly fill the box you give it; labels stay editable):
+   <figure class="v3-diagram" data-kind="flow" style="position:absolute; left:620px; top:200px; width:600px; height:380px">
+     <li><strong>Light source</strong> deuterium + tungsten lamps</li>
+     <li><strong>Monochromator</strong> selects one wavelength</li>
+     …
+   </figure>
+   data-kind: flow (steps with arrows; vertical automatically if the box is tall), cycle (circular loop), hub (first li = centre, rest around it), layers (stacked architecture layers, top to bottom), timeline, compare (first half of items = left column, second half = right), bars (bar chart: <li data-value="42" data-unit="%">Label</li> — ONLY when the VISUAL line below says "chart" and only with numbers that appear in the points; otherwise never draw a chart).
+   Keep items to 3–6 with 1–4 word titles and ≤ 8-word descriptions. Give the figure a generous box (at least 480×300). Optional data-size="22" sets the label size.
+   Use hand-written inline <svg> only for simple illustrations/icons/motifs (e.g. a cuvette, a wave, a molecule outline), never for charts.
+8. Citations: when a point carries a marker like [2], put it right after that sentence as <sup>[2]</sup>. NEVER invent citations, author names, years, footers or sources. If you add a small source footer, use ONLY the exact source labels given for this slide.
+8b. Truth: never invent numbers, percentages, chart values, dates or claims. A chart may only plot numbers that appear in the points. No generic clip-art icons (plus signs, random circles); if you draw an icon it must clearly depict the concept, otherwise use a number or a word. Every arrow must connect two things.
+9. Contrast: text must be clearly readable on a classroom projector (ink on bg, or white on dark scrim). No light-grey text on white, no text over busy photo areas without a scrim.
+10. Every card/panel must contain content. Use the motif and decorative shapes (rules, big faded numerals, gradient bands, geometric accents) behind content, never on top of text.
+11. Keep it presentable: at most 4 points on a content slide (merge or cut), one key message, one main visual.
+
+CRAFT EXAMPLES — study the technique (layered photo + scrim, text in flex containers, masked photo with offset stroke, generous type). They show quality, not layouts: never copy their composition; invent the one that fits your slide.
+
+Example 1 (hero photo, scrim, title block with presenter details flowing in one container):
+<slide>
+<style>
+.slide .hero{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:65% 50%}
+.slide .scrim{position:absolute;inset:0;background:linear-gradient(90deg,var(--bg) 0%,color-mix(in srgb,var(--bg) 94%,transparent) 40%,transparent 75%)}
+.slide .copy{position:absolute;left:80px;top:90px;width:580px;display:flex;flex-direction:column;gap:18px}
+.slide .kicker{font-size:18px;letter-spacing:.18em;text-transform:uppercase;color:var(--primary);font-weight:700}
+.slide .copy h1{font-size:76px;color:var(--ink)}
+.slide .rule{width:96px;height:6px;border-radius:3px;background:var(--accent)}
+.slide .meta{display:grid;grid-template-columns:max-content 1fr;gap:8px 20px;margin-top:14px}
+.slide .meta p{font-size:20px;color:var(--muted)} .slide .meta strong{font-size:21px;color:var(--ink)}
+</style>
+<img class="hero" src="asset:img1" alt="Spectrophotometer in a lab">
+<div class="scrim"></div>
+<div class="copy">
+  <p class="kicker">Subject seminar · Chemistry</p>
+  <h1>UV–Vis Spectroscopy</h1>
+  <div class="rule"></div>
+  <div class="meta"><p>Presented by</p><strong>Ananya Ghosh</strong><p>Guide</p><strong>Dr. S. Banerjee</strong></div>
+</div>
+</slide>
+
+Example 2 (content: text column in flex, arch-masked photo with an offset accent outline, faded numeral):
+<slide>
+<style>
+.slide .num{position:absolute;right:56px;top:28px;font-family:var(--font-heading);font-size:150px;font-weight:800;color:var(--primary);opacity:.09}
+.slide .text{position:absolute;left:80px;top:84px;width:610px;display:flex;flex-direction:column;gap:22px}
+.slide .text h2{font-size:54px;color:var(--ink)}
+.slide .key{font-size:30px;line-height:1.3;color:var(--primary);font-weight:600}
+.slide .pts{list-style:none;padding:0;display:flex;flex-direction:column;gap:14px}
+.slide .pts li{position:relative;padding-left:30px;font-size:25px;line-height:1.4}
+.slide .pts li::before{content:"";position:absolute;left:0;top:.5em;width:12px;height:12px;border-radius:50%;background:var(--accent)}
+.slide .outline{position:absolute;left:782px;top:142px;width:400px;height:490px;border:3px solid var(--accent);border-radius:200px 200px 28px 28px}
+.slide .photo{position:absolute;left:758px;top:118px;width:400px;height:490px;object-fit:cover;border-radius:200px 200px 28px 28px}
+</style>
+<p class="num">04</p>
+<div class="text">
+  <h2>Instrumentation</h2>
+  <p class="key">Every spectrophotometer has the same four parts.</p>
+  <ul class="pts"><li>Deuterium and tungsten lamps cover 190–1100 nm<sup>[1]</sup></li><li>A monochromator selects one wavelength</li><li>A photodiode detector measures transmitted light<sup>[2]</sup></li></ul>
+</div>
+<div class="outline"></div>
+<img class="photo" src="asset:img4" alt="Spectrophotometer">
+</slide>`;
+}
+
+function assetLine(a: Asset): string {
+  const ar = a.width / a.height;
+  const shape = ar > 1.25 ? "landscape" : ar < 0.8 ? "portrait" : "square-ish";
+  return `- asset:${a.id} — ${a.width}×${a.height} (${shape}, aspect ${ar.toFixed(2)}), average colour ${a.avgColor}, shows: ${a.description.slice(0, 160)}${a.origin === "generated" ? " (AI illustration)" : " (real photo)"}`;
+}
+
+export function designerUserPrompt(deck: Pick<Deck, "brief" | "outline" | "assets" | "references" | "research">, slide: OutlineSlide, citeMap: Map<string, number>): string {
+  const total = deck.outline.slides.length;
+  const prev = deck.outline.slides[slide.n - 2];
+  const next = deck.outline.slides[slide.n];
+  const assets = deck.assets.filter((a) => a.forSlides.includes(slide.n));
+  const factSrc = new Map(deck.research.facts.map((f) => [f.id, f.sources]));
+  const pointLines = slide.points
+    .map((p) => {
+      const nums = Array.from(new Set((p.factIds || []).flatMap((id) => factSrc.get(id) || []).map((s) => citeMap.get(s)).filter(Boolean))) as number[];
+      return `- ${p.text}${nums.length ? ` ${nums.map((n) => `[${n}]`).join("")}` : ""}`;
+    })
+    .join("\n");
+
+  let roleBlock = "";
+  if (slide.role === "title") {
+    const fields = deck.brief.titleSlideFields;
+    roleBlock = `THIS IS THE TITLE SLIDE. Make it striking and memorable (hero photo treatment if an asset is given).
+Show: the title "${deck.brief.title}"${deck.brief.subtitle ? ` and subtitle "${deck.brief.subtitle}"` : ""}.
+${fields.length ? `Also show these presenter details exactly as written, as a neat, readable block (label small/muted, value larger):\n${fields.map((f) => `  ${f.label}: ${f.value}`).join("\n")}` : "No presenter details were given — do not invent names."}`;
+  } else if (slide.role === "references") {
+    const credits = deck.assets.filter((a) => a.credit).map((a) => `${a.title.slice(0, 50)} — ${a.credit}`);
+    roleBlock = `THIS IS THE REFERENCES SLIDE. List exactly these references in order, numbered as given (hanging indent, 14–17px, readable, two columns if more than 5). Do not change their text.
+${deck.references.map((r) => `[${r.n}] ${r.text}`).join("\n") || "(no references)"}
+${credits.length ? `Below them, a small "Image credits" block (12–13px, muted):\n${credits.join("\n")}` : ""}
+Keep decoration minimal but on-brand (motif, title style).`;
+  } else if (slide.role === "closing") {
+    roleBlock = `THIS IS THE CLOSING SLIDE (Thank you / Questions). Elegant, confident, on-brand; echo the title slide composition (use the photo if one is given). Include one short line that recaps the deck's core idea, and the presenter name(s) if given: ${deck.brief.titleSlideFields.map((f) => f.value).slice(0, 2).join(" · ") || "(none)"}. No question-mark clip-art.`;
+  } else if (slide.role === "agenda") {
+    roleBlock = `THIS IS AN AGENDA / OUTLINE SLIDE: show the sections as a designed sequence (numbered, timeline or path), not a plain bullet list.`;
+  }
+
+  const visual =
+    slide.visual.kind === "diagram"
+      ? `Draw a clear diagram (inline SVG or positioned HTML boxes + SVG arrows): ${slide.visual.idea || slide.keyMessage}`
+      : slide.visual.kind === "chart"
+      ? `Draw a clean chart (inline SVG) using only numbers from the points: ${slide.visual.idea || ""}`
+      : assets.length
+      ? `Use the image(s) below creatively as the slide's visual anchor.`
+      : `No photo for this slide — make it strong with typography, a diagram, an icon-like SVG illustration or a big-number composition.`;
+
+  const direction = (deck as any).design?.directions?.find((d: any) => d.n === slide.n)?.idea;
+  const labels = Array.from(new Set(slide.points.flatMap((p) => (p.factIds || []).flatMap((id) => factSrc.get(id) || []))))
+    .map((sid) => ({ n: citeMap.get(sid), src: deck.research.sources.find((s) => s.id === sid) }))
+    .filter((x) => x.n && x.src)
+    .sort((a, b) => a.n! - b.n!)
+    .map((x) => `[${x.n}] ${shortLabel(x.src!)}`);
+  return `Slide ${slide.n} of ${total} (show slide number as "${String(slide.n).padStart(2, "0")}" if the motif uses numbers) — role: ${slide.role}
+ART DIRECTION for this slide (from the art director — follow its spirit): ${direction || "your call — make it distinctive"}
+Neighbours (avoid repeating their composition): previous = ${prev ? `${prev.role} / ${prev.visual.kind}` : "none"}; next = ${next ? `${next.role} / ${next.visual.kind}` : "none"}.
+
+${roleBlock}
+
+TITLE: ${slide.title}
+KEY MESSAGE (make this the most noticeable idea after the title): ${slide.keyMessage || "-"}
+POINTS (you may tighten wording; keep meaning and citation markers):
+${pointLines || "(none)"}
+
+SOURCE LABELS you may use in a small footer: ${labels.join("; ") || "(none — no footer)"}
+
+VISUAL: ${visual}
+ASSETS FOR THIS SLIDE:
+${assets.map(assetLine).join("\n") || "(none)"}
+
+Design it now. Output only <slide>…</slide><notes>…</notes>.`;
+}
+
+function shortLabel(s: { kind: string; title: string; authors?: string[]; year?: number }): string {
+  if (s.kind === "wikipedia") return `Wikipedia: ${s.title}`;
+  const a = s.authors?.[0] ? s.authors[0].split(" ").slice(-1)[0] + (s.authors.length > 1 ? " et al." : "") : s.title.slice(0, 40);
+  return `${a}${s.year ? ` (${s.year})` : ""}`;
+}
+
+export interface DesignOut {
+  html: string;
+  notes: string;
+  provider: string;
+  model: string;
+  messages: Msg[];
+}
+
+export function parseDesign(text: string): { html: string; notes: string } {
+  let html = "";
+  const m = text.match(/<slide>([\s\S]*?)<\/slide>/i);
+  if (m) html = m[1];
+  else {
+    const fence = text.match(/```(?:html)?\s*([\s\S]*?)```/i);
+    html = fence ? fence[1] : text.includes("<style") || text.includes("<div") ? text : "";
+    html = html.replace(/<notes>[\s\S]*?<\/notes>/i, "");
+  }
+  const notes = (text.match(/<notes>([\s\S]*?)<\/notes>/i)?.[1] || "").trim();
+  return { html: sanitize(html), notes };
+}
+
+/** Strip anything that could escape the canvas or run code. */
+export function sanitize(html: string): string {
+  return html
+    .replace(/<!DOCTYPE[^>]*>/gi, "")
+    .replace(/<\/?(html|head|body)[^>]*>/gi, "")
+    .replace(/<section[^>]*class=["']?slide["']?[^>]*>/i, "<div class=\"slide-root\">")
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<link[^>]*>/gi, "")
+    .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*')/gi, "")
+    .replace(/@import[^;]+;/gi, "")
+    .replace(/(src|href)\s*=\s*["']https?:\/\/[^"']*["']/gi, '$1=""')
+    .replace(/url\(\s*["']?https?:\/\/[^)]*\)/gi, "none")
+    .trim();
+}
+
+export async function designSlide(
+  deck: Pick<Deck, "brief" | "outline" | "assets" | "references" | "research" | "design">,
+  slide: OutlineSlide,
+  citeMap: Map<string, number>,
+  spread = 0
+): Promise<DesignOut> {
+  const messages: Msg[] = [
+    { role: "system", content: designerSystemPrompt(deck.design, deck.brief) },
+    { role: "user", content: designerUserPrompt(deck, slide, citeMap) },
+  ];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const r = await chat("design", messages, { temperature: 0.85, maxTokens: 12000, spread, timeoutMs: 240_000, label: `slide ${slide.n}`, reasoning: (process.env.V3_DESIGN_REASONING as any) || "medium" });
+    const { html, notes } = parseDesign(r.text);
+    if (html.length > 200) {
+      return { html, notes: notes || slide.notes || "", provider: r.provider, model: r.model, messages: [...messages, { role: "assistant", content: r.text }] };
+    }
+  }
+  throw new Error(`designer produced no usable HTML for slide ${slide.n}`);
+}
+
+export async function reviseSlide(prev: DesignOut, feedback: string): Promise<DesignOut> {
+  const messages: Msg[] = [
+    ...prev.messages.slice(0, 2),
+    { role: "assistant", content: `<slide>\n${prev.html}\n</slide>\n<notes>${prev.notes}</notes>` },
+    {
+      role: "user",
+      content: `The engine rendered your slide in Chromium and found these problems:\n${feedback}\n\nFix every problem while keeping the design idea (you may rethink the composition if it is the cause). Remember the size limits and keep everything inside the 1280×720 canvas. Output the complete corrected <slide>…</slide><notes>…</notes>.`,
+    },
+  ];
+  const r = await chat("design", messages, { temperature: 0.5, maxTokens: 12000, timeoutMs: 240_000, label: "revision", reasoning: (process.env.V3_DESIGN_REASONING as any) || "medium" });
+  const { html, notes } = parseDesign(r.text);
+  if (html.length < 200) return prev;
+  return { html, notes: notes || prev.notes, provider: r.provider, model: r.model, messages: [...messages, { role: "assistant", content: r.text }] };
+}
+
+/** Last-resort slide when every provider failed: still on-brand, readable, no empty boxes. */
+export function fallbackDesign(slide: OutlineSlide, deck: Pick<Deck, "assets" | "brief">): DesignOut {
+  const esc = (t: string) => t.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]!));
+  const img = deck.assets.find((a) => a.forSlides.includes(slide.n));
+  const W = img ? 640 : 1120;
+  const pts = slide.points
+    .slice(0, 4)
+    .map((p, i) => `<li><span class="fb-i">${String(i + 1).padStart(2, "0")}</span><p>${esc(p.text)}</p></li>`)
+    .join("");
+  const html = `<style>
+.slide .fb-num{position:absolute;right:56px;top:24px;font-family:var(--font-heading);font-size:150px;font-weight:800;color:var(--primary);opacity:.08}
+.slide .fb-col{position:absolute;left:80px;top:72px;bottom:64px;width:${W}px;display:flex;flex-direction:column;gap:20px}
+.slide .fb-bar{width:88px;height:6px;border-radius:3px;background:var(--accent)}
+.slide .fb-col h2{font-size:50px;color:var(--ink)}
+.slide .fb-k{font-size:28px;line-height:1.3;color:var(--primary);font-weight:600}
+.slide .fb-l{list-style:none;padding:0;margin-top:8px;flex:1;display:grid;grid-template-columns:${img ? "1fr" : "1fr 1fr"};grid-auto-rows:1fr;gap:18px}
+.slide .fb-l li{display:flex;gap:16px;align-items:center;background:var(--surface);border-left:6px solid var(--primary);border-radius:14px;padding:18px 24px;box-shadow:0 4px 14px color-mix(in srgb,var(--ink) 8%,transparent)}
+.slide .fb-i{font-family:var(--font-heading);font-weight:800;color:var(--accent);font-size:34px;line-height:1.1}
+.slide .fb-l p{font-size:25px;line-height:1.35;color:var(--ink)}
+.slide .fb-img{position:absolute;right:0;top:0;width:500px;height:720px;object-fit:cover;clip-path:polygon(16% 0,100% 0,100% 100%,0 100%)}
+</style>
+<p class="fb-num">${String(slide.n).padStart(2, "0")}</p>
+<div class="fb-col"><div class="fb-bar"></div><h2>${esc(slide.title)}</h2>${slide.keyMessage ? `<p class="fb-k">${esc(slide.keyMessage)}</p>` : ""}<ul class="fb-l">${pts}</ul></div>
+${img ? `<img class="fb-img" src="asset:${img.id}" alt="">` : ""}`;
+  return { html, notes: slide.notes || "", provider: "engine", model: "fallback", messages: [] };
+}

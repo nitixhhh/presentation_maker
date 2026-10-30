@@ -133,3 +133,65 @@ Copy-Item .env.example .env.local
 npm run dev
 ```
 Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+
+---
+
+## Engine v3 — AI-designed slides (default in the UI)
+
+Engine v3 drops fixed layouts. Every slide is **designed freely by an AI designer as HTML/CSS on a 1280×720 canvas** (full-bleed photos, blend modes, masks, strokes, gradients, SVG diagrams), guided by a deck-level design system so the whole deck stays coherent. The engine's job is to **render exactly what the AI designed** — on screen, in PDF and in an editable PPTX. v2 (`src/engine`) is untouched and still selectable in the UI.
+
+Research notes and reasoning: [`docs/ENGINE_V3_RESEARCH.md`](docs/ENGINE_V3_RESEARCH.md).
+
+### Pipeline (`src/engine-v3`)
+
+| Step | File | What it does |
+|---|---|---|
+| Brief agent | `agents/brief.ts` | Understands the goal, deck type (seminar / project review / …), class level, slide count, language (English / Hindi / Hinglish), the university format the user typed, and the title-slide details (name, roll no., guide, department — printed exactly, never invented). |
+| Research agent | `agents/research.ts`, `research/sources.ts` | Real sources from **Wikipedia**, **OpenAlex** and **Crossref** (free, no key; **Semantic Scholar** if `SEMANTIC_SCHOLAR_API_KEY` is set). Extracts 25–45 facts, each tied to a source. References are formatted by code (APA 7 / IEEE), not by the LLM. |
+| Story agent | `agents/outline.ts` | Slide-by-slide story following the required sections; every point carries fact ids → citation markers `[n]`; decides what each slide should *show* (photo / generated / diagram / chart / none). |
+| Images | `assets/images.ts` | Real photos from **Wikimedia Commons** + **Openverse** (licence + author kept), a vision model picks the right one from a contact sheet, **Cloudflare Flux** for conceptual images. Always stored as real JPEGs. Credits go on the References slide and in speaker notes. |
+| Art director | `agents/artDirector.ts` | One design system per deck: palette (contrast-checked), font pair (each web font has an Office-safe twin for PPTX), motif, rules, and a distinct composition idea for every slide. |
+| Designers (parallel) | `agents/designer.ts` | One AI designer per slide, all in parallel through the rate-limited provider pool. Free HTML/CSS — no templates. |
+| Visual QA loop | `qa/inspect.ts`, `qa/vision.ts`, `render/domScripts.ts` | Each slide is rendered in headless Chromium. DOM measurement catches text outside the canvas, clipped/overlapping/covered text, tiny text, low contrast (measured on the real pixels), broken images, placeholders, sparse slides. Clipped text is auto-fitted; then a vision model critiques the screenshot and the same designer revises (max 2 rounds; best version kept). |
+| References slide | `agents/referencesSlide.ts` | Built by the engine so citations are always exact. |
+| PDF | `export/pdf.ts` | Chromium prints each slide exactly as rendered (vector text), merged with pdf-lib. |
+| PPTX | `export/pptx.ts` | Built **from the rendered DOM**: every text block becomes a native editable text box at its measured position (fonts, sizes, colours, line breaks as rendered); plain photos become native pictures (cropped exactly like on screen); everything PowerPoint can't express (gradients, blends, masks, SVG diagrams, shadows) becomes a 2× background plate. The PPTX looks like the PDF and stays editable. |
+
+### API
+
+* `POST /api/v3/generate` — Server-Sent Events (`progress`, `complete`, `error`). Body: `{ topic, audience, slideCount, language, purpose?, formatNotes?, presenter?: { names, rollNo, department, institute, guide, course }, imageSource?: "stock" | "ai" | "none", styleHint? }`
+* `GET /api/v3/deck/:id` · `GET /api/v3/deck/:id/slide/:n` (HTML) · `GET /api/v3/deck/:id/asset/:file` · `GET /api/v3/deck/:id/export?format=pdf|pptx|html`
+* CLI: `npx tsx scripts/v3-generate.ts request.json out-dir` → PDF + PPTX + PNG of every slide.
+
+Decks are stored on disk in `DECKCRAFT_V3_DIR` (default: the OS temp dir `deckcraft-v3/`). v3 needs a Node server with Playwright's Chromium (`npx playwright install chromium`) — it will not run on serverless hosting.
+
+### .env keys for v3
+
+At least one LLM provider; more providers = more free capacity and failover.
+
+```
+GROQ_API_KEY=...              # recommended: gpt-oss-120b (design) + llama-4-scout (vision)
+GOOGLE_AI_API_KEY=...         # Gemini flash / flash-lite (aliases gemini-flash-latest, gemini-flash-lite-latest)
+OPENROUTER_API_KEY=...        # optional, free models
+CLOUDFLARE_API_TOKEN=...      # Workers AI: Flux images + fallback LLMs
+CLOUDFLARE_ACCOUNT_ID=...
+SEMANTIC_SCHOLAR_API_KEY=...  # optional, better paper search
+OPENALEX_API_KEY=...          # recommended, free at openalex.org/settings/api (anonymous budget is tiny now)
+OPENALEX_MAILTO=you@example.com
+
+# optional tuning
+# CUSTOM_LLM_BASE_URL=...  CUSTOM_LLM_API_KEY=...   any OpenAI-compatible provider, use provider "custom" in routes
+# ENGINE_V3_ROUTES='{"design":[{"provider":"groq","model":"openai/gpt-oss-120b"}]}'   override routes per role ("*" = all roles)
+# GROQ_BASE_URL / GOOGLE_AI_BASE_URL / OPENROUTER_BASE_URL / CLOUDFLARE_BASE_URL     override provider base URLs
+# V3_DESIGN_REASONING=medium   V3_MAX_REVISIONS=2   V3_VISION_QA=off   PPTX_FONT_MODE=web
+# DECKCRAFT_V3_DIR=./.decks
+```
+
+Routes per role live in `src/config/models.json → engineV3.roles` (brief, research, outline, art, design, vision). Each role tries its routes in order; 429/5xx/timeouts fail over to the next route, and each provider has its own requests-per-minute + concurrency limiter so parallel designers don't trip free-tier limits.
+
+**Free-tier reality (Oct 2026):** Gemini's free tier is small for Flash models (tens of requests/day on many keys) and `gemini-2.5-*` is closed to new keys — the v3 routes use `gemini-flash-latest` / `gemini-flash-lite-latest`. Groq's free tier gives the most requests for `openai/gpt-oss-120b` but limits tokens/minute, so the designer pool spreads calls over providers. One 10-slide deck ≈ 25–35 LLM calls.
+
+**Fonts in PPTX:** PowerPoint can't receive web fonts from pptxgenjs, so each design font pair maps to an Office-safe twin (e.g. Poppins → Century Gothic, Inter → Calibri, Merriweather → Georgia, Noto Sans Devanagari → Nirmala UI). Set `PPTX_FONT_MODE=web` to write the web font names instead (looks perfect in Google Slides or where the fonts are installed).
+
+> **Design model matters most.** In testing, a Kimi-class model (Groq `moonshotai/kimi-k2-instruct-0905`, free tier) as the `design` role produced far better slides than `gpt-oss-120b`. Keep your strongest free model first in `engineV3.roles.design` in `src/config/models.json`. Set `OPENALEX_API_KEY` (free) to avoid scholarly-search rate limits.
