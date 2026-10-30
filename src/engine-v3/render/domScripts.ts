@@ -261,7 +261,8 @@ texts.forEach(function(t){
   images.forEach(function(i){ mark(i.x,i.y,i.w,i.h); });
   SLIDE.querySelectorAll('svg').forEach(function(sv){ if (sv.parentElement && sv.parentElement.closest('svg')) return; var r = sv.getBoundingClientRect(); if (r.width*r.height < 1280*720*0.8) mark(r.left-SR.left, r.top-SR.top, r.width, r.height); });
   var cov = Object.keys(cells).length / total;
-  if (cov < 0.28) issues.push({type:'sparse', severity:'medium', detail:'Only about ' + Math.round(cov*100) + '% of the slide carries content — large areas look unfinished. Make the visual larger, enlarge type, or rebalance the composition.'});
+  if (cov < 0.03) issues.push({type:'blank', severity:'high', detail:'The slide renders (almost) empty — the markup is broken or the content is hidden. Output a complete, visible slide.'});
+  else if (cov < 0.28) issues.push({type:'sparse', severity:'medium', detail:'Only about ' + Math.round(cov*100) + '% of the slide carries content — large areas look unfinished. Make the visual larger, enlarge type, or rebalance the composition.'});
 })();
 
 // background-image urls that failed (cannot detect load directly) — check unresolved asset refs

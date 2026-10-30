@@ -9,6 +9,7 @@ import path from "path";
 import { DATA_ROOT } from "./paths";
 import { createJob, getJobViews } from "./jobs/manager";
 import { loadDeck } from "@/engine-v3/store";
+import { deckToken } from "./deckAuth";
 import { ROLES, routesFor, keysFor, modelSpec, schedulerState, type Role } from "@/engine-v3/llm";
 
 const DIR = path.join(DATA_ROOT, "benchmarks");
@@ -125,7 +126,7 @@ export async function benchmarkResult(id: string) {
       roleAvgSeconds: roleCalls ? Math.round(roleMs / roleCalls / 100) / 10 : null,
       servedBy,
       deckId: job?.deckId,
-      slides: deck ? deck.slides.map((s) => `/api/v3/deck/${deck.id}/preview/${s.n}`) : [],
+      slides: deck ? deck.slides.map((s) => `/api/v3/deck/${deck.id}/preview/${s.n}?t=${deckToken(deck.id, "full")}`) : [],
     };
   });
   return { ...rec, runs };

@@ -154,7 +154,19 @@ export function parseDesign(text: string): { html: string; notes: string } {
     html = html.replace(/<notes>[\s\S]*?<\/notes>/i, "");
   }
   const notes = (text.match(/<notes>([\s\S]*?)<\/notes>/i)?.[1] || "").trim();
+  html = html.replace(/<\/?slide>/gi, "");
+  // a reply cut off by the token limit (e.g. a reasoning model that spent its budget thinking) leaves an
+  // unclosed <style> or no markup at all — that is not a design, so it is treated as no answer
+  if (!isComplete(html)) return { html: "", notes };
   return { html: sanitize(html), notes };
+}
+
+function isComplete(html: string): boolean {
+  const opens = (html.match(/<style\b/gi) || []).length;
+  const closes = (html.match(/<\/style>/gi) || []).length;
+  if (opens !== closes) return false;
+  const body = html.replace(/<style\b[\s\S]*?<\/style>/gi, "");
+  return /<(div|h[1-6]|p|section|figure|img|svg|ul|ol|table)\b/i.test(body);
 }
 
 /** Strip anything that could escape the canvas or run code. */
@@ -184,9 +196,24 @@ export async function designSlide(
     { role: "system", content: designerSystemPrompt(deck.design, deck.brief) },
     { role: "user", content: designerUserPrompt(deck, slide, citeMap, inspiration) + (extraInstruction ? `\n\n${extraInstruction}` : "") },
   ];
+  let reasoning = (process.env.V3_DESIGN_REASONING as any) || "medium";
+  // Devanagari text costs ~3x the tokens of English
+  let maxTokens = deck.brief.language === "Hindi" ? 16000 : 12000;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const r = await chat("design", messages, { temperature: 0.85, maxTokens: 12000, spread, timeoutMs: 240_000, label: `slide ${slide.n}`, reasoning: (process.env.V3_DESIGN_REASONING as any) || "medium" });
+    let r;
+    try {
+      r = await chat("design", messages, { temperature: 0.85, maxTokens, spread, timeoutMs: 300_000, label: `slide ${slide.n}`, reasoning });
+    } catch (e: any) {
+      // a reasoning model that spent the whole budget thinking: try once more with more room and less thinking
+      if (attempt === 0 && /finish_reason=length/.test(String(e?.message))) {
+        reasoning = "low";
+        maxTokens = 24000;
+        continue;
+      }
+      throw e;
+    }
     const { html, notes } = parseDesign(r.text);
+    if (html.length < 200) reasoning = "low"; // cut-off reply: think less on the retry
     if (html.length > 200) {
       return { html, notes: notes || slide.notes || "", provider: r.provider, model: r.model, messages: [...messages, { role: "assistant", content: r.text }] };
     }
@@ -203,7 +230,13 @@ export async function reviseSlide(prev: DesignOut, feedback: string): Promise<De
       content: `The engine rendered your slide in Chromium and found these problems:\n${feedback}\n\nFix every problem while keeping the design idea (you may rethink the composition if it is the cause). Remember the size limits and keep everything inside the 1280×720 canvas. Output the complete corrected <slide>…</slide><notes>…</notes> (keep the speaker notes as they were).`,
     },
   ];
-  const r = await chat("design", messages, { temperature: 0.5, maxTokens: 12000, timeoutMs: 240_000, label: "revision", reasoning: (process.env.V3_DESIGN_REASONING as any) || "medium" });
+  let r;
+  try {
+    r = await chat("design", messages, { temperature: 0.5, maxTokens: 12000, timeoutMs: 240_000, label: "revision", reasoning: (process.env.V3_DESIGN_REASONING as any) || "medium" });
+  } catch (e: any) {
+    if (!/finish_reason=length/.test(String(e?.message))) throw e;
+    r = await chat("design", messages, { temperature: 0.5, maxTokens: 24000, timeoutMs: 300_000, label: "revision", reasoning: "low" });
+  }
   const { html, notes } = parseDesign(r.text);
   if (html.length < 200) return prev;
   // a layout revision does not change what the student says: keep the first draft's speaker notes

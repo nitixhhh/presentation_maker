@@ -185,6 +185,16 @@ export function routesFor(role: Role, opts: { all?: boolean } = {}): Route[] {
   return opts.all ? routes : routes.filter((r) => providerReady(r.provider));
 }
 
+/** a model the operator put in ENGINE_V3_ROUTES for the vision role is trusted to accept images */
+function envVisionRoute(r: { provider: string; model: string }): boolean {
+  try {
+    const o = JSON.parse(process.env.ENGINE_V3_ROUTES || "{}");
+    return (o.vision || []).map(parseRoute).some((x: any) => x && x.provider === r.provider && x.model === r.model);
+  } catch {
+    return false;
+  }
+}
+
 export function modelSpec(provider: string, model: string): ModelSpec {
   const m = cfg.engineV3?.models?.[`${provider}:${model}`] || {};
   const p = providerCfg(provider);
@@ -433,7 +443,7 @@ const ROLE_WAIT_MS: Record<Role, number> = { brief: 2000, research: 4000, outlin
 export async function chat(role: Role, messages: Msg[], opts: CallOpts = {}): Promise<LlmResult> {
   const hasImage = messages.some((m) => Array.isArray(m.content) && m.content.some((p) => p.type === "image_url"));
   let routes = routesFor(role);
-  if (hasImage) routes = routes.filter((r) => modelSpec(r.provider, r.model).vision);
+  if (hasImage) routes = routes.filter((r) => modelSpec(r.provider, r.model).vision || envVisionRoute(r));
   if (!routes.length) {
     throw new Error(
       `Engine v3: no configured provider for role "${role}". Add at least one key to the server env (GOOGLE_AI_API_KEY, GROQ_API_KEY, OPENROUTER_API_KEY or CLOUDFLARE_API_TOKEN+CLOUDFLARE_ACCOUNT_ID).`
@@ -555,7 +565,7 @@ async function callOnce(route: Route, apiKey: string, messages: Msg[], opts: Cal
     model: route.model,
     messages,
     temperature: opts.temperature ?? 0.6,
-    max_tokens: opts.maxTokens ?? 4000,
+    max_tokens: Math.min(opts.maxTokens ?? 4000, modelSpec(route.provider, route.model).maxOutput ?? Number.MAX_SAFE_INTEGER),
   };
   const stream = opts.stream ?? process.env.V3_STREAM !== "off";
   if (stream) {

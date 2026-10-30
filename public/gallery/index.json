@@ -1,0 +1,59 @@
+{
+  "samples": [
+    {
+      "id": "20261030-fe0fafcb5b",
+      "title": "UV-Vis Spectroscopy",
+      "topic": "UV-Vis Spectroscopy",
+      "language": "English",
+      "slides": [
+        "/gallery/20261030-fe0fafcb5b/slide-01.jpg",
+        "/gallery/20261030-fe0fafcb5b/slide-02.jpg",
+        "/gallery/20261030-fe0fafcb5b/slide-03.jpg",
+        "/gallery/20261030-fe0fafcb5b/slide-04.jpg",
+        "/gallery/20261030-fe0fafcb5b/slide-05.jpg",
+        "/gallery/20261030-fe0fafcb5b/slide-06.jpg",
+        "/gallery/20261030-fe0fafcb5b/slide-07.jpg",
+        "/gallery/20261030-fe0fafcb5b/slide-08.jpg",
+        "/gallery/20261030-fe0fafcb5b/slide-09.jpg",
+        "/gallery/20261030-fe0fafcb5b/slide-10.jpg"
+      ]
+    },
+    {
+      "id": "20261030-3f01abcd35",
+      "title": "Smart Library Management System using RFID and a Web Dashboard",
+      "topic": "Smart Library Management System using RFID and a web dashboard",
+      "language": "English",
+      "slides": [
+        "/gallery/20261030-3f01abcd35/slide-01.jpg",
+        "/gallery/20261030-3f01abcd35/slide-02.jpg",
+        "/gallery/20261030-3f01abcd35/slide-03.jpg",
+        "/gallery/20261030-3f01abcd35/slide-04.jpg",
+        "/gallery/20261030-3f01abcd35/slide-05.jpg",
+        "/gallery/20261030-3f01abcd35/slide-06.jpg",
+        "/gallery/20261030-3f01abcd35/slide-07.jpg",
+        "/gallery/20261030-3f01abcd35/slide-08.jpg",
+        "/gallery/20261030-3f01abcd35/slide-09.jpg",
+        "/gallery/20261030-3f01abcd35/slide-10.jpg",
+        "/gallery/20261030-3f01abcd35/slide-11.jpg",
+        "/gallery/20261030-3f01abcd35/slide-12.jpg"
+      ]
+    },
+    {
+      "id": "20261030-78810abc1c",
+      "title": "प्रकाश संश्लेषण",
+      "topic": "प्रकाश संश्लेषण (Photosynthesis)",
+      "language": "Hindi",
+      "slides": [
+        "/gallery/20261030-78810abc1c/slide-01.jpg",
+        "/gallery/20261030-78810abc1c/slide-02.jpg",
+        "/gallery/20261030-78810abc1c/slide-03.jpg",
+        "/gallery/20261030-78810abc1c/slide-04.jpg",
+        "/gallery/20261030-78810abc1c/slide-05.jpg",
+        "/gallery/20261030-78810abc1c/slide-06.jpg",
+        "/gallery/20261030-78810abc1c/slide-07.jpg",
+        "/gallery/20261030-78810abc1c/slide-08.jpg",
+        "/gallery/20261030-78810abc1c/slide-09.jpg"
+      ]
+    }
+  ]
+}
