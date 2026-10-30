@@ -68,3 +68,64 @@ create trigger jobs_touch before update on public.jobs
 
 -- (Accounts, payments, credits and referrals tables are added below in the
 --  "Phase 4" section once that phase lands.)
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Accounts + payments (Phase 4). Only the server (service-role key) reads/writes these;
+-- RLS is on with no policies, so the public anon key cannot touch them.
+-- ─────────────────────────────────────────────────────────────────────────────
+create table if not exists public.profiles (
+  id             uuid primary key references auth.users (id) on delete cascade,
+  email          text,
+  name           text,
+  referral_code  text unique not null,
+  referred_by    uuid references auth.users (id),
+  created_at     timestamptz not null default now()
+);
+
+create table if not exists public.credit_events (
+  id         bigserial primary key,
+  owner_key  text not null,               -- "u:<user id>"
+  delta      integer not null,            -- +5 pack, +1 referral, -1 unlock
+  reason     text not null,
+  ref        text unique not null,        -- idempotency key (order id, referral, use)
+  created_at timestamptz not null default now()
+);
+create index if not exists credit_events_owner_idx on public.credit_events (owner_key);
+
+create table if not exists public.orders (
+  id                   text primary key,
+  owner_key            text not null,
+  user_id              uuid,
+  product              text not null check (product in ('deck','pack5')),
+  deck_id              text,
+  amount               integer not null,  -- paise
+  currency             text not null default 'INR',
+  provider             text not null,      -- razorpay | cashfree | …
+  provider_order_id    text unique not null,
+  provider_payment_id  text,
+  status               text not null default 'created' check (status in ('created','paid','failed')),
+  created_at           timestamptz not null default now(),
+  paid_at              timestamptz
+);
+create index if not exists orders_owner_idx on public.orders (owner_key, created_at desc);
+
+create table if not exists public.unlocks (
+  owner_key  text not null,
+  deck_id    text not null,
+  via        text not null,                -- payment | credit | free-first
+  ref        text,
+  created_at timestamptz not null default now(),
+  primary key (owner_key, deck_id)
+);
+
+create table if not exists public.deck_edits (
+  deck_id text primary key,
+  count   integer not null default 0
+);
+
+alter table public.profiles      enable row level security;
+alter table public.credit_events enable row level security;
+alter table public.orders        enable row level security;
+alter table public.unlocks       enable row level security;
+alter table public.deck_edits    enable row level security;

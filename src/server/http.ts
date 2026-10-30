@@ -41,6 +41,7 @@ export function parseV3Request(body: any): { ok: true; value: V3Request } | { ok
       presenter: hasPresenter ? presenter : undefined,
       imageMode,
       styleHint: clip(body?.styleHint, 200),
+      logoId: typeof body?.logoId === "string" && /^logo_[a-z0-9]{8,40}$/.test(body.logoId) ? body.logoId : undefined,
     },
   };
 }

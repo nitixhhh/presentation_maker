@@ -18,6 +18,8 @@ export interface StorageAdapter {
   getJobs(ids: string[]): Promise<JobRecord[]>;
   /** jobs still queued/running (used to resume after a restart) */
   unfinishedJobs(): Promise<JobRecord[]>;
+  /** a signed-in user's decks (newest first) */
+  jobsByOwner(ownerKey: string, limit: number): Promise<JobRecord[]>;
   /** recent finished jobs (for queue ETA statistics) */
   recentFinished(limit: number): Promise<JobRecord[]>;
   /** copy a finished deck directory (deck.json, assets/, exports/) to durable storage */

@@ -1,12 +1,16 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
+import { ChevronRight, Loader2, Plus, Trash2, LogOut, Gift } from "lucide-react";
+import Gallery from "./Gallery";
 import CreateForm, { type CreateRequest } from "./CreateForm";
 import ProgressView from "./ProgressView";
 import DeckView from "./DeckView";
 import { useJob } from "./useJob";
 import type { DeckSummary, JobView } from "./types";
-import { apiHeaders, forgetJob, saveJob, savedJobs, type SavedJob } from "@/lib/client/store";
+import { forgetJob, saveJob, savedJobs, type SavedJob } from "@/lib/client/store";
+import { api, claimReferralIfAny, rememberReferral, signInWithGoogle, signOut, useMe, type Me } from "@/lib/client/auth";
+
+const PENDING_KEY = "deckcraft.pending.v1";
 
 type View = { name: "home" } | { name: "decks" } | { name: "job"; id: string };
 
@@ -23,6 +27,25 @@ export default function App() {
   const [view, setView] = useState<View>({ name: "home" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { me, refresh } = useMe();
+
+  useEffect(() => {
+    rememberReferral();
+  }, []);
+
+  // after Google sign-in: claim a friend's referral, then start the deck the visitor was about to make
+  useEffect(() => {
+    if (!me?.user) return;
+    claimReferralIfAny().then(refresh);
+    const p = sessionStorage.getItem(PENDING_KEY);
+    if (p) {
+      sessionStorage.removeItem(PENDING_KEY);
+      try {
+        start(JSON.parse(p));
+      } catch {}
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me?.user?.id]);
 
   useEffect(() => {
     // reopening the app: resume the job in the URL, else the newest unfinished job of this browser
@@ -56,8 +79,14 @@ export default function App() {
   const start = async (r: CreateRequest | Record<string, unknown>) => {
     setBusy(true);
     setError(null);
+    if (me?.auth.required && !me.user) {
+      sessionStorage.setItem(PENDING_KEY, JSON.stringify(r));
+      await signInWithGoogle().catch((e) => setError(e.message));
+      setBusy(false);
+      return;
+    }
     try {
-      const res = await fetch("/api/v3/jobs", { method: "POST", headers: apiHeaders(), body: JSON.stringify(r) });
+      const res = await api("/api/v3/jobs", { method: "POST", body: JSON.stringify(r) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.job) throw new Error(data.error || "Could not start. Please check your internet and try again.");
       saveJob({ id: data.job.id, topic: String((r as CreateRequest).topic), createdAt: data.job.createdAt, request: r as Record<string, unknown> });
@@ -85,6 +114,7 @@ export default function App() {
               <Plus className="h-4 w-4" /> New
             </button>
           )}
+          <Account me={me} onChange={refresh} />
         </nav>
       </header>
 
@@ -96,30 +126,35 @@ export default function App() {
               <p className="mt-2 text-[15px] leading-relaxed text-[var(--muted)]">Real sources with references, slides designed one by one, ready as PDF and editable PowerPoint.</p>
             </div>
             <CreateForm onSubmit={start} busy={busy} error={error} />
-            <RecentDecks onOpen={(id) => go({ name: "job", id })} limit={3} onAll={() => go({ name: "decks" })} />
+            {me?.auth.required && !me.user && <p className="-mt-5 text-center text-[13px] text-[var(--muted)]">You will sign in with Google before the deck starts.</p>}
+            <RecentDecks onOpen={(id) => go({ name: "job", id })} limit={3} onAll={() => go({ name: "decks" })} signedIn={!!me?.user} />
+            <Gallery />
           </div>
         )}
         {view.name === "decks" && (
           <div className="space-y-4">
             <h1 className="text-[24px] font-semibold tracking-tight text-[var(--ink)]">My decks</h1>
-            <RecentDecks onOpen={(id) => go({ name: "job", id })} />
+            <RecentDecks onOpen={(id) => go({ name: "job", id })} signedIn={!!me?.user} />
+            {me?.user && me.referralCode && <Invite me={me} />}
           </div>
         )}
-        {view.name === "job" && <JobScreen id={view.id} onHome={() => go({ name: "home" })} onRetry={start} />}
+        {view.name === "job" && <JobScreen id={view.id} me={me} onHome={() => go({ name: "home" })} onRetry={start} />}
       </main>
     </div>
   );
 }
 
-function JobScreen({ id, onHome, onRetry }: { id: string; onHome: () => void; onRetry: (r: Record<string, unknown>) => void }) {
+function JobScreen({ id, me, onHome, onRetry }: { id: string; me: Me | null; onHome: () => void; onRetry: (r: Record<string, unknown>) => void }) {
   const { job, link, missing } = useJob(id);
   const [deck, setDeck] = useState<DeckSummary | null>(null);
+  const [reload, setReload] = useState(0);
+  const onReload = useCallback(() => setReload((x) => x + 1), []);
 
   useEffect(() => {
-    if (job?.status === "done" && job.deckId && !deck) {
+    if (job?.status === "done" && job.deckId) {
       let tries = 0;
       const load = () =>
-        fetch(`/api/v3/deck/${job.deckId}`, { cache: "no-store" })
+        api(`/api/v3/deck/${job.deckId}`)
           .then((r) => (r.ok ? r.json() : Promise.reject()))
           .then(setDeck)
           .catch(() => {
@@ -127,7 +162,7 @@ function JobScreen({ id, onHome, onRetry }: { id: string; onHome: () => void; on
           });
       load();
     }
-  }, [job?.status, job?.deckId, deck]);
+  }, [job?.status, job?.deckId, reload]);
 
   useEffect(() => {
     // keep the topic in "My decks" even if the deck was opened from a shared link
@@ -145,7 +180,7 @@ function JobScreen({ id, onHome, onRetry }: { id: string; onHome: () => void; on
     );
   if (job?.status === "done")
     return deck ? (
-      <DeckView deck={deck} />
+      <DeckView deck={deck} me={me} onReload={onReload} />
     ) : (
       <div className="flex flex-col items-center gap-3 py-24 text-[var(--muted)]">
         <Loader2 className="h-6 w-6 animate-spin" />
@@ -156,17 +191,27 @@ function JobScreen({ id, onHome, onRetry }: { id: string; onHome: () => void; on
   return <ProgressView job={job} link={link} onHome={onHome} onRetry={saved?.request ? () => onRetry(saved.request!) : undefined} />;
 }
 
-function RecentDecks({ onOpen, limit, onAll }: { onOpen: (id: string) => void; limit?: number; onAll?: () => void }) {
+function RecentDecks({ onOpen, limit, onAll, signedIn }: { onOpen: (id: string) => void; limit?: number; onAll?: () => void; signedIn?: boolean }) {
   const [saved, setSaved] = useState<SavedJob[] | null>(null);
   const [jobs, setJobs] = useState<Record<string, JobView>>({});
 
   useEffect(() => {
+    let stop = false;
+    // signed in: the account's decks from any device, merged with this browser's list
+    if (signedIn)
+      api("/api/v3/jobs?mine=1")
+        .then((r) => r.json())
+        .then((d) => {
+          if (stop) return;
+          for (const j of (d.jobs || []) as JobView[]) if (j.status !== "failed" || Date.now() - Date.parse(j.createdAt) < 86400_000) saveJob({ id: j.id, topic: j.topic, createdAt: j.createdAt });
+          setSaved(savedJobs().sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+        })
+        .catch(() => {});
     const s = savedJobs();
     setSaved(s);
-    if (!s.length) return;
-    let stop = false;
+    if (!s.length && !signedIn) return;
     const load = () =>
-      fetch(`/api/v3/jobs?ids=${s.map((x) => x.id).join(",")}`, { cache: "no-store" })
+      fetch(`/api/v3/jobs?ids=${savedJobs().slice(0, 50).map((x) => x.id).join(",")}`, { cache: "no-store" })
         .then((r) => r.json())
         .then((d) => {
           if (stop) return;
@@ -180,7 +225,7 @@ function RecentDecks({ onOpen, limit, onAll }: { onOpen: (id: string) => void; l
     return () => {
       stop = true;
     };
-  }, []);
+  }, [signedIn]);
 
   if (!saved) return null;
   if (!saved.length) return limit ? null : <p className="py-10 text-center text-[15px] text-[var(--muted)]">Decks you create on this phone will appear here.</p>;
@@ -235,5 +280,67 @@ function RecentDecks({ onOpen, limit, onAll }: { onOpen: (id: string) => void; l
         })}
       </ul>
     </section>
+  );
+}
+
+function Account({ me, onChange }: { me: Me | null; onChange: () => void }) {
+  const [open, setOpen] = useState(false);
+  if (!me?.auth.configured) return null;
+  if (!me.user)
+    return (
+      <button onClick={() => signInWithGoogle().catch(() => {})} className="rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-[14px] font-medium text-[var(--ink)]">
+        Sign in
+      </button>
+    );
+  const initial = (me.user.name || me.user.email || "?").trim()[0]?.toUpperCase();
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen((o) => !o)} aria-label="Account" className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-[var(--accent-soft)] text-[14px] font-semibold text-[var(--accent)]">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {me.user.avatar ? <img src={me.user.avatar} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" /> : initial}
+      </button>
+      {open && (
+        <div className="absolute right-0 z-30 mt-2 w-64 space-y-1 rounded-xl border border-[var(--line)] bg-white p-3 text-[14px] shadow-lg">
+          <p className="truncate font-medium text-[var(--ink)]">{me.user.name || me.user.email}</p>
+          <p className="text-[var(--muted)]">{me.credits} deck credit{me.credits === 1 ? "" : "s"}</p>
+          <button
+            onClick={async () => {
+              await signOut();
+              setOpen(false);
+              onChange();
+            }}
+            className="mt-2 flex items-center gap-2 text-[var(--muted)]"
+          >
+            <LogOut className="h-4 w-4" /> Sign out
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Invite({ me }: { me: Me }) {
+  const [copied, setCopied] = useState(false);
+  const link = typeof window !== "undefined" ? `${window.location.origin}/?ref=${me.referralCode}` : "";
+  const n = me.pricing.referralCredits;
+  return (
+    <div className="space-y-2 rounded-2xl border border-[var(--line)] bg-white p-4">
+      <p className="flex items-center gap-2 text-[15px] font-semibold text-[var(--ink)]">
+        <Gift className="h-4 w-4 text-[var(--accent)]" /> Invite a friend, get {n} free deck{n === 1 ? "" : "s"}
+      </p>
+      <p className="text-[14px] text-[var(--muted)]">When a friend signs up with your link, you get {n} deck credit{n === 1 ? "" : "s"}.</p>
+      <button
+        onClick={async () => {
+          if (navigator.share) await navigator.share({ title: "DeckCraft", text: "Make your class presentation with DeckCraft", url: link }).catch(() => {});
+          else {
+            await navigator.clipboard.writeText(link).catch(() => {});
+            setCopied(true);
+          }
+        }}
+        className="w-full rounded-xl bg-[var(--accent)] px-4 py-3 text-[15px] font-semibold text-white"
+      >
+        {copied ? "Link copied" : "Share my link"}
+      </button>
+    </div>
   );
 }

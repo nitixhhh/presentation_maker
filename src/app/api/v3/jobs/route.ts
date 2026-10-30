@@ -1,9 +1,14 @@
-import { createJob, getJobViews, queueStats, QueueFullError } from "@/server/jobs/manager";
-import { ownerKeyOf, parseV3Request } from "@/server/http";
-
+import { createJob, getJobViews, jobsOfOwner, queueStats, QueueFullError } from "@/server/jobs/manager";
+import { parseV3Request } from "@/server/http";
+import { loginRequired, resolveOwner } from "@/server/auth";
+import { clientIp, rateLimit, tooMany } from "@/server/rateLimit";
 
 /** Start a deck. Returns { job } immediately; the deck is generated in the background. */
 export async function POST(req: Request) {
+  const { ownerKey, user } = await resolveOwner(req);
+  if (loginRequired() && !user) return Response.json({ error: "Please sign in with Google to make a deck." }, { status: 401 });
+  // per person and per network: a few decks a minute at most (the queue limits the rest)
+  if (!rateLimit(`job:${ownerKey}`, 3, 4) || !rateLimit(`jobip:${clientIp(req)}`, 6, 8)) return tooMany();
   let body: any;
   try {
     body = await req.json();
@@ -13,7 +18,7 @@ export async function POST(req: Request) {
   const parsed = parseV3Request(body);
   if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
   try {
-    const job = await createJob(parsed.value, ownerKeyOf(req));
+    const job = await createJob(parsed.value, ownerKey, user?.id);
     return Response.json({ job }, { status: 202 });
   } catch (e: any) {
     if (e instanceof QueueFullError) return Response.json({ error: e.message }, { status: 429 });
@@ -22,9 +27,17 @@ export async function POST(req: Request) {
   }
 }
 
-/** GET ?ids=a,b,c → those jobs (the "My decks" list); without ids → queue stats. */
+/** GET ?ids=a,b,c → those jobs (the "My decks" list kept in this browser);
+ *  GET ?mine=1 → all decks of the signed-in account; without either → queue stats. */
 export async function GET(req: Request) {
-  const ids = (new URL(req.url).searchParams.get("ids") || "")
+  const sp = new URL(req.url).searchParams;
+  if (!rateLimit(`jobsget:${clientIp(req)}`, 120, 60)) return tooMany();
+  if (sp.get("mine")) {
+    const { ownerKey, user } = await resolveOwner(req);
+    if (!user) return Response.json({ jobs: [] });
+    return Response.json({ jobs: await jobsOfOwner(ownerKey) }, { headers: { "Cache-Control": "no-store" } });
+  }
+  const ids = (sp.get("ids") || "")
     .split(",")
     .map((s) => s.trim())
     .filter((s) => /^[a-z0-9-]{6,64}$/i.test(s))

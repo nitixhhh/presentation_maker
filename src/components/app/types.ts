@@ -12,7 +12,7 @@ export interface JobView {
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;
-  progress: { stage: JobStage; step: string; percent: number; details?: string; log: { t: string; agent: string; msg: string }[] };
+  progress: { stage: JobStage; step: string; percent: number; details?: string; notice?: string; log: { t: string; agent: string; msg: string }[] };
   queuePosition?: number;
   etaSeconds?: number;
   elapsedSeconds?: number;
@@ -22,7 +22,7 @@ export interface DeckSlide {
   n: number;
   title: string;
   role?: string;
-  url: string;
+  url: string | null;
   image: string;
   notes?: string;
 }
@@ -34,4 +34,7 @@ export interface DeckSummary {
   language: string;
   references: { n: number; text: string }[];
   slides: DeckSlide[];
+  locked?: boolean;
+  payments?: { provider: string; keyId?: string; testMode?: boolean; price: number; pack5: number; credits: number } | null;
+  edits?: { used: number; free: number };
 }

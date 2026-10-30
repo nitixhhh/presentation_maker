@@ -61,6 +61,13 @@ export class LocalStorage implements StorageAdapter {
     return this.all().filter((j) => j.status === "queued" || j.status === "running");
   }
 
+  async jobsByOwner(ownerKey: string, limit: number) {
+    return this.all()
+      .filter((j) => j.ownerKey === ownerKey)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, limit);
+  }
+
   async recentFinished(limit: number) {
     return this.all()
       .filter((j) => j.status === "done" && j.startedAt && j.finishedAt)

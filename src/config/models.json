@@ -6,11 +6,15 @@
       "apiKeyEnv": "GOOGLE_AI_API_KEY",
       "enabled": true,
       "allowedForProduction": true,
+      "concurrency": 4,
+      "dailyReset": "pacific-midnight",
+      "accountLimits": {},
       "limits": {
         "rpm": 15,
         "rpd": 1500,
         "tokensPerDay": 1000000
-      }
+      },
+      "tpmInputOnly": true
     },
     "groq": {
       "name": "GroqCloud",
@@ -18,6 +22,9 @@
       "apiKeyEnv": "GROQ_API_KEY",
       "enabled": true,
       "allowedForProduction": true,
+      "concurrency": 3,
+      "dailyReset": "rolling",
+      "accountLimits": {},
       "limits": {
         "rpm": 30,
         "rpd": 14400,
@@ -43,6 +50,12 @@
       "accountIdEnv": "CLOUDFLARE_ACCOUNT_ID",
       "enabled": true,
       "allowedForProduction": true,
+      "concurrency": 3,
+      "dailyReset": "utc-midnight",
+      "accountLimits": {
+        "tpd": 180000
+      },
+      "_note": "Free: 10,000 Neurons/day shared by all models (resets 00:00 UTC). tpd is an approximation of that budget in tokens for gpt-oss-120b; the daily-limit error is also detected.",
       "limits": {
         "rpm": 20,
         "rpd": 2000,
@@ -55,6 +68,13 @@
       "apiKeyEnv": "OPENROUTER_API_KEY",
       "enabled": true,
       "allowedForProduction": true,
+      "concurrency": 2,
+      "dailyReset": "utc-midnight",
+      "accountLimits": {
+        "rpm": 20,
+        "rpd": 50
+      },
+      "_note": "Free models: 20 requests/min and 50 requests/day per account; 1000/day once you have bought at least $10 of credits ever (set V3_ACCOUNT_OPENROUTER_RPD=1000).",
       "limits": {
         "rpm": 20,
         "rpd": 200,
@@ -68,6 +88,7 @@
       "apiKeyEnv": "CUSTOM_LLM_API_KEY",
       "enabled": true,
       "allowedForProduction": true,
+      "concurrency": 6,
       "limits": {
         "rpm": 30,
         "rpd": 10000,
@@ -174,128 +195,245 @@
     }
   },
   "engineV3": {
-    "_comment": "Engine v3 routes. Each role tries its routes in order; a 429/5xx/timeout moves to the next. Override everything at runtime with ENGINE_V3_ROUTES (JSON with the same shape as 'roles'). Provider base URLs can be overridden with <PROVIDER>_BASE_URL env vars (GOOGLE_AI_BASE_URL, GROQ_BASE_URL, OPENROUTER_BASE_URL, CLOUDFLARE_BASE_URL).",
-    "concurrency": {
-      "google": 3,
-      "groq": 4,
-      "openrouter": 2,
-      "cloudflare": 3,
-      "nvidia": 2,
-      "custom": 6
-    },
+    "_comment": "Engine v3 routes per role, best first ('provider:model'). Small fast models do brief/research/outline; the strongest free models do art direction, slide design and vision QA. A 429 or a used-up daily quota moves to the next route instantly. Override at runtime with ENGINE_V3_ROUTES (same shape as 'roles'). Use the /benchmark page to pick the best model per role on your own keys.",
     "roles": {
       "brief": [
-        {
-          "provider": "groq",
-          "model": "openai/gpt-oss-120b"
-        },
-        {
-          "provider": "google",
-          "model": "gemini-flash-lite-latest"
-        },
-        {
-          "provider": "cloudflare",
-          "model": "@cf/openai/gpt-oss-120b"
-        },
-        {
-          "provider": "openrouter",
-          "model": "openai/gpt-oss-120b:free"
-        }
+        "google:gemini-3.5-flash-lite",
+        "google:gemini-3.1-flash-lite",
+        "groq:openai/gpt-oss-120b",
+        "google:gemma-4-26b-a4b-it",
+        "openrouter:google/gemma-4-26b-a4b-it:free",
+        "cloudflare:@cf/openai/gpt-oss-120b"
       ],
       "research": [
-        {
-          "provider": "google",
-          "model": "gemini-flash-latest"
-        },
-        {
-          "provider": "groq",
-          "model": "openai/gpt-oss-120b"
-        },
-        {
-          "provider": "google",
-          "model": "gemini-flash-lite-latest"
-        },
-        {
-          "provider": "cloudflare",
-          "model": "@cf/openai/gpt-oss-120b"
-        }
+        "google:gemini-3.5-flash-lite",
+        "google:gemini-3.1-flash-lite",
+        "google:gemma-4-26b-a4b-it",
+        "google:gemma-4-31b-it",
+        "openrouter:nvidia/nemotron-3.5-lightning:free",
+        "groq:openai/gpt-oss-120b",
+        "cloudflare:@cf/openai/gpt-oss-120b"
       ],
       "outline": [
-        {
-          "provider": "google",
-          "model": "gemini-flash-latest"
-        },
-        {
-          "provider": "groq",
-          "model": "openai/gpt-oss-120b"
-        },
-        {
-          "provider": "google",
-          "model": "gemini-flash-lite-latest"
-        },
-        {
-          "provider": "openrouter",
-          "model": "openai/gpt-oss-120b:free"
-        }
+        "google:gemini-3.5-flash-lite",
+        "groq:openai/gpt-oss-120b",
+        "google:gemini-3.1-flash-lite",
+        "google:gemma-4-26b-a4b-it",
+        "google:gemma-4-31b-it",
+        "openrouter:google/gemma-4-31b-it:free",
+        "cloudflare:@cf/openai/gpt-oss-120b"
       ],
       "art": [
-        {
-          "provider": "groq",
-          "model": "openai/gpt-oss-120b"
-        },
-        {
-          "provider": "google",
-          "model": "gemini-flash-lite-latest"
-        },
-        {
-          "provider": "cloudflare",
-          "model": "@cf/openai/gpt-oss-120b"
-        }
+        "google:gemini-3.8-flash",
+        "google:gemini-3.7-flash",
+        "google:gemini-3.6-flash",
+        "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free",
+        "google:gemma-4-31b-it",
+        "google:gemma-4-26b-a4b-it",
+        "groq:openai/gpt-oss-120b",
+        "cloudflare:@cf/openai/gpt-oss-120b"
       ],
       "design": [
-        {
-          "provider": "groq",
-          "model": "moonshotai/kimi-k2-instruct-0905"
-        },
-        {
-          "provider": "google",
-          "model": "gemini-flash-latest"
-        },
-        {
-          "provider": "openrouter",
-          "model": "moonshotai/kimi-k2:free"
-        },
-        {
-          "provider": "groq",
-          "model": "openai/gpt-oss-120b"
-        },
-        {
-          "provider": "google",
-          "model": "gemini-flash-lite-latest"
-        },
-        {
-          "provider": "cloudflare",
-          "model": "@cf/openai/gpt-oss-120b"
-        }
+        "google:gemini-3.8-flash",
+        "google:gemini-3.7-flash",
+        "google:gemini-3.6-flash",
+        "google:gemini-3.5-flash",
+        "google:gemini-3-flash-preview",
+        "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free",
+        "openrouter:thinkingmachines/inkling:free",
+        "google:gemma-4-31b-it",
+        "google:gemma-4-26b-a4b-it",
+        "openrouter:google/gemma-4-31b-it:free",
+        "groq:openai/gpt-oss-120b",
+        "groq:qwen/qwen3.8-27b",
+        "cloudflare:@cf/openai/gpt-oss-120b"
       ],
       "vision": [
-        {
-          "provider": "google",
-          "model": "gemini-flash-lite-latest"
-        },
-        {
-          "provider": "groq",
-          "model": "meta-llama/llama-4-scout-17b-16e-instruct"
-        },
-        {
-          "provider": "cloudflare",
-          "model": "@cf/meta/llama-4-scout-17b-16e-instruct"
-        },
-        {
-          "provider": "openrouter",
-          "model": "google/gemma-3-27b-it:free"
-        }
+        "google:gemini-3.6-flash",
+        "google:gemini-3.5-flash",
+        "google:gemini-3.5-flash-lite",
+        "google:gemma-4-31b-it",
+        "google:gemma-4-26b-a4b-it",
+        "openrouter:nvidia/nemotron-3.5-super-vl:free",
+        "openrouter:thinkingmachines/inkling:free",
+        "groq:qwen/qwen3.8-27b",
+        "cloudflare:@cf/meta/llama-4-scout-17b-16e-instruct"
       ]
+    },
+    "models": {
+      "_comment": "Published free-tier limits per model (checked 30 Oct 2026). Groq: console.groq.com/docs/rate-limits (Free plan table). Gemini: ai.google.dev pricing lists these models as 'Free of charge'; per-model daily limits are shown only in AI Studio (aistudio.google.com/rate-limit) \u2014 flash models measured at ~20 requests/day/model and flash-lite at ~500/day on a free key in Oct 2026; edit if your key shows more. OpenRouter limits are account-wide (see providers.openrouter). The scheduler also learns from 429 replies, so wrong numbers only cost a retry. Gemma 4 on the Gemini API free tier: 16,000 input tokens/minute per model (from Google's 429 reply); gemma-4-31b often answered HTTP 500 in testing, gemma-4-26b-a4b was reliable and fast.",
+      "google:gemini-3.8-flash": {
+        "rpm": 10,
+        "rpd": 20,
+        "ctx": 1000000,
+        "maxOutput": 16000,
+        "vision": true,
+        "reasoning": true
+      },
+      "google:gemini-3.7-flash": {
+        "rpm": 10,
+        "rpd": 20,
+        "ctx": 1000000,
+        "maxOutput": 16000,
+        "vision": true,
+        "reasoning": true
+      },
+      "google:gemini-3.6-flash": {
+        "rpm": 10,
+        "rpd": 20,
+        "ctx": 1000000,
+        "maxOutput": 16000,
+        "vision": true,
+        "reasoning": true
+      },
+      "google:gemini-3.5-flash": {
+        "rpm": 10,
+        "rpd": 20,
+        "ctx": 1000000,
+        "maxOutput": 16000,
+        "vision": true,
+        "reasoning": true
+      },
+      "google:gemini-3-flash-preview": {
+        "rpm": 10,
+        "rpd": 20,
+        "ctx": 1000000,
+        "maxOutput": 16000,
+        "vision": true,
+        "reasoning": true
+      },
+      "google:gemini-3.5-flash-lite": {
+        "rpm": 15,
+        "rpd": 500,
+        "ctx": 1000000,
+        "maxOutput": 16000,
+        "vision": true,
+        "reasoning": true
+      },
+      "google:gemini-3.1-flash-lite": {
+        "rpm": 15,
+        "rpd": 500,
+        "ctx": 1000000,
+        "maxOutput": 16000,
+        "vision": true,
+        "reasoning": true
+      },
+      "google:gemini-flash-lite-latest": {
+        "rpm": 15,
+        "rpd": 500,
+        "ctx": 1000000,
+        "maxOutput": 16000,
+        "vision": true,
+        "reasoning": true
+      },
+      "google:gemini-flash-latest": {
+        "rpm": 10,
+        "rpd": 20,
+        "ctx": 1000000,
+        "maxOutput": 16000,
+        "vision": true,
+        "reasoning": true
+      },
+      "google:gemma-4-31b-it": {
+        "rpm": 30,
+        "rpd": 14400,
+        "tpm": 16000,
+        "ctx": 256000,
+        "maxOutput": 8192,
+        "vision": true,
+        "noJsonMode": true,
+        "reasoningEffort": "minimal"
+      },
+      "google:gemma-4-26b-a4b-it": {
+        "rpm": 30,
+        "rpd": 14400,
+        "tpm": 16000,
+        "ctx": 256000,
+        "maxOutput": 8192,
+        "vision": true,
+        "noJsonMode": true,
+        "reasoningEffort": "minimal"
+      },
+      "groq:openai/gpt-oss-120b": {
+        "rpm": 30,
+        "rpd": 1000,
+        "tpm": 8000,
+        "tpd": 200000,
+        "ctx": 131072,
+        "maxOutput": 4000,
+        "reasoning": true
+      },
+      "groq:openai/gpt-oss-20b": {
+        "rpm": 30,
+        "rpd": 1000,
+        "tpm": 8000,
+        "tpd": 200000,
+        "ctx": 131072,
+        "maxOutput": 4000,
+        "reasoning": true
+      },
+      "groq:qwen/qwen3.8-27b": {
+        "rpm": 30,
+        "rpd": 1000,
+        "tpm": 8000,
+        "tpd": 200000,
+        "ctx": 131072,
+        "maxOutput": 4000,
+        "vision": true
+      },
+      "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free": {
+        "ctx": 1000000,
+        "maxOutput": 16000
+      },
+      "openrouter:thinkingmachines/inkling:free": {
+        "ctx": 1000000,
+        "maxOutput": 16000,
+        "vision": true
+      },
+      "openrouter:thinkingmachines/inkling-small:free": {
+        "ctx": 1000000,
+        "maxOutput": 16000,
+        "vision": true
+      },
+      "openrouter:nvidia/nemotron-3.5-super-vl:free": {
+        "ctx": 1000000,
+        "maxOutput": 8000,
+        "vision": true
+      },
+      "openrouter:nvidia/nemotron-3.5-lightning:free": {
+        "ctx": 1000000,
+        "maxOutput": 8000
+      },
+      "openrouter:google/gemma-4-31b-it:free": {
+        "ctx": 262144,
+        "maxOutput": 8192,
+        "vision": true,
+        "noJsonMode": true
+      },
+      "openrouter:google/gemma-4-26b-a4b-it:free": {
+        "ctx": 262144,
+        "maxOutput": 8192,
+        "vision": true,
+        "noJsonMode": true
+      },
+      "cloudflare:@cf/openai/gpt-oss-120b": {
+        "rpm": 300,
+        "ctx": 128000,
+        "maxOutput": 8000,
+        "reasoning": true
+      },
+      "cloudflare:@cf/openai/gpt-oss-20b": {
+        "rpm": 300,
+        "ctx": 128000,
+        "maxOutput": 8000,
+        "reasoning": true
+      },
+      "cloudflare:@cf/meta/llama-4-scout-17b-16e-instruct": {
+        "rpm": 300,
+        "ctx": 131000,
+        "maxOutput": 4000,
+        "vision": true
+      }
     },
     "imageGeneration": {
       "provider": "cloudflare",
@@ -303,7 +441,6 @@
         "@cf/black-forest-labs/flux-1-schnell",
         "@cf/bytedance/stable-diffusion-xl-lightning"
       ]
-    },
-    "_designNote": "Design quality depends mostly on the design model. In tests, a Kimi-class model produced designer-quality slides; gpt-oss-120b produced usable but plainer slides with more layout bugs. Keep the strongest model you have free access to first in 'design'."
+    }
   }
 }

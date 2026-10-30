@@ -14,9 +14,13 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { generateDeckV3 } from "@/engine-v3/pipeline";
-import { deckDir, loadDeck } from "@/engine-v3/store";
+import { llmContext, type CallStat } from "@/engine-v3/llm";
+import { deckDir, loadDeck, saveDeck } from "@/engine-v3/store";
 import { exportPdf } from "@/engine-v3/export/pdf";
 import { exportPptx } from "@/engine-v3/export/pptx";
+import { exportNotesPdf } from "@/engine-v3/export/notes";
+import { editSlide } from "@/engine-v3/edit";
+import { accounts } from "../accounts/store";
 import { renderPngs } from "@/engine-v3/export/png";
 import sharp from "sharp";
 import type { V3Request } from "@/engine-v3/types";
@@ -25,7 +29,7 @@ import type { JobRecord, JobStage, JobView } from "./types";
 
 const MAX_CONCURRENT = Math.max(1, Number(process.env.MAX_CONCURRENT_JOBS || 2));
 const MAX_QUEUED_PER_OWNER = Math.max(1, Number(process.env.MAX_QUEUED_PER_OWNER || 3));
-const MAX_ATTEMPTS = 2;
+const MAX_ATTEMPTS = 3;
 const DEFAULT_DECK_SECONDS = 300;
 
 type Listener = (v: JobView) => void;
@@ -139,8 +143,9 @@ function remainingSeconds(j: JobRecord): number {
 }
 
 export function viewOf(j: JobRecord): JobView {
-  const { ownerKey: _o, userId: _u, request, ...rest } = j;
+  const { ownerKey: _o, userId: _u, request, routes: _r, ...rest } = j;
   const v: JobView = { ...rest, topic: request.topic, slideCount: request.slideCount };
+  if (v.progress?.notice && Date.now() - (v.progress.noticeAt || 0) > 90_000) v.progress = { ...v.progress, notice: undefined };
   if (j.startedAt) v.elapsedSeconds = Math.round(((j.finishedAt ? Date.parse(j.finishedAt) : Date.now()) - Date.parse(j.startedAt)) / 1000);
   if (j.status === "running") v.etaSeconds = remainingSeconds(j);
   if (j.status === "queued") {
@@ -199,7 +204,19 @@ async function run(job: JobRecord) {
   await persist(job, true);
   notify(job);
   try {
-    const deck = await generateDeckV3(job.request, {
+    const stats: CallStat[] = [];
+    const onWait = (msg: string) => {
+      job.progress.notice = msg;
+      job.progress.noticeAt = Date.now();
+      persist(job);
+      notify(job);
+    };
+    if (job.edit) {
+      await runEdit(job, stats, onWait);
+      return;
+    }
+    const deck = await llmContext.run({ onWait, stats, routes: job.routes as any }, () => generateDeckV3(job.request, {
+      visionMode: job.visionMode,
       onProgress: (p) => {
         const stage = stageOf(p.step);
         const pr = job.progress;
@@ -219,9 +236,13 @@ async function run(job: JobRecord) {
         job.deckId = id;
         persist(job, true);
       },
-    });
+    }));
     job.deckId = deck.id;
     job.title = deck.brief.title;
+    if (job.kind !== "benchmark") {
+      deck.ownerKey = job.ownerKey;
+      saveDeck(deck);
+    }
 
     // Export step: build the files once, store them, make the deck durable.
     job.progress.stage = "export";
@@ -253,13 +274,37 @@ async function run(job: JobRecord) {
   }
 }
 
+async function runEdit(job: JobRecord, stats: CallStat[], onWait: (m: string) => void) {
+  const e = job.edit!;
+  await ensureDeckLocal(e.deckId);
+  const deck = loadDeck(e.deckId);
+  if (!deck) throw new Error("deck missing");
+  job.deckId = deck.id;
+  job.title = deck.brief.title;
+  const emit = (step: string, percent: number, msg: string) => {
+    job.progress = { ...job.progress, stage: "design", step, percent, log: [...job.progress.log, { t: new Date().toISOString(), agent: "Edit", msg }].slice(-40) };
+    persist(job);
+    notify(job);
+  };
+  await llmContext.run({ onWait, stats }, () => editSlide(deck, e.n, e.instruction, emit));
+  emit("Rebuilding PDF and PPTX", 90, "exporting");
+  await buildExports(deck.id);
+  await storage().persistDeck(deck.id, deckDir(deck.id));
+  await accounts().addEdit(deck.id); // counted only when the edit succeeded
+  job.status = "done";
+  job.finishedAt = new Date().toISOString();
+  job.progress = { ...job.progress, stage: "done", step: "Slide updated", percent: 100 };
+}
+
 function friendlyError(e: any): string {
   const m = String(e?.message || e);
-  if (/no (llm )?provider|no routes|api key/i.test(m)) return "The AI service is not configured on this server yet. Please try again later.";
+  if (/no configured provider|no (llm )?provider|no routes|api key/i.test(m)) return "The AI service is not configured on this server yet. Please try again later.";
+  if (/No AI capacity/i.test(m)) return "The free AI models are very busy right now. Please try again in a little while — your other decks are safe.";
   return "Something went wrong while making this deck. Please try again — it usually works on the next attempt.";
 }
 
-export function exportPath(deckId: string, format: "pdf" | "pptx") {
+export function exportPath(deckId: string, format: "pdf" | "pptx" | "notes") {
+  if (format === "notes") return path.join(deckDir(deckId), "exports", "notes.pdf");
   return path.join(deckDir(deckId), "exports", `deck.${format}`);
 }
 
@@ -271,6 +316,7 @@ export async function buildExports(deckId: string) {
   fs.writeFileSync(exportPath(deckId, "pdf"), pdf);
   fs.writeFileSync(exportPath(deckId, "pptx"), pptx);
   await buildPreviews(deckId);
+  fs.writeFileSync(exportPath(deckId, "notes"), await exportNotesPdf(deck)); // uses the previews as thumbnails
 }
 
 /** Slide preview images (what the website shows; light JPEGs, exactly as rendered). */
@@ -312,7 +358,7 @@ function ready(): Promise<void> {
           if (S.jobs.has(j.id)) continue;
           if (j.attempt >= MAX_ATTEMPTS) {
             j.status = "failed";
-            j.error = "The server restarted twice while making this deck. Please try again.";
+            j.error = "The server restarted several times while making this deck. Please try again.";
             j.finishedAt = new Date().toISOString();
             await st.saveJob(j);
             continue;
@@ -336,10 +382,10 @@ export function bootJobs() {
 }
 
 // ── public API ────────────────────────────────────────────────────────────────
-export async function createJob(request: V3Request, ownerKey: string, userId?: string): Promise<JobView> {
+export async function createJob(request: V3Request, ownerKey: string, userId?: string, extra: Partial<Pick<JobRecord, "routes" | "visionMode" | "kind" | "edit">> = {}): Promise<JobView> {
   await ready();
   const mine = [...S.jobs.values()].filter((j) => j.ownerKey === ownerKey).length;
-  if (mine >= MAX_QUEUED_PER_OWNER) throw new QueueFullError(`You already have ${mine} decks in progress. Please wait for one to finish.`);
+  if (mine >= MAX_QUEUED_PER_OWNER && extra.kind !== "benchmark" && extra.kind !== "edit") throw new QueueFullError(`You already have ${mine} decks in progress. Please wait for one to finish.`);
   const job: JobRecord = {
     id: newJobId(),
     ownerKey,
@@ -349,6 +395,7 @@ export async function createJob(request: V3Request, ownerKey: string, userId?: s
     progress: { stage: "queued", step: "Waiting in line", percent: 0, log: [] },
     attempt: 0,
     createdAt: new Date().toISOString(),
+    ...extra,
   };
   S.jobs.set(job.id, job);
   await persist(job, true);
@@ -370,6 +417,12 @@ export async function getJobViews(ids: string[]): Promise<JobView[]> {
   const rest = ids.filter((id) => !S.jobs.has(id));
   const stored = rest.length ? await storage().getJobs(rest) : [];
   return [...live, ...stored].map(viewOf).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function jobsOfOwner(ownerKey: string, limit = 30): Promise<JobView[]> {
+  await ready();
+  const stored = await storage().jobsByOwner(ownerKey, limit);
+  return stored.map((j) => viewOf(S.jobs.get(j.id) || j));
 }
 
 export async function queueStats() {

@@ -1,6 +1,13 @@
 /** Engine v3 — Research agent: gathers real sources and extracts cited facts (no invented facts). */
 import { chatJson } from "../llm";
-import { wikipedia, openalex, crossref, semanticScholar } from "../research/sources";
+import { wikipedia as wikipediaRaw, openalex as openalexRaw, crossref as crossrefRaw, semanticScholar as semanticScholarRaw } from "../research/sources";
+import { cached, cacheGet, cacheSet, normTopic } from "../research/cache";
+
+// identical source queries are served from the 7-day research cache (no repeated API calls)
+const wikipedia = (q: string, n = 2) => cached("wikipedia", `${q}|${n}`, () => wikipediaRaw(q, n));
+const openalex = (q: string, n = 2) => cached("openalex", `${q}|${n}`, () => openalexRaw(q, n));
+const crossref = (q: string, n = 2) => cached("crossref", `${q}|${n}`, () => crossrefRaw(q, n));
+const semanticScholar = (q: string, n = 2) => cached("s2", `${q}|${n}`, () => semanticScholarRaw(q, n));
 import type { Brief, ResearchPack, Source } from "../types";
 
 const SYSTEM = `You are a careful academic research assistant.
@@ -14,6 +21,19 @@ Strict rules:
 Reply with ONLY JSON: {"facts":[{"id":"F1","text":"","sources":["S1"],"kind":"definition|principle|process|component|application|advantage|limitation|number|history|example"}],"keyTerms":[{"term":"","meaning":""}]}`;
 
 export async function runResearch(brief: Brief, log: (m: string) => void, topic?: string): Promise<ResearchPack> {
+  // Same topic, level and sections researched recently → reuse the cited fact pack (no duplicate research).
+  const packKey = [normTopic(topic || brief.title), normTopic(brief.level), brief.requiredSections.map(normTopic).join(",")].join("|");
+  const hit = cacheGet<ResearchPack>("pack", packKey);
+  if (hit && hit.facts?.length >= 12) {
+    log(`reusing research for this topic from the cache: ${hit.facts.length} facts, ${hit.sources.length} sources`);
+    return hit;
+  }
+  const pack = await researchFresh(brief, log, topic);
+  if (pack.facts.length >= 12) cacheSet("pack", packKey, pack);
+  return pack;
+}
+
+async function researchFresh(brief: Brief, log: (m: string) => void, topic?: string): Promise<ResearchPack> {
   const queries = brief.researchQueries.slice(0, 4);
   // relevance is judged on the specific topic words, not the broad subject ("Chemistry" would match "Chemistry (band)")
   const STOP = new Set(["introduction", "system", "systems", "using", "based", "study", "management", "analysis", "overview", "presentation", "project", "with", "from", "into", "their", "about", "and", "the", "for"]);
@@ -60,10 +80,10 @@ export async function runResearch(brief: Brief, log: (m: string) => void, topic?
     return { sources: [], facts: [], keyTerms: [] };
   }
 
-  // Keep the prompt within ~22k tokens.
-  let budget = 60000;
+  // Keep the prompt within ~13k tokens so it also fits free models with a 15k tokens/minute limit.
+  let budget = 42000;
   const blocks = sources.map((s) => {
-    const take = Math.min(s.text.length, s.kind === "wikipedia" ? 6000 : 2200, Math.max(800, budget));
+    const take = Math.min(s.text.length, s.kind === "wikipedia" ? 5000 : 2000, Math.max(800, budget));
     budget -= take;
     return `[${s.id}] ${s.title} (${s.kind}${s.year ? `, ${s.year}` : ""})\n${s.text.slice(0, take)}`;
   });
@@ -74,7 +94,7 @@ export async function runResearch(brief: Brief, log: (m: string) => void, topic?
       role: "user",
       content: `Topic: ${brief.title}\nLevel: ${brief.level}\nDeck type: ${brief.deckType}\nRequired sections: ${brief.requiredSections.join(" → ")}\n\nSOURCES:\n\n${blocks.join("\n\n---\n\n")}`,
     },
-  ], { temperature: 0.2, maxTokens: 6000, label: "research" });
+  ], { temperature: 0.2, maxTokens: 5000, label: "research" });
 
   const validIds = new Set(sources.map((s) => s.id));
   const facts = (data.facts || [])

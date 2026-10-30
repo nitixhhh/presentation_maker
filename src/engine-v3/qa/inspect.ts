@@ -74,6 +74,12 @@ export async function inspectSlide(deck: Pick<Deck, "assets" | "design">, n: num
       const inv = inventedNumbers(m.texts, allowedText, n);
       if (inv.length) issues.push({ type: "invented-number", severity: "high", detail: `These numbers are not in the content you were given and look invented: ${inv.slice(0, 6).join(", ")}. Remove them (never invent data, chart values, costs or dates).` });
     }
+    // placeholder contact details (emails, web addresses, phone numbers) that nobody gave the designer
+    if (role !== "references") {
+      const all = m.texts.map((t: any) => t.lines.map((l: any[]) => l.map((r) => r.t).join("")).join(" ")).join(" | ");
+      const found = [...(all.match(/[\w.+-]+@[\w-]+\.[\w.]+/g) || []), ...(all.match(/\b(?:https?:\/\/|www\.)\S+/gi) || []), ...(all.match(/\+?\d[\d\s-]{8,}\d/g) || [])].filter((x) => !allowedText.includes(x));
+      if (found.length) issues.push({ type: "placeholder-contact", severity: "high", detail: `Remove these contact details — nobody gave them, they look like placeholders: ${found.slice(0, 3).join(", ")}. Never invent emails, phone numbers, websites or names.` });
+    }
     if (role === "references") issues = issues.filter((i) => !["tiny-text", "small-body", "too-much-text", "sparse"].includes(i.type));
     const nativeTexts = m.texts.filter((t) => t.native && t.w > 4 && t.h > 4);
     // decorative numerals / watermarks (very short or faded text) are not reading text

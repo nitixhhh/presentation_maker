@@ -101,6 +101,8 @@ export default function ProgressView({ job, link, onRetry, onHome }: { job: JobV
         })}
       </ol>
 
+      {job.progress.notice && <p className="text-center text-[13px] text-[var(--muted)]">{job.progress.notice}</p>}
+
       <div className="rounded-2xl bg-[var(--accent-soft)] p-4">
         <p className="text-[15px] font-medium text-[var(--ink)]">You can close the app — your deck will be here.</p>
         <p className="mt-0.5 text-[13px] text-[var(--muted)]">It keeps being made on our server even if your phone locks or the internet drops. Open this site again and it appears under My decks.</p>

@@ -1,21 +1,30 @@
 import fs from "fs";
 import { ensureDeckLocal, previewPath, buildPreviews } from "@/server/jobs/manager";
+import { tokenScope } from "@/server/deckAuth";
+import { loadDeck } from "@/engine-v3/store";
+import { watermarked } from "@/server/watermark";
+import { paymentsEnabled } from "@/server/payments";
 
-
-/** Slide preview as a JPEG (fast on phones; exactly what Chromium rendered). */
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string; n: string }> }) {
+/** Slide preview JPEG. Signed link required; watermarked until the deck is unlocked. Gallery samples are public. */
+export async function GET(req: Request, { params }: { params: Promise<{ id: string; n: string }> }) {
   const { id, n } = await params;
   const num = Number(n);
   if (!/^[a-z0-9-]+$/i.test(id) || !Number.isInteger(num) || num < 1 || num > 60) return new Response("bad request", { status: 400 });
   try {
     if (!(await ensureDeckLocal(id))) return new Response("not found", { status: 404 });
+    const deck = loadDeck(id);
+    if (!deck) return new Response("not found", { status: 404 });
+    const scope = deck.public ? "full" : tokenScope(req, id) || (!deck.ownerKey ? "view" : null);
+    if (!scope) return new Response("link expired — reopen the deck", { status: 403 });
     let p = previewPath(id, num);
     if (!fs.existsSync(p)) {
       await buildPreviews(id); // decks made before previews existed
       p = previewPath(id, num);
     }
     if (!fs.existsSync(p)) return new Response("not found", { status: 404 });
-    return new Response(new Uint8Array(fs.readFileSync(p)), { headers: { "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=3600" } });
+    const clean = scope === "full" || !paymentsEnabled();
+    const buf = clean ? fs.readFileSync(p) : await watermarked(p);
+    return new Response(new Uint8Array(buf), { headers: { "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=3600" } });
   } catch {
     return new Response("bad request", { status: 400 });
   }

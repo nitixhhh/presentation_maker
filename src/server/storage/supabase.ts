@@ -91,6 +91,12 @@ export class SupabaseStorage implements StorageAdapter {
     return (data || []).map(fromRow);
   }
 
+  async jobsByOwner(ownerKey: string, limit: number) {
+    const { data, error } = await this.db.from("jobs").select("*").eq("owner_key", ownerKey).order("created_at", { ascending: false }).limit(limit);
+    if (error) throw new Error(`supabase jobsByOwner: ${error.message}`);
+    return (data || []).map(fromRow);
+  }
+
   async recentFinished(limit: number) {
     const { data, error } = await this.db
       .from("jobs")

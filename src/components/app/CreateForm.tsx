@@ -1,6 +1,9 @@
 "use client";
 import { useState } from "react";
 import { ChevronDown, ArrowRight, Loader2 } from "lucide-react";
+import Select from "@/components/ui/Select";
+import { useRef } from "react";
+import { clientId } from "@/lib/client/store";
 
 export interface CreateRequest {
   topic: string;
@@ -9,6 +12,7 @@ export interface CreateRequest {
   language: "English" | "Hindi" | "Hinglish";
   purpose: string;
   formatNotes: string;
+  logoId?: string;
   presenter: { names: string; rollNo: string; department: string; institute: string; guide: string; course: string };
 }
 
@@ -58,28 +62,17 @@ export default function CreateForm({ onSubmit, busy, error }: { onSubmit: (r: Cr
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label htmlFor="slides" className={label}>
-            Slides
-          </label>
-          <select id="slides" value={r.slideCount} onChange={(e) => set("slideCount", Number(e.target.value))} className={field}>
-            {[6, 8, 10, 12, 15, 18, 20].map((n) => (
-              <option key={n} value={n}>
-                {n} slides
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label htmlFor="lang" className={label}>
-            Language
-          </label>
-          <select id="lang" value={r.language} onChange={(e) => set("language", e.target.value as CreateRequest["language"])} className={field}>
-            <option>English</option>
-            <option>Hindi</option>
-            <option>Hinglish</option>
-          </select>
-        </div>
+        <Select label="Slides" value={r.slideCount} onChange={(v) => set("slideCount", v)} options={[6, 8, 10, 12, 15, 18, 20].map((n) => ({ value: n, label: `${n} slides` }))} />
+        <Select
+          label="Language"
+          value={r.language}
+          onChange={(v) => set("language", v)}
+          options={[
+            { value: "English", label: "English" },
+            { value: "Hindi", label: "Hindi", hint: "हिन्दी" },
+            { value: "Hinglish", label: "Hinglish" },
+          ]}
+        />
       </div>
 
       <div>
@@ -125,6 +118,7 @@ export default function CreateForm({ onSubmit, busy, error }: { onSubmit: (r: Cr
             <input value={r.presenter.guide} onChange={(e) => setP("guide", e.target.value)} placeholder="Guide / supervisor" className={field} />
             <input value={r.presenter.department} onChange={(e) => setP("department", e.target.value)} placeholder="Department" className={field} />
             <input value={r.presenter.institute} onChange={(e) => setP("institute", e.target.value)} placeholder="College / university" className={field} />
+            <LogoPicker value={r.logoId} onChange={(id) => set("logoId", id)} />
             <textarea
               rows={3}
               value={r.formatNotes}
@@ -150,5 +144,58 @@ export default function CreateForm({ onSubmit, busy, error }: { onSubmit: (r: Cr
       </button>
       <p className="text-center text-[13px] text-[var(--muted)]">Takes a few minutes. You can close the app while it works.</p>
     </form>
+  );
+}
+
+function LogoPicker({ value, onChange }: { value?: string; onChange: (id: string | undefined) => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [state, setState] = useState<"idle" | "uploading" | "error">("idle");
+  const [msg, setMsg] = useState("");
+  const pick = async (f: File) => {
+    setState("uploading");
+    setPreview(URL.createObjectURL(f));
+    const fd = new FormData();
+    fd.append("file", f);
+    const r = await fetch("/api/v3/uploads", { method: "POST", body: fd, headers: { "x-client-id": clientId() } }).catch(() => null);
+    const d = r ? await r.json().catch(() => ({})) : {};
+    if (!r?.ok || !d.id) {
+      setState("error");
+      setMsg(d.error || "Upload failed. Try again.");
+      setPreview(null);
+      onChange(undefined);
+      return;
+    }
+    setState("idle");
+    onChange(d.id);
+  };
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-dashed border-[var(--line)] bg-white px-3.5 py-3">
+      {preview && value ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={preview} alt="Logo" className="h-10 w-10 rounded object-contain" />
+      ) : null}
+      <div className="min-w-0 flex-1 text-[14px]">
+        <p className="font-medium text-[var(--ink)]">{value ? "Logo added" : "College logo (optional)"}</p>
+        <p className="text-[12px] text-[var(--muted)]">{state === "uploading" ? "Uploading" : state === "error" ? msg : "The designer places it on the title slide"}</p>
+      </div>
+      {value ? (
+        <button
+          type="button"
+          onClick={() => {
+            onChange(undefined);
+            setPreview(null);
+          }}
+          className="text-[14px] font-medium text-[var(--muted)]"
+        >
+          Remove
+        </button>
+      ) : (
+        <button type="button" onClick={() => input.current?.click()} className="rounded-lg bg-[var(--chip)] px-3 py-2 text-[14px] font-medium text-[var(--ink)]">
+          Choose
+        </button>
+      )}
+      <input ref={input} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => e.target.files?.[0] && pick(e.target.files[0])} />
+    </div>
   );
 }

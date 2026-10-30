@@ -10,6 +10,7 @@ import fs from "fs";
 import path from "path";
 import sharp from "sharp";
 import modelsConfig from "@/config/models.json";
+import { AI_IMAGE_SAFETY, type ImagePlan } from "../agents/imageDirector";
 import { chatJson } from "../llm";
 import type { Asset, OutlineSlide } from "../types";
 
@@ -155,7 +156,7 @@ async function store(buf: Buffer, dir: string, id: string): Promise<{ file: stri
 }
 
 /** Cloudflare Workers AI text-to-image (Flux schnell → SDXL lightning). */
-export async function generateImage(prompt: string): Promise<Buffer | null> {
+export async function generateImage(prompt: string, style?: string): Promise<Buffer | null> {
   const token = process.env.CLOUDFLARE_API_TOKEN;
   const acc = process.env.CLOUDFLARE_ACCOUNT_ID;
   if (!token || !acc) return null;
@@ -169,7 +170,7 @@ export async function generateImage(prompt: string): Promise<Buffer | null> {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: `${prompt}. Professional editorial photograph / high-end 3D render, natural light, sharp focus, rich detail, no text, no letters, no watermark.`,
+          prompt: `${prompt}. ${style || "Professional editorial photograph, natural light, sharp focus, rich detail"}. ${AI_IMAGE_SAFETY}.`,
           steps: 8,
         }),
         signal: ctrl.signal,
@@ -197,6 +198,7 @@ interface Want {
   query: string;
   prompt?: string;
   allowGenerated: boolean;
+  source: "real" | "ai";
 }
 
 /** Build a labelled contact sheet of candidates for a vision model. */
@@ -232,24 +234,40 @@ function esc(s: string) {
 export async function sourceImages(
   slides: OutlineSlide[],
   dir: string,
-  opts: { mode: "real-first" | "ai-allowed" | "none"; topic: string },
+  opts: { mode: "real-first" | "ai-allowed" | "none"; topic: string; plan?: ImagePlan },
   log: (m: string) => void
 ): Promise<Asset[]> {
   if (opts.mode === "none") return [];
-  const wants: Want[] = slides
-    .filter((s) => s.visual.kind === "photo" || s.visual.kind === "generated")
-    .map((s) => ({
-      slide: s,
-      query: (s.visual.query || s.visual.prompt || s.title).slice(0, 80),
-      prompt: s.visual.prompt,
-      allowGenerated: opts.mode === "ai-allowed" || s.visual.kind === "generated",
-    }));
+  const byN = new Map(slides.map((s) => [s.n, s]));
+  // The image director (AI) decided real photo vs AI image per slide; without a plan, use the story agent's suggestion.
+  const wants: Want[] = opts.plan
+    ? opts.plan.items
+        .filter((it) => it.source !== "none" && byN.has(it.n))
+        .map((it) => ({
+          slide: byN.get(it.n)!,
+          source: it.source as "real" | "ai",
+          query: (it.query || byN.get(it.n)!.title).slice(0, 80),
+          prompt: it.subject,
+          // a real-photo slide may fall back to an AI image only when authenticity is not required
+          allowGenerated: it.source === "ai" || !it.authentic,
+        }))
+    : slides
+        .filter((s) => s.visual.kind === "photo" || s.visual.kind === "generated")
+        .map((s) => ({
+          slide: s,
+          source: s.visual.kind === "generated" ? ("ai" as const) : ("real" as const),
+          query: (s.visual.query || s.visual.prompt || s.title).slice(0, 80),
+          prompt: s.visual.prompt,
+          allowGenerated: opts.mode === "ai-allowed" || s.visual.kind === "generated",
+        }));
   if (!wants.length) return [];
+  const style = opts.plan?.style || "";
+  if (style) log(`AI image style for this deck: ${style}`);
 
   // 1. search candidates in parallel
   const searched = await Promise.all(
     wants.map(async (w) => {
-      if (w.slide.visual.kind === "generated" && opts.mode === "ai-allowed") return { w, cands: [] as Candidate[] };
+      if (w.source === "ai") return { w, cands: [] as Candidate[] };
       const [c, o] = await Promise.all([searchCommons(w.query, 5), searchOpenverse(w.query, 3)]);
       let cands = [...c, ...o];
       if (cands.length < 2) {
@@ -323,10 +341,10 @@ export async function sourceImages(
       }
       if (g.w.allowGenerated) {
         const prompt = g.w.prompt || `${g.w.query}, related to ${opts.topic}`;
-        const buf = await generateImage(prompt);
+        const buf = await generateImage(prompt, style);
         const st = buf ? await store(buf, dir, id) : null;
         if (st) {
-          assets.push({ id, ...st, mime: "image/jpeg", origin: "generated", title: prompt.slice(0, 80), description: `AI-generated illustration: ${prompt}`, credit: "AI-generated image (Flux, Cloudflare Workers AI)", forSlides: [n] });
+          assets.push({ id, ...st, mime: "image/jpeg", origin: "generated", title: prompt.slice(0, 80), description: `AI-generated illustration (deck style): ${prompt}`, credit: "AI-generated image (Flux, Cloudflare Workers AI)", forSlides: [n] });
           return;
         }
       }
@@ -334,6 +352,6 @@ export async function sourceImages(
     })
   );
   assets.sort((a, b) => a.forSlides[0] - b.forSlides[0]);
-  log(`images ready: ${assets.length} (${k} real photos)`);
+  log(`images ready: ${assets.length} (${k} real photos, ${assets.length - k} AI images)`);
   return assets;
 }

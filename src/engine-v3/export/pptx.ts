@@ -85,6 +85,10 @@ async function captureLayers(deck: Deck, s: Deck["slides"][number], renderDir: s
           const outW = Math.round(im.w * 2), outH = Math.round(im.h * 2);
           buf = await roundedPng(buf, outW, outH, Math.min(im.radius * 2, Math.min(outW, outH) / 2));
           mime = "image/png";
+        } else if (file.toLowerCase().endsWith(".png")) {
+          // logos and other transparent images stay PNG (JPEG would turn transparency black)
+          buf = await sharp(buf).resize({ width: Math.min(width, Math.round(im.w * 2)), withoutEnlargement: true }).png().toBuffer();
+          mime = "image/png";
         } else {
           buf = await sharp(buf).resize({ width: Math.min(width, Math.round(im.w * 2)), withoutEnlargement: true }).jpeg({ quality: 88 }).toBuffer();
         }

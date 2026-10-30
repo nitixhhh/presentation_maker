@@ -9,6 +9,9 @@ export interface JobProgress {
   step: string; // human sentence, e.g. "Designing slides"
   percent: number; // 0..100, never goes backwards
   details?: string;
+  /** temporary note such as "Waiting for free AI capacity" */
+  notice?: string;
+  noticeAt?: number;
   log: { t: string; agent: string; msg: string }[]; // last ~40 lines
 }
 
@@ -23,6 +26,12 @@ export interface JobRecord {
   deckId?: string;
   error?: string;
   attempt: number; // restarts after a server restart
+  /** internal: forced model routes (benchmark runs) */
+  routes?: Record<string, { provider: string; model: string }[]>;
+  visionMode?: "smart" | "always" | "off";
+  kind?: "user" | "benchmark" | "edit";
+  /** edit jobs: redo one slide of an existing deck */
+  edit?: { deckId: string; n: number; instruction: string };
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;

@@ -14,6 +14,8 @@ export interface PresenterInfo {
 
 export interface V3Request {
   topic: string;
+  /** uploaded institution logo (from /api/v3/uploads) — the designer AI places it */
+  logoId?: string;
   audience?: string; // e.g. "B.Sc 2nd year chemistry class"
   slideCount?: number;
   language?: DeckLanguage;
@@ -114,7 +116,7 @@ export interface Asset {
   width: number;
   height: number;
   avgColor: string;
-  origin: "wikimedia" | "openverse" | "generated" | "wikipedia";
+  origin: "wikimedia" | "openverse" | "generated" | "wikipedia" | "upload";
   title: string;
   description: string;
   credit?: string; // "Photo: Jane Doe, CC BY-SA 4.0, via Wikimedia Commons"
@@ -157,6 +159,12 @@ export interface Deck {
   slides: SlideDesign[];
   references: { n: number; sourceId: string; text: string }[];
   log: { t: string; agent: string; msg: string }[];
+  /** who made it ("u:<user id>" or "c:<browser key>") — set by the job manager */
+  ownerKey?: string;
+  /** gallery sample: anyone may see its previews */
+  public?: boolean;
+  /** every AI call made for this deck (role, provider, model, time) */
+  calls?: { role: string; provider: string; model: string; ms: number; waitedMs: number; ok: boolean; error?: string }[];
 }
 
 export interface ProgressEvent {
