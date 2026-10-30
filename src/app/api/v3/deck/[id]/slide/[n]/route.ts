@@ -1,9 +1,11 @@
 import { loadDeck } from "@/engine-v3/store";
+import { ensureDeckLocal } from "@/server/jobs/manager";
 import { slideDocument } from "@/engine-v3/render/document";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string; n: string }> }) {
   const { id, n } = await params;
   try {
+    await ensureDeckLocal(id);
     const deck = loadDeck(id);
     const s = deck?.slides.find((x) => x.n === Number(n));
     if (!deck || !s) return new Response("not found", { status: 404 });

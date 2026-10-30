@@ -1,9 +1,14 @@
 import { NextRequest } from "next/server";
-import { generateDeckV3 } from "@/engine-v3/pipeline";
+import { createJob, getJobView, subscribe, QueueFullError } from "@/server/jobs/manager";
+import { ownerKeyOf, parseV3Request } from "@/server/http";
+import { loadDeck } from "@/engine-v3/store";
 import { deckSummary } from "@/engine-v3/summary";
-import type { V3Request } from "@/engine-v3/types";
 
-/** Engine v3 — streaming generation (Server-Sent Events: progress / complete / error). */
+
+/**
+ * Legacy streaming endpoint (kept for scripts). It now starts a background job and streams its
+ * progress; closing the stream does NOT stop the deck. New clients use /api/v3/jobs.
+ */
 export async function POST(req: NextRequest) {
   let body: any;
   try {
@@ -11,44 +16,54 @@ export async function POST(req: NextRequest) {
   } catch {
     return Response.json({ error: "invalid JSON" }, { status: 400 });
   }
-  if (!body?.topic || typeof body.topic !== "string") return Response.json({ error: "Topic is required" }, { status: 400 });
-
-  const request: V3Request = {
-    topic: body.topic.slice(0, 300),
-    audience: body.audience,
-    slideCount: Math.max(4, Math.min(25, Number(body.slideCount) || 10)),
-    language: ["English", "Hindi", "Hinglish"].includes(body.language) ? body.language : "English",
-    purpose: body.purpose,
-    formatNotes: typeof body.formatNotes === "string" ? body.formatNotes.slice(0, 4000) : undefined,
-    presenter: body.presenter || undefined,
-    imageMode: body.imageSource === "none" ? "none" : body.imageSource === "ai" ? "ai-allowed" : "real-first",
-    styleHint: body.styleHint || body.visualStyle,
-  };
-
-  const encoder = new TextEncoder();
+  const parsed = parseV3Request(body);
+  if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
+  let jobId: string;
+  try {
+    jobId = (await createJob(parsed.value, ownerKeyOf(req))).id;
+  } catch (e: any) {
+    return Response.json({ error: e instanceof QueueFullError ? e.message : "could not start" }, { status: e instanceof QueueFullError ? 429 : 500 });
+  }
+  const enc = new TextEncoder();
+  let cleanup = () => {};
   const stream = new ReadableStream({
     async start(controller) {
+      let closed = false;
       const send = (event: string, data: any) => {
+        if (closed) return;
         try {
-          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+          controller.enqueue(enc.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
         } catch {
-          /* client went away */
+          finish();
         }
       };
-      const keepAlive = setInterval(() => send("ping", { t: Date.now() }), 15000);
-      try {
-        const deck = await generateDeckV3(request, { onProgress: (p) => send("progress", p) });
-        send("complete", { deck: deckSummary(deck) });
-      } catch (e: any) {
-        console.error("[api/v3/generate]", e);
-        send("error", { message: String(e?.message || e).slice(0, 800) });
-      } finally {
-        clearInterval(keepAlive);
-        controller.close();
+      const hb = setInterval(() => send("ping", { t: Date.now() }), 15000);
+      const unsub = subscribe(jobId, (v) => {
+        if (v.status === "done" && v.deckId) {
+          const deck = loadDeck(v.deckId);
+          send("complete", { jobId, deck: deck ? deckSummary(deck) : null });
+          finish();
+        } else if (v.status === "failed") {
+          send("error", { jobId, message: v.error });
+          finish();
+        } else send("progress", { jobId, step: v.progress.step, stage: v.progress.stage, percent: v.progress.percent, details: v.progress.details, queuePosition: v.queuePosition, etaSeconds: v.etaSeconds });
+      });
+      function finish() {
+        if (closed) return;
+        closed = true;
+        clearInterval(hb);
+        unsub();
+        try {
+          controller.close();
+        } catch {}
       }
+      cleanup = finish;
+      req.signal.addEventListener("abort", finish);
+      send("job", { jobId, job: await getJobView(jobId) });
+    },
+    cancel() {
+      cleanup();
     },
   });
-  return new Response(stream, {
-    headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive" },
-  });
+  return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive" } });
 }

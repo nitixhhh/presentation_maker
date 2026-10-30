@@ -16,6 +16,7 @@ export function deckSummary(deck: Deck) {
       title: titleOf(s.n),
       role: deck.outline.slides.find((o) => o.n === s.n)?.role,
       url: `/api/v3/deck/${deck.id}/slide/${s.n}`,
+      image: `/api/v3/deck/${deck.id}/preview/${s.n}`,
       notes: s.notes,
       qaScore: s.qa?.visionScore ?? null,
       revisions: s.revisions,

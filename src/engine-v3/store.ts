@@ -1,11 +1,12 @@
 /** Engine v3 — deck storage on local disk (deck.json + assets + exports). */
 import fs from "fs";
-import os from "os";
 import path from "path";
 import crypto from "crypto";
 import type { Deck } from "./types";
 
-export const DECKS_ROOT = process.env.DECKCRAFT_V3_DIR || path.join(os.tmpdir(), "deckcraft-v3");
+import { DATA_ROOT } from "@/server/paths";
+
+export const DECKS_ROOT = process.env.DECKCRAFT_V3_DIR || path.join(DATA_ROOT, "decks");
 
 export function newDeckId(): string {
   return `${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${crypto.randomBytes(5).toString("hex")}`;

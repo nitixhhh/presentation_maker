@@ -1,54 +1,70 @@
--- Supabase / PostgreSQL Schema for AI Presentation Maker
+-- =====================================================================
+-- DeckCraft AI — Supabase schema (Engine v3)
+-- Run once: Supabase dashboard -> SQL Editor -> New query -> paste -> Run.
+-- Safe to re-run (IF NOT EXISTS / CREATE OR REPLACE everywhere).
+--
+-- The server talks to these tables with SUPABASE_SERVICE_ROLE_KEY (server env only,
+-- never in the browser). RLS is ON for every table, so the public anon key can only
+-- read what the policies below allow (a signed-in user's own rows) and can write nothing.
+-- =====================================================================
 
-CREATE TABLE IF NOT EXISTS orders (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  topic TEXT NOT NULL,
-  options JSONB NOT NULL DEFAULT '{}'::jsonb,
-  amount_inr NUMERIC(10, 2) NOT NULL DEFAULT 20.00,
-  status TEXT NOT NULL DEFAULT 'pending_payment' CHECK (
-    status IN (
-      'pending_payment',
-      'pending_review',
-      'paid',
-      'generating',
-      'completed',
-      'failed',
-      'rejected',
-      'refund_due'
-    )
-  ),
-  utr TEXT UNIQUE,
-  screenshot_url TEXT,
-  rejection_reason TEXT,
-  deck_id TEXT,
-  deck_data JSONB,
-  error_message TEXT,
-  retry_count INT NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  approved_at TIMESTAMPTZ,
-  completed_at TIMESTAMPTZ
+-- ---------------------------------------------------------------------
+-- 1. Generation jobs (one row per deck request)
+-- ---------------------------------------------------------------------
+create table if not exists public.jobs (
+  id           text primary key,                 -- random, unguessable job id
+  owner_key    text not null,                    -- anonymous browser key, or "u:<user id>"
+  user_id      uuid references auth.users(id) on delete set null,
+  status       text not null default 'queued' check (status in ('queued','running','done','failed')),
+  request      jsonb not null,                   -- topic, slide count, language, presenter details...
+  progress     jsonb not null default '{}'::jsonb,
+  title        text,
+  deck_id      text,                             -- folder name inside the "decks" bucket
+  error        text,
+  attempt      int  not null default 0,
+  created_at   timestamptz not null default now(),
+  started_at   timestamptz,
+  finished_at  timestamptz,
+  updated_at   timestamptz not null default now()
 );
+create index if not exists jobs_status_idx   on public.jobs (status, created_at);
+create index if not exists jobs_owner_idx    on public.jobs (owner_key, created_at desc);
+create index if not exists jobs_user_idx     on public.jobs (user_id, created_at desc);
+create index if not exists jobs_finished_idx on public.jobs (finished_at desc) where status = 'done';
 
--- Index for capacity check per day
-CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders (created_at);
--- Index for quick status lookups by worker
-CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status);
--- Unique index on UTR to prevent duplicate submission
-CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_utr_unique ON orders (utr) WHERE utr IS NOT NULL;
+alter table public.jobs enable row level security;
 
--- Job Queue table for background worker execution
-CREATE TABLE IF NOT EXISTS job_queue (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'processing', 'completed', 'failed')),
-  attempts INT NOT NULL DEFAULT 0,
-  max_attempts INT NOT NULL DEFAULT 3,
-  locked_by TEXT,
-  locked_at TIMESTAMPTZ,
-  last_error TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+drop policy if exists "users read own jobs" on public.jobs;
+create policy "users read own jobs" on public.jobs
+  for select to authenticated
+  using (user_id = auth.uid());
+-- no insert/update/delete policies: only the server (service role) writes.
 
-CREATE INDEX IF NOT EXISTS idx_job_queue_status ON job_queue (status);
+-- ---------------------------------------------------------------------
+-- 2. Storage bucket for deck files (deck.json, images, PDF, PPTX)
+--    PRIVATE: files are only served through the server (and, after payment,
+--    through short-lived signed URLs the server creates).
+-- ---------------------------------------------------------------------
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('decks', 'decks', false, 52428800)          -- 50 MB per file
+on conflict (id) do update set public = false;
 
+-- No storage.objects policies for anon/authenticated on this bucket = no direct access.
+-- (The service role bypasses RLS, so the server can read/write.)
+
+-- ---------------------------------------------------------------------
+-- 3. Housekeeping: keep updated_at fresh
+-- ---------------------------------------------------------------------
+create or replace function public.touch_updated_at() returns trigger
+language plpgsql as $$
+begin
+  new.updated_at = now();
+  return new;
+end $$;
+
+drop trigger if exists jobs_touch on public.jobs;
+create trigger jobs_touch before update on public.jobs
+  for each row execute function public.touch_updated_at();
+
+-- (Accounts, payments, credits and referrals tables are added below in the
+--  "Phase 4" section once that phase lands.)

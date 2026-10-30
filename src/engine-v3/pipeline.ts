@@ -23,11 +23,13 @@ export interface PipelineOptions {
   onProgress?: ProgressFn;
   maxRevisions?: number; // per slide, default 2
   vision?: boolean; // default true
+  onDeckId?: (id: string) => void; // called as soon as the deck id exists
 }
 
 export async function generateDeckV3(req: V3Request, opts: PipelineOptions = {}): Promise<Deck> {
   const t0 = Date.now();
   const id = newDeckId();
+  opts.onDeckId?.(id);
   const log: Deck["log"] = [];
   const emit = (step: string, percent: number, agent: string, action: string, details?: string) => {
     const entry = { t: new Date().toISOString(), agent, msg: action };

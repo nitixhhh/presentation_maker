@@ -1,149 +1,54 @@
 @import "tailwindcss";
 
 :root {
-  /* ── Warm Palette ── */
-  --color-bg: #FBF8F3;
-  --color-surface: #FFFFFF;
-  --color-primary: #C15B3E;
-  --color-primary-hover: #A84E34;
-  --color-text: #1F1E1D;
-  --color-text-secondary: #736F68;
-  --color-text-muted: #A8A299;
-  --color-input-bg: #FAF7F2;
-  --color-border: #E8E2D5;
-  --color-border-light: #E5DEC9;
-  --color-divider: #F0EBE0;
-  --color-badge-bg: #F2ECE1;
-  --color-success: #1B7A3E;
-  --color-error: #C53030;
-
-  --background: #FBF8F3;
-  --foreground: #1F1E1D;
+  --bg: #f6f7f9;
+  --ink: #0e1726;
+  --muted: #5b6577;
+  --faint: #9aa3b2;
+  --line: #e3e7ee;
+  --chip: #eceff4;
+  --accent: #2446c7;
+  --accent-soft: #eef2ff;
+  --accent-ring: rgba(36, 70, 199, 0.14);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans, system-ui, -apple-system, "Helvetica Neue", sans-serif);
-  --font-serif: var(--font-serif, Georgia, "Times New Roman", serif);
-  --font-mono: var(--font-mono, "JetBrains Mono", "Fira Code", monospace);
+  --font-sans: var(--font-sans, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
 }
 
-/* ── Reset ── */
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--bg);
+  color: var(--ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
-/* ── Typography ── */
-.font-serif {
-  font-family: var(--font-serif);
+button,
+a {
+  cursor: pointer;
+  -webkit-touch-callout: none;
 }
 
-.font-mono {
-  font-family: var(--font-mono);
+button:active,
+a:active {
+  opacity: 0.85;
 }
 
-/* ── Selection ── */
+select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%235b6577' stroke-width='2' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px !important;
+}
+
 ::selection {
-  background: #C15B3E;
+  background: var(--accent);
   color: white;
-}
-
-/* ── Animations ── */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(16px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes gentlePulse {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.6; }
-}
-
-@keyframes slideIn {
-  from { opacity: 0; transform: translateX(12px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-
-.animate-fadeIn {
-  animation: fadeIn 0.5s ease-out both;
-}
-
-.animate-slideUp {
-  animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-.animate-slideIn {
-  animation: slideIn 0.4s ease-out both;
-}
-
-/* ── Scrollbar ── */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #D5CFC4;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #B8B2A6;
-}
-
-/* ── Range Slider ── */
-input[type="range"] {
-  -webkit-appearance: none;
-  appearance: none;
-  height: 6px;
-  border-radius: 3px;
-  background: #E8E2D5;
-  outline: none;
-}
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #C15B3E;
-  cursor: pointer;
-  border: 2px solid white;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.15);
-  transition: transform 0.15s ease;
-}
-input[type="range"]::-webkit-slider-thumb:hover {
-  transform: scale(1.15);
-}
-input[type="range"]::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #C15B3E;
-  cursor: pointer;
-  border: 2px solid white;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.15);
-}
-
-/* ── Smooth transitions for all interactive elements ── */
-button, a, input, select, textarea {
-  transition: all 0.2s ease-out;
-}
-
-/* ── Focus ring ── */
-input:focus, select:focus, textarea:focus {
-  outline: none;
-  border-color: #C15B3E;
-  box-shadow: 0 0 0 3px rgba(193, 91, 62, 0.12);
 }

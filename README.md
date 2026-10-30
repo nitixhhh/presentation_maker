@@ -89,9 +89,8 @@ The generation workflow is divided among specialized sub-agents orchestrated by 
 - Live Server-Sent Events (SSE) streaming endpoint (`/api/pipeline/stream`).
 - Embedded terminal displays real-time agent execution, millisecond timestamps, active model identifiers, and progress percentages.
 
-### 6. Admin Direct Mode & Ephemeral In-Memory Storage
-- **Admin Direct Mode**: Instant generation bypassing payment gates for testing and development.
-- **Ephemeral Storage**: Supabase is turned off during testing; state resides entirely in memory with zero user data saved to disk or external databases.
+### 6. Admin panel (removed)
+- The manual admin approval panel (`/admin`, `/api/admin/*`) was removed on the engine-v3 branch. Payments will be verified automatically (see the payments section once it lands).
 
 ### 7. Multi-Format Exporters
 - **PowerPoint (PPTX)**: Native `.pptx` generation with custom layouts, colors, shapes, and speaker notes via `pptxgenjs`.
@@ -160,21 +159,30 @@ Research notes and reasoning: [`docs/ENGINE_V3_RESEARCH.md`](docs/ENGINE_V3_RESE
 
 ### API
 
-* `POST /api/v3/generate` — Server-Sent Events (`progress`, `complete`, `error`). Body: `{ topic, audience, slideCount, language, purpose?, formatNotes?, presenter?: { names, rollNo, department, institute, guide, course }, imageSource?: "stock" | "ai" | "none", styleHint? }`
-* `GET /api/v3/deck/:id` · `GET /api/v3/deck/:id/slide/:n` (HTML) · `GET /api/v3/deck/:id/asset/:file` · `GET /api/v3/deck/:id/export?format=pdf|pptx|html`
+* `POST /api/v3/jobs` — start a deck. Returns `{ job }` at once (HTTP 202); the deck is generated on the server in the background. Body: `{ topic, audience?, slideCount, language, purpose?, formatNotes?, presenter?: { names, rollNo, department, institute, guide, course }, imageMode?: "real-first" | "ai-allowed" | "none", styleHint? }` (validated and clipped server-side). Header `x-client-id` = the browser's anonymous id (used for the fair queue).
+* `GET /api/v3/jobs/:id` — job state: `status` (queued / running / done / failed), `progress { stage, step, percent }`, `queuePosition`, `etaSeconds`, `deckId` when done.
+* `GET /api/v3/jobs/:id/events` — the same as Server-Sent Events (live view only; closing it never stops the job).
+* `GET /api/v3/jobs?ids=a,b,c` — several jobs ("My decks"). Without `ids` → queue stats.
+* `GET /api/v3/deck/:id` · `/slide/:n` (HTML) · `/preview/:n` (JPEG) · `/asset/:file` · `/export?format=pdf|pptx|html`
+* `POST /api/v3/generate` — legacy SSE endpoint for scripts; now starts a job and streams its progress.
 * CLI: `npx tsx scripts/v3-generate.ts request.json out-dir` → PDF + PPTX + PNG of every slide.
 
-Decks are stored on disk in `DECKCRAFT_V3_DIR` (default: the OS temp dir `deckcraft-v3/`). v3 needs a Node server with Playwright's Chromium (`npx playwright install chromium`) — it will not run on serverless hosting.
+### Background jobs, queue and storage
+
+* **Phone-proof generation.** "Create" returns a job id immediately and the deck is made on the server whether or not the phone stays connected. The browser keeps job ids in `localStorage`; reopening the site resumes the progress screen or opens the finished deck, and "My decks" lists everything made on that phone. Live progress uses SSE and silently falls back to polling and reconnects when the network or the phone comes back — a running job never shows a "network error".
+* **Fair queue.** At most `MAX_CONCURRENT_JOBS` decks are generated at once (default 2). Others wait and see "You are number N in line" with an ETA (from the average time of recent decks). The next job is picked round-robin across users, so one person queueing several decks cannot block others; `MAX_QUEUED_PER_OWNER` (default 3) caps unfinished decks per user.
+* **Restart-safe.** On server start, jobs that were queued or running are queued again (a running one restarts; after 2 restarts it is marked failed with a clear message).
+* **Export step.** When the deck is designed, the job builds the PDF, the PPTX and light JPEG previews once, so downloads are instant.
+* **Storage.** If `NEXT_PUBLIC_SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` are set, job rows go to the Supabase `jobs` table and finished decks (deck.json, images, PDF, PPTX, previews) to the private `decks` Storage bucket, so decks survive redeploys. Run `supabase/schema.sql` once in the Supabase SQL editor. Without those variables everything is stored on the server disk under `DECKCRAFT_DATA_DIR` (default: OS temp dir `deckcraft-data/`). The service-role key is read only on the server — never put it in client code or chat.
 
 ### Test it on your phone (temporary public URL)
 
 ```bash
 npm run build && npm start            # serves on http://localhost:3000
-cloudflared tunnel --url http://localhost:3000   # no account needed → prints https://<random>.trycloudflare.com
-# (ngrok works too: ngrok http 3000 — needs a free ngrok authtoken)
+cloudflared tunnel --url http://localhost:3000   # no account needed -> prints https://<random>.trycloudflare.com
 ```
 
-Open the printed URL on your phone. A deck takes a few minutes; keep the screen on and the tab open while it generates — mobile browsers pause background tabs and the live progress stream drops (the UI now says so instead of hanging). The URL lives only as long as your computer and the tunnel are running.
+Open the printed URL on your phone. You can lock the phone or close the tab while a deck is being made; open the URL again and it continues where it is. The URL lives only as long as your computer and the tunnel are running.
 
 ### .env keys for v3
 
@@ -195,7 +203,14 @@ OPENALEX_MAILTO=you@example.com
 # ENGINE_V3_ROUTES='{"design":[{"provider":"groq","model":"openai/gpt-oss-120b"}]}'   override routes per role ("*" = all roles)
 # GROQ_BASE_URL / GOOGLE_AI_BASE_URL / OPENROUTER_BASE_URL / CLOUDFLARE_BASE_URL     override provider base URLs
 # V3_DESIGN_REASONING=medium   V3_MAX_REVISIONS=2   V3_VISION_QA=off   PPTX_FONT_MODE=web
-# DECKCRAFT_V3_DIR=./.decks
+# DECKCRAFT_DATA_DIR=./.data          where jobs + decks are stored when Supabase is not configured
+# MAX_CONCURRENT_JOBS=2               decks generated at the same time
+# MAX_QUEUED_PER_OWNER=3              unfinished decks one user may have
+
+# Supabase (optional; enables durable storage)
+# NEXT_PUBLIC_SUPABASE_URL=https://<project>.supabase.co
+# NEXT_PUBLIC_SUPABASE_ANON_KEY=...   public anon/publishable key
+# SUPABASE_SERVICE_ROLE_KEY=...       SECRET - server env only
 ```
 
 Routes per role live in `src/config/models.json → engineV3.roles` (brief, research, outline, art, design, vision). Each role tries its routes in order; 429/5xx/timeouts fail over to the next route, and each provider has its own requests-per-minute + concurrency limiter so parallel designers don't trip free-tier limits.
