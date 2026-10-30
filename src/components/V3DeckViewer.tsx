@@ -75,7 +75,8 @@ export default function V3DeckViewer({ deck, onNew }: { deck: V3DeckSummary; onN
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      // Revoking immediately cancels the download on some mobile browsers (iOS Safari) — wait a bit.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (e: any) {
       alert(`Export failed: ${e.message}`);
     } finally {
@@ -100,7 +101,7 @@ export default function V3DeckViewer({ deck, onNew }: { deck: V3DeckSummary; onN
           <button onClick={() => download("pdf")} disabled={!!busy} className={`${btn} bg-white hover:bg-[#FAF7F2] text-[#1F1E1D] border border-[#E5DEC9]`}>
             <Download className="w-3.5 h-3.5" /> {busy === "pdf" ? "Building…" : "PDF"}
           </button>
-          <button onClick={() => window.open(`/api/v3/deck/${deck.deckId}/export?format=html`, "_blank")} className={`${btn} bg-white hover:bg-[#FAF7F2] text-[#1F1E1D] border border-[#E5DEC9]`}>
+          <button onClick={() => window.open(`/api/v3/deck/${deck.deckId}/export?format=html&view=1`, "_blank")} className={`${btn} bg-white hover:bg-[#FAF7F2] text-[#1F1E1D] border border-[#E5DEC9]`}>
             <Eye className="w-3.5 h-3.5" /> HTML
           </button>
           <button onClick={onNew} className={`${btn} text-[#736F68] hover:text-[#1F1E1D] font-medium`}>
@@ -113,7 +114,7 @@ export default function V3DeckViewer({ deck, onNew }: { deck: V3DeckSummary; onN
         {s && <SlideFrame key={s.url} src={s.url} title={s.title} interactive />}
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <button onClick={() => setI(Math.max(0, i - 1))} disabled={i === 0} className={`${btn} bg-white border border-[#E5DEC9] text-[#1F1E1D] disabled:opacity-30`}>
           <ChevronLeft className="w-4 h-4" /> Previous
         </button>

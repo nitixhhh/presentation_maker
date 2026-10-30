@@ -171,6 +171,7 @@ export default function Home() {
 
       const decoder = new TextDecoder();
       let buffer = "";
+      let gotComplete = false;
 
       while (true) {
         const { value, done } = await reader.read();
@@ -195,6 +196,7 @@ export default function Home() {
 
           if (!eventData) continue;
 
+          let streamError: string | null = null;
           try {
             const parsed = JSON.parse(eventData);
 
@@ -214,13 +216,18 @@ export default function Home() {
               setTimeout(() => {
                 setCurrentStep("completed");
               }, 1200);
-            } else if (eventType === "error") {
-              throw new Error(parsed.message);
             }
+            if (eventType === "complete") gotComplete = true;
+            if (eventType === "error") streamError = parsed.message || "Generation failed";
           } catch (e: any) {
             console.warn("Parse stream chunk error:", e);
           }
+          // A server-side error must reach the user (it used to be swallowed by the parse catch above).
+          if (streamError) throw new Error(streamError);
         }
+      }
+      if (!gotComplete) {
+        throw new Error("Connection to the server was lost before the deck finished (on a phone, keep the screen on and this tab open while it generates). Please try again.");
       }
     } catch (err: any) {
       console.error("Stream generation error:", err);
@@ -274,34 +281,34 @@ export default function Home() {
     <div className="min-h-screen bg-[#FBF8F3] text-[#1F1E1D] font-sans antialiased">
       {/* Top Header */}
       <header className="border-b border-[#E8E2D5] bg-[#FBF8F3]/90 backdrop-blur-lg sticky top-0 z-50">
-        <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-2">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-2xl bg-[#C15B3E] text-white flex items-center justify-center shadow-sm">
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <span className="font-serif font-bold text-lg tracking-tight text-[#1F1E1D]">
+              <span className="font-serif font-bold text-lg tracking-tight text-[#1F1E1D] whitespace-nowrap">
                 DeckCraft{" "}
-                <span className="font-sans font-normal text-xs text-[#A8A299] tracking-normal">
+                <span className="hidden sm:inline font-sans font-normal text-xs text-[#A8A299] tracking-normal">
                   AI Studio
                 </span>
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 text-xs font-medium">
-            <div className="flex items-center gap-2 bg-[#F3EDE2] border border-[#E4DDD0] px-3 py-1.5 rounded-full">
+          <div className="flex items-center gap-2 sm:gap-3 text-xs font-medium whitespace-nowrap">
+            <div className="flex items-center gap-2 bg-[#F3EDE2] border border-[#E4DDD0] px-2.5 sm:px-3 py-1.5 rounded-full">
               <span className="w-2 h-2 rounded-full bg-[#1B7A3E] animate-pulse" />
               <span className="text-[#3A3834] font-medium">
-                {isAdminMode ? "Admin Direct Mode" : "User Mode (₹20)"}
+                {isAdminMode ? <>Admin<span className="hidden sm:inline"> Direct Mode</span></> : "User Mode (₹20)"}
               </span>
             </div>
 
             <button
               onClick={() => setIsAdminMode(!isAdminMode)}
-              className="text-xs px-3 py-1.5 rounded-xl bg-white border border-[#E0D8CB] hover:bg-[#F3EDE2] text-[#736F68] hover:text-[#1F1E1D]"
+              className="text-xs px-2.5 sm:px-3 py-1.5 rounded-xl bg-white border border-[#E0D8CB] hover:bg-[#F3EDE2] text-[#736F68] hover:text-[#1F1E1D]"
             >
-              Toggle Mode
+              <span className="hidden sm:inline">Toggle </span>Mode
             </button>
           </div>
         </div>

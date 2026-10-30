@@ -27,7 +27,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }
     if (format === "html") {
       return new Response(deckViewerHtml(deck, `/api/v3/deck/${id}/asset/`), {
-        headers: { "Content-Type": "text/html; charset=utf-8", "Content-Disposition": `attachment; filename="${name}.html"` },
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          // ?view=1 opens the deck in the browser tab (the "HTML" button); without it the file downloads.
+          "Content-Disposition": `${req.nextUrl.searchParams.get("view") ? "inline" : "attachment"}; filename="${name}.html"`,
+        },
       });
     }
     const buf = await exportPdf(deck);

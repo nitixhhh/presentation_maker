@@ -166,6 +166,16 @@ Research notes and reasoning: [`docs/ENGINE_V3_RESEARCH.md`](docs/ENGINE_V3_RESE
 
 Decks are stored on disk in `DECKCRAFT_V3_DIR` (default: the OS temp dir `deckcraft-v3/`). v3 needs a Node server with Playwright's Chromium (`npx playwright install chromium`) — it will not run on serverless hosting.
 
+### Test it on your phone (temporary public URL)
+
+```bash
+npm run build && npm start            # serves on http://localhost:3000
+cloudflared tunnel --url http://localhost:3000   # no account needed → prints https://<random>.trycloudflare.com
+# (ngrok works too: ngrok http 3000 — needs a free ngrok authtoken)
+```
+
+Open the printed URL on your phone. A deck takes a few minutes; keep the screen on and the tab open while it generates — mobile browsers pause background tabs and the live progress stream drops (the UI now says so instead of hanging). The URL lives only as long as your computer and the tunnel are running.
+
 ### .env keys for v3
 
 At least one LLM provider; more providers = more free capacity and failover.
