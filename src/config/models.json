@@ -1,0 +1,115 @@
+{
+  "providers": {
+    "google": {
+      "name": "Google AI Studio",
+      "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "apiKeyEnv": "GOOGLE_AI_API_KEY",
+      "enabled": true,
+      "allowedForProduction": true,
+      "limits": {
+        "rpm": 15,
+        "rpd": 1500,
+        "tokensPerDay": 1000000
+      }
+    },
+    "groq": {
+      "name": "GroqCloud",
+      "baseUrl": "https://api.groq.com/openai/v1",
+      "apiKeyEnv": "GROQ_API_KEY",
+      "enabled": true,
+      "allowedForProduction": true,
+      "limits": {
+        "rpm": 30,
+        "rpd": 14400,
+        "tokensPerDay": 500000
+      }
+    },
+    "nvidia": {
+      "name": "NVIDIA NIM",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "apiKeyEnv": "NVIDIA_NIM_API_KEY",
+      "enabled": false,
+      "allowedForProduction": false,
+      "limits": {
+        "rpm": 10,
+        "rpd": 1000,
+        "tokensPerDay": 300000
+      }
+    },
+    "cloudflare": {
+      "name": "Cloudflare Workers AI",
+      "baseUrl": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1",
+      "apiKeyEnv": "CLOUDFLARE_API_TOKEN",
+      "accountIdEnv": "CLOUDFLARE_ACCOUNT_ID",
+      "enabled": true,
+      "allowedForProduction": true,
+      "limits": {
+        "rpm": 20,
+        "rpd": 2000,
+        "neuronsPerDay": 10000
+      }
+    },
+    "openrouter": {
+      "name": "OpenRouter (Free Tier)",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "enabled": true,
+      "allowedForProduction": true,
+      "limits": {
+        "rpm": 20,
+        "rpd": 200,
+        "tokensPerDay": 200000
+      }
+    }
+  },
+  "agents": {
+    "Owner": {
+      "primary": { "provider": "google", "model": "gemini-2.5-flash" },
+      "fallbacks": [
+        { "provider": "groq", "model": "openai/gpt-oss-120b" }
+      ]
+    },
+    "Researcher": {
+      "primary": { "provider": "google", "model": "gemini-2.5-flash" },
+      "fallbacks": [
+        { "provider": "groq", "model": "openai/gpt-oss-120b" }
+      ]
+    },
+    "SlideWriter": {
+      "primary": { "provider": "google", "model": "gemini-2.5-flash" },
+      "fallbacks": [
+        { "provider": "groq", "model": "openai/gpt-oss-120b" }
+      ]
+    },
+    "ArtDirector": {
+      "primary": { "provider": "google", "model": "gemini-2.5-flash" },
+      "fallbacks": [
+        { "provider": "groq", "model": "openai/gpt-oss-120b" }
+      ]
+    },
+    "DiagramCodeSpecialist": {
+      "primary": { "provider": "groq", "model": "openai/gpt-oss-120b" },
+      "fallbacks": [
+        { "provider": "google", "model": "gemini-2.5-flash" }
+      ]
+    },
+    "ImagePromptWriter": {
+      "primary": { "provider": "groq", "model": "openai/gpt-oss-20b" },
+      "fallbacks": [
+        { "provider": "google", "model": "gemini-2.5-flash" }
+      ]
+    },
+    "VisionQA": {
+      "primary": { "provider": "google", "model": "gemini-2.5-flash" },
+      "fallbacks": [
+        { "provider": "groq", "model": "openai/gpt-oss-120b" }
+      ]
+    },
+    "ImageGenerator": {
+      "primary": { "provider": "cloudflare", "model": "@cf/black-forest-labs/flux-1-schnell" },
+      "fallbacks": [
+        { "provider": "unsplash", "model": "stock-api" }
+      ]
+    }
+  }
+}
