@@ -116,15 +116,15 @@ function buildShapes(params: LayoutBuildParams): Shape[] {
       type: "linear",
       angle: 180,
       stops: [
-        { color: "#000000", pos: 0 },
-        { color: "#000000", pos: 100 },
+        { color: "rgba(10, 15, 29, 0.45)", pos: 0 },
+        { color: "rgba(10, 15, 29, 0.85)", pos: 100 },
       ],
     },
     zIndex: 0,
     opacity: 1,
   });
 
-  // 2. Gradient scrim overlay for text readability
+  // 2. Subtle ambient scrim overlay
   shapes.push({
     type: "rect",
     id: sid(slideIndex, "scrim"),
@@ -138,7 +138,7 @@ function buildShapes(params: LayoutBuildParams): Shape[] {
         { color: pal.bg, pos: 100 },
       ],
     },
-    opacity: 0.55,
+    opacity: 0.15,
     zIndex: 1,
   });
 

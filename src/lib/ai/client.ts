@@ -30,146 +30,133 @@ export class AIClient {
     messages: ChatMessage[],
     options: { temperature?: number; maxTokens?: number; useCache?: boolean } = {}
   ): Promise<ModelCallResult> {
-    const route = ModelRouter.selectRouteForAgent(agentName);
-    const hash = this.computeHash(messages, route.model);
+    const candidateRoutes = ModelRouter.getCandidateRoutesForAgent(agentName);
+    let lastError: Error | null = null;
 
-    // 1. Response cache check
-    if (options.useCache !== false) {
-      const cached = promptResponseCache.get(hash);
-      if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-        return cached.result;
-      }
-    }
-
-    // 2. Mock mode fallback if no valid API key is available
-    if (route.isMockFallback) {
-      return this.generateMockResponse(agentName, messages, route);
-    }
-
-    const startTime = Date.now();
-    try {
-      const endpoint = `${route.provider.baseUrl.replace(/\/$/, "")}/chat/completions`;
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${route.apiKey}`,
-      };
-
-      // Special handling for OpenRouter or Cloudflare
-      if (route.providerId === "openrouter") {
-        headers["HTTP-Referer"] = "https://deckcraft.app";
-        headers["X-Title"] = "DeckCraft AI";
+    for (const route of candidateRoutes) {
+      if (route.isMockFallback) {
+        continue; // Try real providers first
       }
 
-      let currentModel = route.model;
-      let includeJsonFormat = true;
-      let res: Response | null = null;
-      let lastErrorText = "";
+      const hash = this.computeHash(messages, route.model);
 
-      // Retry loop with resilience for 503 high-demand spikes and 400 json_validate_failed
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const body: any = {
-          model: currentModel,
-          messages,
-          temperature: options.temperature ?? 0.7,
-          max_tokens: options.maxTokens ?? 3000,
+      // 1. Response cache check
+      if (options.useCache !== false) {
+        const cached = promptResponseCache.get(hash);
+        if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+          return cached.result;
+        }
+      }
+
+      const startTime = Date.now();
+      try {
+        const endpoint = `${route.provider.baseUrl.replace(/\/$/, "")}/chat/completions`;
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${route.apiKey}`,
         };
-        if (includeJsonFormat) {
-          body.response_format = { type: "json_object" };
+
+        if (route.providerId === "openrouter") {
+          headers["HTTP-Referer"] = "https://deckcraft.app";
+          headers["X-Title"] = "DeckCraft AI";
         }
 
-        try {
-          res = await fetch(endpoint, {
-            method: "POST",
-            headers,
-            body: JSON.stringify(body),
-          });
-        } catch (fetchErr: any) {
-          lastErrorText = fetchErr.message;
-          await new Promise((r) => setTimeout(r, 1200 * (attempt + 1)));
-          continue;
-        }
+        let currentModel = route.model;
+        let includeJsonFormat = true;
+        let res: Response | null = null;
+        let lastErrorText = "";
 
-        if (res.ok) {
-          break; // Success!
-        }
-
-        lastErrorText = await res.text();
-
-        // 1. Handle Google 503 (High demand spike): Back off and retry, or failover to flash-lite
-        if (res.status === 503) {
-          console.warn(`[AIClient] ${route.providerId} (${currentModel}) returned 503 high demand. Backing off ${1500 * (attempt + 1)}ms...`);
-          await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
-          if (attempt === 1 && currentModel === "gemini-2.5-flash") {
-            currentModel = "gemini-2.5-flash-lite";
-            console.log(`[AIClient] Failover to ${currentModel} to bypass high-demand spike.`);
+        // Single retry for transient blips, then fail over
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const body: any = {
+            model: currentModel,
+            messages,
+            temperature: options.temperature ?? 0.7,
+            max_tokens: options.maxTokens ?? 3000,
+          };
+          if (includeJsonFormat) {
+            body.response_format = { type: "json_object" };
           }
-          continue;
+
+          try {
+            res = await fetch(endpoint, {
+              method: "POST",
+              headers,
+              body: JSON.stringify(body),
+            });
+          } catch (fetchErr: any) {
+            lastErrorText = fetchErr.message;
+            continue;
+          }
+
+          if (res.ok) break;
+
+          lastErrorText = await res.text();
+
+          // If Groq 400 json validation error, retry without response_format
+          if (res.status === 400 && lastErrorText.includes("json_validate_failed") && includeJsonFormat) {
+            includeJsonFormat = false;
+            continue;
+          }
+
+          // If 429 quota/rate limit, don't waste 15 seconds waiting — fail over immediately!
+          if (res.status === 429) {
+            console.warn(`[AIClient] Provider ${route.providerId} (${currentModel}) rate limited (429). Triggering instant failover.`);
+            break;
+          }
+
+          // If 503 high demand, failover to flash-lite or next provider
+          if (res.status === 503) {
+            if (currentModel === "gemini-2.5-flash") {
+              currentModel = "gemini-2.5-flash-lite";
+              continue;
+            }
+            break;
+          }
+
+          break;
         }
 
-        // 2. Handle Groq 400 (json_validate_failed): Retry without strict response_format
-        if (res.status === 400 && lastErrorText.includes("json_validate_failed") && includeJsonFormat) {
-          console.warn(`[AIClient] ${route.providerId} JSON validation error. Retrying without strict response_format wrapper...`);
-          includeJsonFormat = false;
-          continue;
+        if (!res || !res.ok) {
+          const status = res ? res.status : 500;
+          quotaTracker.recordFailure(route.providerId, status === 429);
+          console.warn(`[AIClient] Provider ${route.providerId} (${currentModel}) failed with ${status}. Trying next candidate route...`);
+          lastError = new Error(`AI Provider ${route.providerId} failed (${status}): ${lastErrorText}`);
+          continue; // Try next route!
         }
 
-        // 3. Handle 429 Rate Limit
-        if (res.status === 429) {
-          const retryAfter = res.headers.get("retry-after");
-          const retrySec = retryAfter ? parseInt(retryAfter, 10) : 5;
-          console.warn(`[AIClient] 429 Rate limited. Waiting ${retrySec}s...`);
-          await new Promise((r) => setTimeout(r, Math.min(retrySec * 1000, 5000)));
-          continue;
-        }
+        const data = await res.json();
+        const content = data.choices?.[0]?.message?.content || "";
+        const tokensUsed = data.usage?.total_tokens || 0;
 
-        // Other non-retriable error
-        break;
+        quotaTracker.recordSuccess(route.providerId, tokensUsed);
+        const latencyMs = Date.now() - startTime;
+        const result: ModelCallResult = {
+          text: content,
+          provider: route.providerId,
+          model: currentModel,
+          tokensUsed,
+          latencyMs,
+        };
+
+        console.log(`[AIClient] Agent: ${agentName} | Provider: ${route.providerId} | Model: ${currentModel} | Latency: ${latencyMs}ms | Tokens: ${tokensUsed}`);
+        promptResponseCache.set(hash, { result, timestamp: Date.now() });
+        return result;
+      } catch (err: any) {
+        console.warn(`[AIClient] Route error on ${route.providerId}: ${err.message}. Trying next candidate...`);
+        lastError = err;
+        continue;
       }
-
-      if (!res || !res.ok) {
-        const status = res ? res.status : 500;
-        if (status === 429) {
-          quotaTracker.recordFailure(route.providerId, true);
-        } else {
-          quotaTracker.recordFailure(route.providerId, false);
-        }
-
-        console.error(`[AIClient Error] ${route.providerId} (${currentModel}) returned ${status}: ${lastErrorText}`);
-        throw new Error(`AI Provider ${route.providerId} failed (${status}): ${lastErrorText}`);
-      }
-
-      const data = await res.json();
-      const content = data.choices?.[0]?.message?.content || "";
-      const tokensUsed = data.usage?.total_tokens || 0;
-
-      quotaTracker.recordSuccess(route.providerId, tokensUsed);
-
-      const latencyMs = Date.now() - startTime;
-      const result: ModelCallResult = {
-        text: content,
-        provider: route.providerId,
-        model: currentModel,
-        tokensUsed,
-        latencyMs,
-      };
-
-      console.log(`[AIClient] Agent: ${agentName} | Provider: ${route.providerId} | Model: ${currentModel} | Latency: ${latencyMs}ms | Tokens: ${tokensUsed}`);
-
-      promptResponseCache.set(hash, { result, timestamp: Date.now() });
-      return result;
-    } catch (err: any) {
-      const latencyMs = Date.now() - startTime;
-      quotaTracker.recordFailure(route.providerId);
-      console.warn(`[AIClient] Call failed on primary route (${route.providerId}). Details: ${err.message}`);
-
-      // Graceful fallback to mock response in local test mode if enabled
-      if (process.env.NODE_ENV !== "production") {
-        console.warn(`[AIClient] Falling back to structured mock data for local development.`);
-        return this.generateMockResponse(agentName, messages, route);
-      }
-
-      throw err;
     }
+
+    // If all real routes failed, check mock fallback
+    const mockRoute = candidateRoutes.find((r) => r.isMockFallback) || candidateRoutes[0];
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(`[AIClient] All AI providers exhausted. Falling back to structured mock data.`);
+      return this.generateMockResponse(agentName, messages, mockRoute);
+    }
+
+    throw lastError || new Error(`All configured AI providers failed for agent ${agentName}`);
   }
 
   /**

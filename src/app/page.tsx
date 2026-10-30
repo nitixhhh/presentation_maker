@@ -718,8 +718,9 @@ export default function Home() {
                   <span className="font-mono text-[10px]">{deck.slides[activeSlideIndex].layoutType}</span>
                 </div>
 
-                {/* DYNAMIC LAYOUT: 1. Three Cards Layout */}
-                {deck.slides[activeSlideIndex].layoutType === "three-cards" &&
+                {/* DYNAMIC LAYOUT: 1. Three Cards & Grid Layout */}
+                {(deck.slides[activeSlideIndex].layoutType === "three-cards" ||
+                  deck.slides[activeSlideIndex].layoutType === "icon-grid-4") &&
                 deck.slides[activeSlideIndex].visualElement.type === "cards" ? (
                   <div className="space-y-6 my-auto w-full">
                     <div className="space-y-1">
@@ -735,20 +736,28 @@ export default function Home() {
                         </p>
                       )}
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
+                    <div
+                      className={`grid gap-4 pt-1 ${
+                        deck.slides[activeSlideIndex].layoutType === "icon-grid-4"
+                          ? "grid-cols-1 md:grid-cols-2"
+                          : "grid-cols-1 md:grid-cols-3"
+                      }`}
+                    >
                       {deck.slides[activeSlideIndex].visualElement.items?.map((item: any, idx: number) => (
                         <div
                           key={idx}
-                          className="bg-white/95 p-5 rounded-2xl border border-[#EAE3D6] shadow-sm space-y-2.5"
+                          className="bg-white/95 p-4 rounded-2xl border border-[#EAE3D6] shadow-sm flex items-start gap-3"
                         >
-                          <div className="w-7 h-7 rounded-xl bg-[#C15B3E]/10 text-[#C15B3E] flex items-center justify-center font-bold text-xs font-mono">
+                          <div className="w-8 h-8 rounded-xl bg-[#C15B3E]/10 text-[#C15B3E] flex items-center justify-center font-bold text-xs font-mono flex-shrink-0">
                             0{idx + 1}
                           </div>
-                          <div className="text-sm font-bold text-[#1F1E1D] leading-snug">
-                            {item.title}
-                          </div>
-                          <div className="text-xs text-[#736F68] leading-relaxed">
-                            {item.description}
+                          <div>
+                            <div className="text-sm font-bold text-[#1F1E1D] leading-snug">
+                              {item.title}
+                            </div>
+                            <div className="text-xs text-[#736F68] leading-relaxed mt-1">
+                              {item.description}
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -896,6 +905,19 @@ export default function Home() {
                           <div className="text-[11px] text-[#736F68]">Chart rendered in HTML slideshow and PPTX export</div>
                         </div>
                       )}
+
+                      {(!deck.slides[activeSlideIndex].visualElement.type ||
+                        deck.slides[activeSlideIndex].visualElement.type === "none") && (
+                        <div className="space-y-3 text-center max-w-xs my-auto py-4">
+                          <div className="w-10 h-10 rounded-2xl bg-[#C15B3E]/10 text-[#C15B3E] flex items-center justify-center mx-auto">
+                            <Sparkles className="w-5 h-5" />
+                          </div>
+                          <div className="text-sm font-semibold text-[#1F1E1D]">Core Executive Insight</div>
+                          <div className="text-xs text-[#736F68] leading-relaxed">
+                            {deck.slides[activeSlideIndex].subtitle || "High-impact strategic principles & actionable takeaways."}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -908,6 +930,26 @@ export default function Home() {
                 )}
               </div>
             )}
+
+            {/* Slide Quick Navigation Pills */}
+            <div className="flex items-center justify-center gap-2 overflow-x-auto py-1">
+              {deck.slides.map((s: any, idx: number) => (
+                <button
+                  key={idx}
+                  onClick={() => setActiveSlideIndex(idx)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition border flex items-center gap-1.5 cursor-pointer ${
+                    activeSlideIndex === idx
+                      ? "bg-[#C15B3E] text-white border-[#C15B3E] shadow-sm"
+                      : "bg-white text-[#736F68] border-[#E5DEC9] hover:border-[#C15B3E]/50 hover:text-[#1F1E1D]"
+                  }`}
+                >
+                  <span>Slide {idx + 1}</span>
+                  <span className="opacity-75 text-[10px] uppercase font-mono font-normal">
+                    {s.layoutType.replace("-", " ")}
+                  </span>
+                </button>
+              ))}
+            </div>
 
             {/* Carousel Controls */}
             <div className="flex items-center justify-between">

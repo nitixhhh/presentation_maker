@@ -25,59 +25,55 @@ export interface RouteTarget {
 }
 
 export class ModelRouter {
-  public static selectRouteForAgent(agentName: string): RouteTarget {
-    const agents = modelsConfig.agents as Record<string, { primary: { provider: string; model: string }; fallbacks: Array<{ provider: string; model: string }> }>;
+  public static getCandidateRoutesForAgent(agentName: string): RouteTarget[] {
+    const agents = modelsConfig.agents as Record<
+      string,
+      { primary: { provider: string; model: string }; fallbacks: Array<{ provider: string; model: string }> }
+    >;
     const providers = modelsConfig.providers as Record<string, ProviderConfig>;
 
-    const agentRouting = agents[agentName];
-    if (!agentRouting) {
-      throw new Error(`Routing configuration not found for agent: ${agentName}`);
-    }
-
+    const agentRouting = agents[agentName] || agents["SlideWriter"];
     const candidates = [agentRouting.primary, ...(agentRouting.fallbacks || [])];
     const isProd = process.env.NODE_ENV === "production";
+    const targets: RouteTarget[] = [];
 
     for (const candidate of candidates) {
       const provider = providers[candidate.provider];
       if (!provider || !provider.enabled) continue;
-
-      // In production, block if not allowedForProduction (e.g. NVIDIA pending license confirmation)
       if (isProd && !provider.allowedForProduction) continue;
 
       const apiKey = process.env[provider.apiKeyEnv];
       if (!apiKey) continue;
 
-      // Check quota tracker
-      const quotaCheck = quotaTracker.isAvailable(candidate.provider, provider.limits);
-      if (!quotaCheck.available) {
-        console.warn(`[ModelRouter] Skipping ${candidate.provider} for ${agentName}: ${quotaCheck.reason}`);
-        continue;
-      }
-
-      return {
+      targets.push({
         providerId: candidate.provider,
         model: candidate.model,
         provider,
         apiKey,
-      };
+      });
     }
 
-    // If no real API key is configured in dev environment, return fallback target
-    const fallbackCandidate = candidates[0];
-    const fallbackProvider = providers[fallbackCandidate.provider] || {
-      name: "Fallback Mock Provider",
-      baseUrl: "https://api.groq.com/openai/v1",
-      apiKeyEnv: "MOCK_KEY",
-      enabled: true,
-      allowedForProduction: false,
-    };
+    if (targets.length === 0) {
+      targets.push({
+        providerId: "mock",
+        model: "mock-model",
+        provider: {
+          name: "Mock Provider",
+          baseUrl: "https://api.groq.com/openai/v1",
+          apiKeyEnv: "MOCK_KEY",
+          enabled: true,
+          allowedForProduction: false,
+        },
+        apiKey: "mock-key",
+        isMockFallback: true,
+      });
+    }
 
-    return {
-      providerId: fallbackCandidate.provider,
-      model: fallbackCandidate.model,
-      provider: fallbackProvider,
-      apiKey: "mock-key",
-      isMockFallback: true,
-    };
+    return targets;
+  }
+
+  public static selectRouteForAgent(agentName: string): RouteTarget {
+    const routes = this.getCandidateRoutesForAgent(agentName);
+    return routes[0];
   }
 }

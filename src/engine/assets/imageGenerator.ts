@@ -25,7 +25,61 @@ export interface ImageGenerationResult {
   src: string; // base64 data URI or verified high-res image URL
   alt: string;
   isAiGenerated: boolean;
-  source: "wikimedia" | "gemini_svg" | "vector_geometric";
+  source: "cloudflare_flux" | "gemini_svg" | "wikimedia" | "vector_geometric";
+}
+
+/**
+ * Generates photorealistic AI imagery using Cloudflare Workers AI (Flux 1 Schnell / SDXL Lightning)
+ */
+async function generateCloudflareAIImage(prompt: string): Promise<string | null> {
+  const token = process.env.CLOUDFLARE_API_TOKEN;
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  if (!token || !accountId) return null;
+
+  const models = [
+    "@cf/black-forest-labs/flux-1-schnell",
+    "@cf/bytedance/stable-diffusion-xl-lightning",
+  ];
+
+  for (const model of models) {
+    try {
+      const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12000);
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt: `Cinematic editorial keynote presentation visual: ${prompt}. Clean studio lighting, hyper-detailed, 8k resolution, modern dark aesthetics, professional`,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        const contentType = res.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          const json = await res.json();
+          if (json.result?.image) {
+            return `data:image/jpeg;base64,${json.result.image}`;
+          }
+        } else {
+          const arrayBuf = await res.arrayBuffer();
+          if (arrayBuf.byteLength > 1000) {
+            const base64 = Buffer.from(arrayBuf).toString("base64");
+            return `data:image/jpeg;base64,${base64}`;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(`[VisualGenerator] Cloudflare AI model ${model} bypassed:`, err);
+    }
+  }
+  return null;
 }
 
 /**
@@ -114,21 +168,19 @@ export async function generateAIImage(
 
   console.log(`[VisualGenerator] Synthesizing visual for: "${prompt.slice(0, 50)}..." (style=${preferredStyle})`);
 
-  // 1. Try Wikimedia Commons if photo or auto
-  if (preferredStyle === "photo" || preferredStyle === "auto") {
-    const photoUrl = await searchWikimediaPhoto(topic || prompt);
-    if (photoUrl) {
-      console.log(`[VisualGenerator] ✓ Found high-res Wikimedia photo: ${photoUrl.slice(0, 60)}...`);
-      return {
-        src: photoUrl,
-        alt: prompt,
-        isAiGenerated: false,
-        source: "wikimedia",
-      };
-    }
+  // 1. Primary: Cloudflare Workers AI (Flux 1 Schnell / SDXL Lightning)
+  const cfImage = await generateCloudflareAIImage(prompt);
+  if (cfImage) {
+    console.log(`[VisualGenerator] ✓ Generated photorealistic AI visual via Cloudflare Flux 1`);
+    return {
+      src: cfImage,
+      alt: prompt,
+      isAiGenerated: true,
+      source: "cloudflare_flux",
+    };
   }
 
-  // 2. Try Gemini 2.5 Flash Vector SVG Generation
+  // 2. Secondary: Gemini 2.5 Flash Vector SVG Generation
   const svgDataUri = await generateGeminiVectorSvg(prompt, topic);
   if (svgDataUri) {
     console.log(`[VisualGenerator] ✓ Generated bespoke Gemini Vector SVG illustration`);
@@ -137,6 +189,18 @@ export async function generateAIImage(
       alt: prompt,
       isAiGenerated: true,
       source: "gemini_svg",
+    };
+  }
+
+  // 3. Fallback: Wikimedia Commons verified photo
+  const photoUrl = await searchWikimediaPhoto(topic || prompt);
+  if (photoUrl) {
+    console.log(`[VisualGenerator] ✓ Found high-res Wikimedia photo: ${photoUrl.slice(0, 60)}...`);
+    return {
+      src: photoUrl,
+      alt: prompt,
+      isAiGenerated: false,
+      source: "wikimedia",
     };
   }
 

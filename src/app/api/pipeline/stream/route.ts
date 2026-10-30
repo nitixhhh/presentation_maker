@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
               }
             }
 
-            // Check if slide contains cards
+            // Check if slide contains cards (three-cards)
             const cardTitles = s.shapes.filter(
               (sh) => sh.type === "text" && sh.id.includes("card-title")
             );
@@ -109,6 +109,23 @@ export async function POST(req: NextRequest) {
                 };
               });
               visualElement = { type: "cards", items: cardItems };
+            }
+
+            // Check if slide contains grid items (icon-grid-4)
+            const gridTitles = s.shapes.filter(
+              (sh) => sh.type === "text" && sh.id.includes("item") && sh.id.includes("-title")
+            );
+            if (gridTitles.length > 0) {
+              const gridItems = gridTitles.map((gt: any, gidx) => {
+                const gd = s.shapes.find(
+                  (sh) => sh.type === "text" && sh.id.includes(`item${gidx + 1}-desc`)
+                ) as any;
+                return {
+                  title: gt.runs?.[0]?.text || `Capability ${gidx + 1}`,
+                  description: gd?.runs?.[0]?.text || "",
+                };
+              });
+              visualElement = { type: "cards", items: gridItems };
             }
 
             // Check if slide contains dynamic diagram shapes

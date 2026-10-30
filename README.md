@@ -28,9 +28,13 @@ Engine v2 is a ground-up declarative rendering engine that eliminates LLM halluc
   - Eliminates rigid, repetitive diagram templates.
   - Generates topic-customized process flows, layered architecture stacks, and 2×2 matrices from AI topological specs.
   - Emits native vector shapes (containers, badges, icons, connecting arrow lines) that are razor-sharp and fully editable in PowerPoint (`.pptx`).
-- **Free FLUX.1 AI Image Generator (`src/engine/assets/imageGenerator.ts`)**:
-  - Powered by Pollinations.ai FLUX.1 engine (100% free, unlimited, no API key required).
-  - Eliminates repetitive stock laptop photo fallbacks by generating bespoke cinematic 16:9 imagery.
+- **Free Diffusion AI Image Generator (`src/engine/assets/imageGenerator.ts`)**:
+  - Powered by Cloudflare Workers AI hosting Black Forest Labs' **Flux 1 Schnell** and **SDXL Lightning** (free tier: 10,000 neurons daily).
+  - High-resolution base64 JPEG synthesis delivered directly into SceneGraph intermediate representations for HTML, PPTX, and PDF emitters.
+  - Secondary fallback to Gemini 2.5 Flash 1280x720 vector SVG generation with authentic topic geometry and linear gradients.
+- **Resilient Multi-Provider LLM Routing & Instant Failover (`src/lib/ai/`)**:
+  - Automatically routes tasks across Google AI Studio (`gemini-2.5-flash`) and Groq (`openai/gpt-oss-120b`).
+  - Implements instant active failover upon 429 quota exhaustion or high-demand spikes without dropping to static mock templates.
 - **12 Code-Only Layout Definitions**:
   - `cover-fullbleed`: Hero image with text scrim overlay
   - `cover-split`: Split layout (half image, half text)
