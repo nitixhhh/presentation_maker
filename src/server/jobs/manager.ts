@@ -25,6 +25,7 @@ import { renderPngs } from "@/engine-v3/export/png";
 import sharp from "sharp";
 import type { V3Request } from "@/engine-v3/types";
 import { storage } from "../storage";
+import { canSeeJob } from "../access";
 import type { JobRecord, JobStage, JobView } from "./types";
 import { setActiveJobs } from "../keepAlive";
 
@@ -422,6 +423,26 @@ export async function getJobViews(ids: string[]): Promise<JobView[]> {
   const rest = ids.filter((id) => !S.jobs.has(id));
   const stored = rest.length ? await storage().getJobs(rest) : [];
   return [...live, ...stored].map(viewOf).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+/** getJobView for one caller: null (→ 404) when the job belongs to another account. */
+export async function getJobViewFor(id: string, viewerKey: string, hasStreamToken = false): Promise<JobView | null> {
+  await ready();
+  const j = S.jobs.get(id) || (await storage().getJob(id));
+  if (!j || !canSeeJob(j, viewerKey, hasStreamToken)) return null;
+  return viewOf(j);
+}
+
+/** getJobViews for one caller: jobs of other accounts are left out. */
+export async function getJobViewsFor(ids: string[], viewerKey: string): Promise<JobView[]> {
+  await ready();
+  const live = ids.map((id) => S.jobs.get(id)).filter((j): j is JobRecord => !!j);
+  const rest = ids.filter((id) => !S.jobs.has(id));
+  const stored = rest.length ? await storage().getJobs(rest) : [];
+  return [...live, ...stored]
+    .filter((j) => canSeeJob(j, viewerKey))
+    .map(viewOf)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 export async function jobsOfOwner(ownerKey: string, limit = 30): Promise<JobView[]> {

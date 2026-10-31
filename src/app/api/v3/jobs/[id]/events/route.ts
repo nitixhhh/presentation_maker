@@ -1,4 +1,6 @@
-import { getJobView, subscribe } from "@/server/jobs/manager";
+import { getJobViewFor, subscribe } from "@/server/jobs/manager";
+import { resolveOwner } from "@/server/auth";
+import { hasJobStreamToken } from "@/server/deckAuth";
 import type { JobView } from "@/server/jobs/types";
 
 
@@ -9,7 +11,8 @@ import type { JobView } from "@/server/jobs/types";
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!/^[a-z0-9-]{6,64}$/i.test(id)) return new Response("bad id", { status: 400 });
-  const first = await getJobView(id);
+  const { ownerKey } = await resolveOwner(req);
+  const first = await getJobViewFor(id, ownerKey, hasJobStreamToken(req, id));
   if (!first) return new Response("not found", { status: 404 });
 
   const enc = new TextEncoder();

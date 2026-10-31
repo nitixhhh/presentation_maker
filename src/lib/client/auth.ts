@@ -6,7 +6,7 @@
  */
 import { createClient, type SupabaseClient, type Session } from "@supabase/supabase-js";
 import { useEffect, useState } from "react";
-import { clientId } from "./store";
+import { clearJobs, clientId, ownerScope, setJobsOwner } from "./store";
 
 export interface Me {
   user: { id: string; email?: string; name?: string; avatar?: string } | null;
@@ -36,8 +36,13 @@ export async function supabase(): Promise<SupabaseClient | null> {
     sb = createClient(me.auth.url, me.auth.anonKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "pkce" } });
     const { data } = await sb.auth.getSession();
     session = data.session;
-    sb.auth.onAuthStateChange((_e, s) => {
+    setJobsOwner(session?.user?.id);
+    sb.auth.onAuthStateChange((e, s) => {
+      const before = session?.user?.id;
       session = s;
+      // signed out (here or in another tab) or switched account: forget the previous account's decks on this browser
+      if (before && (e === "SIGNED_OUT" || (s?.user?.id && s.user.id !== before))) clearJobs(ownerScope(before));
+      setJobsOwner(s?.user?.id);
       listeners.forEach((f) => f());
     });
   }
@@ -65,7 +70,20 @@ export async function signInWithGoogle(redirectTo?: string) {
 
 export async function signOut() {
   const c = await supabase();
+  const before = session?.user?.id;
   await c?.auth.signOut();
+  if (before) clearJobs(ownerScope(before));
+  session = null;
+  setJobsOwner(null);
+  try {
+    sessionStorage.removeItem("deckcraft.pending.v1");
+  } catch {}
+}
+
+/** Resolves once the login state of this browser is known (so lists are read for the right person). */
+export async function authReady(): Promise<string | null> {
+  await supabase().catch(() => null);
+  return session?.user?.id || null;
 }
 
 /** The visitor (re-loaded after sign-in/out) */

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { JobView } from "./types";
+import { api } from "@/lib/client/auth";
 
 export type LinkState = "live" | "polling" | "reconnecting";
 
@@ -22,6 +23,10 @@ export function useJob(jobId: string | null) {
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
     let sseRetry: ReturnType<typeof setTimeout> | null = null;
     let failures = 0;
+    // signed link for the stream: EventSource cannot send the login header, and a deck of a signed-in
+    // account is visible only to that account. GET /api/v3/jobs/[id] (sent with the login) hands it out.
+    let streamToken = "";
+    let polled = false;
 
     const finished = () => jobRef.current?.status === "done" || jobRef.current?.status === "failed";
     const apply = (v: JobView) => {
@@ -33,14 +38,17 @@ export function useJob(jobId: string | null) {
     const poll = async () => {
       if (stopped || finished()) return;
       try {
-        const r = await fetch(`/api/v3/jobs/${jobId}`, { cache: "no-store" });
+        const r = await api(`/api/v3/jobs/${jobId}`);
         if (r.status === 404) {
           setMissing(true);
           return;
         }
         if (!r.ok) throw new Error(String(r.status));
-        apply((await r.json()).job);
-        if (!es) setLink("polling");
+        const d = await r.json();
+        if (d.streamToken) streamToken = d.streamToken;
+        apply(d.job);
+        if (!es && polled) setLink("polling");
+        polled = true;
       } catch {
         failures++;
         setLink("reconnecting");
@@ -51,7 +59,7 @@ export function useJob(jobId: string | null) {
     const openStream = () => {
       if (stopped || finished() || typeof EventSource === "undefined") return;
       es?.close();
-      es = new EventSource(`/api/v3/jobs/${jobId}/events`);
+      es = new EventSource(`/api/v3/jobs/${jobId}/events${streamToken ? `?t=${encodeURIComponent(streamToken)}` : ""}`);
       es.addEventListener("job", (e) => {
         setLink("live");
         apply(JSON.parse((e as MessageEvent).data));
@@ -80,8 +88,8 @@ export function useJob(jobId: string | null) {
     };
 
     const offline = () => !finished() && setLink("reconnecting");
-    poll();
-    openStream();
+    // first read (with the login) brings the stream link, then the live stream opens
+    poll().finally(openStream);
     window.addEventListener("offline", offline);
     document.addEventListener("visibilitychange", wake);
     window.addEventListener("online", wake);

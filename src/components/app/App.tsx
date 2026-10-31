@@ -10,8 +10,8 @@ import ProgressView from "./ProgressView";
 import DeckView from "./DeckView";
 import { useJob } from "./useJob";
 import type { DeckSummary, JobView } from "./types";
-import { forgetJob, saveJob, savedJobs, type SavedJob } from "@/lib/client/store";
-import { api, claimReferralIfAny, rememberReferral, signInWithGoogle, signOut, useMe, type Me } from "@/lib/client/auth";
+import { forgetJob, keepOnly, saveJob, savedJobs, type SavedJob } from "@/lib/client/store";
+import { api, authReady, claimReferralIfAny, rememberReferral, signInWithGoogle, signOut, useMe, type Me } from "@/lib/client/auth";
 
 const PENDING_KEY = "deckcraft.pending.v1";
 
@@ -54,15 +54,17 @@ export default function App() {
     // reopening the app: resume the job in the URL, else the newest unfinished job of this browser
     const v = readView();
     if (v.name === "home") {
-      const pending = savedJobs()[0];
-      if (pending && Date.now() - Date.parse(pending.createdAt) < 30 * 60 * 1000) {
-        fetch(`/api/v3/jobs/${pending.id}`, { cache: "no-store" })
+      // read the list of whoever is signed in on this browser (known only after the login state loads)
+      authReady().then(() => {
+        const pending = savedJobs()[0];
+        if (!pending || Date.now() - Date.parse(pending.createdAt) >= 30 * 60 * 1000) return;
+        api(`/api/v3/jobs/${pending.id}`)
           .then((r) => (r.ok ? r.json() : null))
           .then((d) => {
-            if (d?.job && (d.job.status === "queued" || d.job.status === "running")) go({ name: "job", id: pending.id }, true);
+            if (d?.job && (d.job.status === "queued" || d.job.status === "running") && readView().name === "home") go({ name: "job", id: pending.id }, true);
           })
           .catch(() => {});
-      }
+      });
     }
     setView(v);
     const onPop = () => setView(readView());
@@ -141,14 +143,14 @@ export default function App() {
               <CreateForm onSubmit={start} busy={busy} error={error} />
             </div>
             {me?.auth.required && !me.user && <p className="-mt-6 text-center text-[13px] text-[var(--muted)]">Deck start hone se pehle Google se sign in hoga.</p>}
-            <RecentDecks onOpen={(id) => go({ name: "job", id })} limit={3} onAll={() => go({ name: "decks" })} signedIn={!!me?.user} />
+            {me && <RecentDecks key={me.user?.id || "anon"} onOpen={(id) => go({ name: "job", id })} limit={3} onAll={() => go({ name: "decks" })} signedIn={!!me.user} />}
             <Gallery />
           </div>
         )}
         {view.name === "decks" && (
           <div className="rise space-y-5">
             <h1 className="display px-1 text-[34px]">My decks</h1>
-            <RecentDecks onOpen={(id) => go({ name: "job", id })} signedIn={!!me?.user} />
+            {me && <RecentDecks key={me.user?.id || "anon"} onOpen={(id) => go({ name: "job", id })} signedIn={!!me.user} />}
             {me?.user && me.referralCode && <Invite me={me} />}
           </div>
         )}
@@ -180,7 +182,11 @@ function JobScreen({ id, me, onHome, onRetry }: { id: string; me: Me | null; onH
 
   useEffect(() => {
     // keep the topic in "My decks" even if the deck was opened from a shared link
-    if (job && !savedJobs().some((s) => s.id === job.id)) saveJob({ id: job.id, topic: job.topic, createdAt: job.createdAt });
+    // (into the list of whoever is signed in here — known once the login state has loaded)
+    if (job)
+      authReady().then(() => {
+        if (!savedJobs().some((s) => s.id === job.id)) saveJob({ id: job.id, topic: job.topic, createdAt: job.createdAt });
+      });
   }, [job]);
 
   if (missing)
@@ -211,38 +217,59 @@ function RecentDecks({ onOpen, limit, onAll, signedIn }: { onOpen: (id: string) 
 
   useEffect(() => {
     let stop = false;
-    // signed in: the account's decks from any device, merged with this browser's list
-    if (signedIn)
-      api("/api/v3/jobs?mine=1")
-        .then((r) => r.json())
-        .then((d) => {
-          if (stop) return;
-          for (const j of (d.jobs || []) as JobView[]) if (j.status !== "failed" || Date.now() - Date.parse(j.createdAt) < 86400_000) saveJob({ id: j.id, topic: j.topic, createdAt: j.createdAt });
-          setSaved(savedJobs().sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
-        })
-        .catch(() => {});
-    const s = savedJobs();
-    setSaved(s);
-    if (!s.length && !signedIn) return;
-    const load = () =>
-      fetch(`/api/v3/jobs?ids=${savedJobs().slice(0, 50).map((x) => x.id).join(",")}`, { cache: "no-store" })
-        .then((r) => r.json())
-        .then((d) => {
-          if (stop) return;
-          const m: Record<string, JobView> = {};
-          for (const j of d.jobs || []) m[j.id] = j;
-          setJobs(m);
-          if ((d.jobs || []).some((j: JobView) => j.status === "queued" || j.status === "running")) setTimeout(load, 5000);
-        })
-        .catch(() => !stop && setTimeout(load, 8000));
-    load();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const later = (f: () => void, ms: number) => {
+      if (!stop) timer = setTimeout(f, ms);
+    };
+    const show = (list: JobView[]) => {
+      const m: Record<string, JobView> = {};
+      for (const j of list) m[j.id] = j;
+      setJobs(m);
+      return list.some((j) => j.status === "queued" || j.status === "running");
+    };
+    if (signedIn) {
+      // signed in: exactly this account's decks, from the server (any device). Nothing from another
+      // account or from the signed-out list on this phone is mixed in.
+      const load = () =>
+        api("/api/v3/jobs?mine=1")
+          .then((r) => (r.ok ? r.json() : Promise.reject()))
+          .then((d) => {
+            if (stop) return;
+            const list = ((d.jobs || []) as JobView[]).filter((j) => j.status !== "failed" || Date.now() - Date.parse(j.createdAt) < 86400_000);
+            setSaved(list.map((j) => ({ id: j.id, topic: j.topic, createdAt: j.createdAt })).sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+            if (show(list)) later(load, 5000);
+          })
+          .catch(() => later(load, 8000));
+      load();
+    } else {
+      // signed out: the decks made on this phone while signed out
+      const s = savedJobs();
+      setSaved(s);
+      if (s.length) {
+        const load = () =>
+          api(`/api/v3/jobs?ids=${savedJobs().slice(0, 50).map((x) => x.id).join(",")}`)
+            .then((r) => (r.ok ? r.json() : Promise.reject()))
+            .then((d) => {
+              if (stop || !Array.isArray(d.jobs)) return;
+              keepOnly((d.jobs as JobView[]).map((j) => j.id)); // the server hides decks of any account
+              setSaved(savedJobs());
+              if (show(d.jobs)) later(load, 5000);
+            })
+            .catch(() => later(load, 8000));
+        load();
+      }
+    }
     return () => {
       stop = true;
+      if (timer) clearTimeout(timer);
     };
   }, [signedIn]);
 
   if (!saved) return null;
-  if (!saved.length) return limit ? null : <p className="panel rounded-[var(--r-lg)] px-6 py-12 text-center text-[15px] text-[var(--muted)]">Is phone pe banayi decks yahan dikhengi.</p>;
+  if (!saved.length)
+    return limit ? null : (
+      <p className="panel rounded-[var(--r-lg)] px-6 py-12 text-center text-[15px] text-[var(--muted)]">{signedIn ? "Tumhare account ki decks yahan dikhengi." : "Is phone pe banayi decks yahan dikhengi."}</p>
+    );
   const list = limit ? saved.slice(0, limit) : saved;
 
   return (
@@ -277,7 +304,7 @@ function RecentDecks({ onOpen, limit, onAll, signedIn }: { onOpen: (id: string) 
                 </span>
                 <ChevronRight className="h-4 w-4 shrink-0 text-[var(--faint)]" />
               </button>
-              {!limit && (
+              {!limit && !signedIn && (
                 <button
                   aria-label="Remove from list"
                   onClick={() => {

@@ -1,4 +1,4 @@
-import { createJob, getJobViews, jobsOfOwner, queueStats, QueueFullError } from "@/server/jobs/manager";
+import { createJob, getJobViewsFor, jobsOfOwner, queueStats, QueueFullError } from "@/server/jobs/manager";
 import { parseV3Request } from "@/server/http";
 import { loginRequired, resolveOwner } from "@/server/auth";
 import { clientIp, rateLimit, tooMany } from "@/server/rateLimit";
@@ -39,7 +39,7 @@ export async function GET(req: Request) {
   if (sp.get("mine")) {
     const { ownerKey, user } = await resolveOwner(req);
     if (!user) return Response.json({ jobs: [] });
-    return Response.json({ jobs: await jobsOfOwner(ownerKey) }, { headers: { "Cache-Control": "no-store" } });
+    return Response.json({ jobs: await jobsOfOwner(ownerKey) }, { headers: { "Cache-Control": "private, no-store" } });
   }
   const ids = (sp.get("ids") || "")
     .split(",")
@@ -47,5 +47,7 @@ export async function GET(req: Request) {
     .filter((s) => /^[a-z0-9-]{6,64}$/i.test(s))
     .slice(0, 50);
   if (!ids.length) return Response.json({ queue: await queueStats() });
-  return Response.json({ jobs: await getJobViews(ids) }, { headers: { "Cache-Control": "no-store" } });
+  // only the caller's own decks (jobs of another account are left out — no hint they exist)
+  const { ownerKey } = await resolveOwner(req);
+  return Response.json({ jobs: await getJobViewsFor(ids, ownerKey) }, { headers: { "Cache-Control": "private, no-store" } });
 }
