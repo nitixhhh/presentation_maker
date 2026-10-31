@@ -26,6 +26,7 @@ import sharp from "sharp";
 import type { V3Request } from "@/engine-v3/types";
 import { storage } from "../storage";
 import type { JobRecord, JobStage, JobView } from "./types";
+import { setActiveJobs } from "../keepAlive";
 
 const MAX_CONCURRENT = Math.max(1, Number(process.env.MAX_CONCURRENT_JOBS || 2));
 const MAX_QUEUED_PER_OWNER = Math.max(1, Number(process.env.MAX_QUEUED_PER_OWNER || 3));
@@ -347,6 +348,8 @@ function pump() {
     S.lastServed.set(next.ownerKey, Date.now());
     run(next);
   }
+  // keep the instance awake while any deck is queued or running (Render free sleeps after 15 idle min)
+  setActiveJobs(Math.max(S.jobs.size, S.running.size));
 }
 
 // ── boot / recovery ───────────────────────────────────────────────────────────

@@ -1,0 +1,20 @@
+# Keeps the Render free instance of DeckCraft awake: pings the cheap /api/health route every 10 minutes
+# (Render sleeps a free web service after 15 minutes without inbound traffic). No secrets needed.
+# GitHub may delay scheduled runs; during a deck job the server also pings itself (src/server/keepAlive.ts).
+# Scheduled workflows run from the repository's DEFAULT branch: this file must also be on that branch for the cron to fire.
+name: keepalive
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping DeckCraft
+        run: curl -fsS --max-time 60 --retry 2 --retry-delay 10 https://deckcraft-re1b.onrender.com/api/health || true
