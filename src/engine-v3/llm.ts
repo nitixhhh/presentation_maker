@@ -190,13 +190,17 @@ export function routesFor(role: Role, opts: { all?: boolean } = {}): Route[] {
   if (forced?.length) routes = forced;
   else {
     // Opt-in production routes (models.json → engineV3.optInRoutes.<provider>), e.g. ALLOW_NVIDIA_PRODUCTION=true
-    // puts NVIDIA's Kimi K2.6 / DeepSeek / GLM first in the designer chain.
+    // adds NVIDIA as a BACKUP right after the Gemini chain (Gemini stays the main designer).
     const optIn = (cfg.engineV3?.optInRoutes || {}) as Record<string, any>;
     for (const [prov, o] of Object.entries(optIn)) {
       if (prov.startsWith("_") || !o?.env || process.env[o.env] !== "true") continue;
       const pre = ((o.prepend?.[role] || []) as any[]).map(parseRoute).filter(Boolean) as Route[];
+      const mid = ((o.afterGemini?.[role] || []) as any[]).map(parseRoute).filter(Boolean) as Route[];
       const post = ((o.append?.[role] || []) as any[]).map(parseRoute).filter(Boolean) as Route[];
-      routes = [...pre, ...routes, ...post];
+      // afterGemini: Gemini stays the main model; these go right after the last Gemini route (backup before the other fallbacks)
+      let cut = -1;
+      routes.forEach((r, i) => { if (r.provider === "google" && /^gemini/i.test(r.model)) cut = i; });
+      routes = [...pre, ...routes.slice(0, cut + 1), ...mid, ...routes.slice(cut + 1), ...post];
     }
     // trial-only providers (NVIDIA) never serve production traffic unless their opt-in env is set
     routes = routes.filter((r) => !isBenchmarkOnly(r.provider) || productionOptedIn(r.provider));

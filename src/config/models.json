@@ -598,10 +598,10 @@
       ]
     },
     "optInRoutes": {
-      "_comment": "Routes added to production only when the named env var is 'true'. prepend = tried first, append = tried after the normal routes.",
+      "_comment": "Routes added to production only when the named env var is 'true'. prepend = tried first, afterGemini = tried right after the last Gemini route (Gemini stays the main model), append = tried after the normal routes.",
       "nvidia": {
         "env": "ALLOW_NVIDIA_PRODUCTION",
-        "prepend": {
+        "afterGemini": {
           "design": [
             "nvidia:mistralai/mistral-large-4-1t-a52b",
             "nvidia:minimaxai/minimax-m3.1-flash",
