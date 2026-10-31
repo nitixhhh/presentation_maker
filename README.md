@@ -47,7 +47,10 @@ Put these in HF *Secrets* (or `.env.local` when running locally). Never commit t
 | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` | Recommended — **AI images (Flux)** + last-resort text model | dash.cloudflare.com → AI → Workers AI → "Use REST API" |
 | `OPENALEX_API_KEY` | Optional — avoids scholarly-search limits | openalex.org (free) |
 | `BENCHMARK_PASSWORD` | Optional — turns on `/benchmark` | any password you choose |
-| `NVIDIA_NIM_API_KEY` | Optional — **/benchmark only** (Kimi K2.6, DeepSeek V4.1 Flash, GLM-5.3-Flash…). NVIDIA's free API is for testing only, so real decks never use it | build.nvidia.com → Get API Key |
+| `NVIDIA_NIM_API_KEY` | Optional — Kimi K2.6, DeepSeek V4.1 Flash, GLM-5.3-Flash… free on NVIDIA. Used on **/benchmark only**, unless you also set `ALLOW_NVIDIA_PRODUCTION` | build.nvidia.com → Get API Key |
+| `ALLOW_NVIDIA_PRODUCTION` | Optional (`true`) — **your own risk**: puts NVIDIA's Kimi K2.6 / DeepSeek V4.1 Flash / GLM-5.3-Flash first in the designer chain for real decks. See the NVIDIA note below | — |
+| `OLLAMA_API_KEY` | Optional — Ollama Cloud (no server needed). **Paid per token**, very cheap per deck; strong models (DeepSeek V4.1 Flash, GLM-5.3-Flash, Kimi K2.6) | ollama.com → Settings → API keys |
+| `OLLAMA_PRIORITY` | Optional — `last` = use Ollama only after every free model is busy (default: right after free Gemini Flash, quality first) | — |
 
 **Site**
 
@@ -117,9 +120,9 @@ Each AI step has a role, and each role has its own ordered list of free models i
 | Role | What it does | Default routes (best first) |
 |---|---|---|
 | `brief`, `research`, `outline` | understand the request, extract cited facts, plan the story | Gemini 3.5 / 3.1 Flash-Lite → Groq gpt-oss-120b → Gemma 4 → OpenRouter :free → Cloudflare |
-| `art` | deck palette, fonts, per-slide art direction | Gemini 3.8 / 3.7 / 3.6 Flash → OpenRouter Nemotron 3 Ultra :free → Gemma 4 31B → Groq → Cloudflare |
-| `design` | designs every slide (decides most of the quality) | Gemini 3.8 → 3.7 → 3.6 → 3.5 → 3 Flash → OpenRouter Nemotron 3 Ultra / Inkling :free → Gemma 4 31B → Groq gpt-oss-120b / Qwen 3.8 → Cloudflare |
-| `vision` | looks at each rendered slide and critiques it | Gemini 3.6 / 3.5 Flash → Flash-Lite → Gemma 4 31B → OpenRouter Nemotron VL / Inkling :free → Groq Qwen 3.8 → Cloudflare Llama 4 Scout |
+| `art` | deck palette, fonts, per-slide art direction | Gemini 3.8 / 3.7 / 3.6 Flash → (Ollama DeepSeek V4.1 Flash, if key) → OpenRouter Inkling / Nemotron 3 Ultra :free → Gemma 4 → Groq → Cloudflare |
+| `design` | designs every slide (decides most of the quality) | (NVIDIA Kimi K2.6 / DeepSeek / GLM if `ALLOW_NVIDIA_PRODUCTION`) → Gemini 3.8 → 3.7 → 3.6 → 3.5 → 3 Flash → (Ollama DeepSeek V4.1 Flash / GLM-5.3-Flash, if key) → OpenRouter Inkling / Nemotron 3.5 Super VL / Nemotron 3 Ultra :free → Gemma 4 31B / 26B → Groq gpt-oss-120b / Qwen 3.8 → Cloudflare |
+| `vision` | looks at each rendered slide and critiques it | Gemini 3.6 / 3.5 Flash → Flash-Lite → (Ollama Gemma 4, if key) → OpenRouter Nemotron 3.5 Super VL / Inkling :free → Gemma 4 → Groq Qwen 3.8 → Cloudflare Llama 4 Scout |
 
 **The scheduler (`src/engine-v3/llm.ts`)** knows every model's free limits (`engineV3.models`: requests/min, requests/day, tokens/min, tokens/day) and keeps a live budget per key. It never sends a request it knows will be refused, reads `Retry-After` / Gemini `retryDelay` / Groq "try again in 7m" on a 429, and marks a model as used up for today when the provider says the daily quota is gone. That state is saved to disk, so it survives restarts. It fails over to the next route at once. For `design` and `art` it first waits a few seconds for the better model. When everything is busy the deck simply waits ("High demand on the free AI models — slowing down a little" on the progress screen). It gives up only after `V3_MAX_CAPACITY_WAIT_MIN` (default 20) minutes with no capacity at all.
 
@@ -129,10 +132,9 @@ Each AI step has a role, and each role has its own ordered list of free models i
 * **Groq free plan** (console.groq.com/docs/rate-limits): only `openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `qwen/qwen3.8-27b` (+ Whisper): 30 req/min, 1,000 req/day, **8,000 tokens/min**, 200k tokens/day. Kimi K2 and Llama 4 Scout are no longer offered on Groq. 8k tokens/min means one big slide-design request can exceed it; the scheduler then skips Groq for that request.
 * **Gemini free tier** (ai.google.dev pricing lists these as free; limits from Google's own 429 replies on a free key): Flash models (`gemini-3.8-flash`, `3.7`, `3.6`, `3.5`, `3-flash-preview`) **20 requests/day each**. Flash-Lite (`gemini-3.5-flash-lite`, `3.1-flash-lite`) 500/day each. Resets at midnight Pacific. Every Flash model has its own daily quota, so the routes rotate through them. Gemma 4 (`gemma-4-31b-it`, `gemma-4-26b-a4b-it`) is free with much higher limits, but in testing its endpoint often answered HTTP 500 (the scheduler retries/fails over).
 * **OpenRouter** free models (`:free`, checked 31 Oct 2026 on openrouter.ai/api/v1/models): Gemma 4 31B / 26B (vision), Nemotron 3 Ultra 550B, Nemotron 3.5 Super VL (vision), Nemotron 3.5 Lightning, Inkling / Inkling Small (vision), Laguna, Dots 3 Note… There is **no** free Kimi, DeepSeek, Qwen, GLM or Llama on OpenRouter. Limits (openrouter.ai/docs/api-reference/limits): 20 req/min and 50 req/day per account across all free models; **1,000/day once the account has bought at least 10 credits ever** → set `V3_ACCOUNT_OPENROUTER_RPD=1000`. That one purchase is the biggest legit capacity boost.
-* **NVIDIA build.nvidia.com**: has Kimi K2.6, DeepSeek V4.1 Flash, GLM-5.3-Flash, MiniMax M3.1 Flash, Mistral Large 4 for free, but its Trial Terms allow use "only ... for internal testing and evaluation purposes, not in production". The engine therefore offers NVIDIA models **only on /benchmark** (marked "testing only") and never uses them for real decks (`benchmarkOnly` in models.json).
+* **NVIDIA build.nvidia.com**: has Kimi K2.6, DeepSeek V4.1 Flash, GLM-5.3-Flash, MiniMax M3.1 Flash, Mistral Large 4 for free, but its Trial Terms allow use "only ... for internal testing and evaluation purposes, not in production". By default the engine offers NVIDIA models **only on /benchmark** (marked "testing only"). With `ALLOW_NVIDIA_PRODUCTION=true` they become the first designer choice for real decks (`engineV3.optInRoutes.nvidia`). **Risk, plainly:** that breaks NVIDIA's trial terms for a paid product; NVIDIA can cut the key off at any time without notice. If that happens the engine simply fails over to Gemini / OpenRouter / Gemma, so decks keep coming, but quality drops back. Fine for a small beta; for a real launch use Ollama Cloud or another paid route for the designer.
+* **Ollama Cloud** (docs.ollama.com/cloud, ollama.com/pricing, checked 31 Oct 2026): hosted models through an API key — no server, no download (`https://ollama.com/v1`, OpenAI-compatible). **Not free:** "Pay as you go — Pay per token for every cloud model", 3 requests at a time. Models include `deepseek-v4.1-flash`, `glm-5.3-flash`, `kimi-k2.6`, `kimi-k3`, `gemma4:31b`, `minimax-m3.1-flash`. Prices per million tokens are on ollama.com/pricing (off-peak half price for some models outside 12:00–18:00 UTC on weekdays). A 12-slide deck uses roughly 170k input + 150k output tokens, so DeepSeek / GLM Flash cost only a few rupees to tens of rupees per deck — the cheapest legit way to get near-Kimi quality. Ollama: "one account per person"; prompts "never logged or trained on".
 * **Cloudflare Workers AI**: 10,000 Neurons/day free, shared by all models (≈15–20 slide designs with gpt-oss-120b, or ~200 Flux Schnell images). Kimi and GLM on Workers AI need a paid plan.
-
-**Rough daily capacity on ONE free key per provider:** Gemini Flash ≈ 100 strong calls/day + Gemma. A 10-slide deck uses about 10 designs + 1 art direction + a few revisions + a few vision checks ≈ 20–30 strong calls. So expect a few top-quality decks per Google project per day. After that, decks continue on Gemma / OpenRouter / Groq at lower quality. Add keys from more projects to scale.
 
 **Use the benchmark** (`/benchmark`, set `BENCHMARK_PASSWORD`) to run the same topic through several models for one role on *your* keys. It shows QA score, clean-slide count, time and the slides side by side, so you can reorder `engineV3.roles`.
 
@@ -140,6 +142,26 @@ Each AI step has a role, and each role has its own ordered list of free models i
 
 **Design recipe library** (`src/engine-v3/design/recipes.ts`): 38 hand-made example slides (title, agenda, definition, annotated photo, processes, cycle, comparisons, table, pros/cons, stats, chart, timelines, quote, image-led, architecture, hub, formula, applications, code, objectives, problem→solution, conclusions, closings). For every slide the engine picks 2–3 relevant ones and shows them to the designer AI as *inspiration* (technique, not layout). The designer still designs every slide itself. There is no fixed fallback layout any more: a slide that keeps breaking gets a fresh AI redesign. The only engine-made slide is an exact reference list, used if the AI's references slide drops a citation.
 
+
+### Free capacity math (how many decks a free setup can make per day)
+
+Measured AI calls per deck (engine v3, Oct 2026): a 12-slide deck = **about 50–80 calls**: ~3 small (brief, research, outline), 1–2 art direction, **25–45 slide designs** (12 first drafts + redesigns of slides that fail checks) and **10–25 vision checks**. Weaker designers need more redesigns, so they use *more* calls, not fewer. Slide images (Flux) are extra, ~5 per deck.
+
+Free limits per ONE account per provider (provider pages / their own 429 replies, checked 30–31 Oct 2026):
+
+| Provider (free) | Daily limit | What it covers | Decks/day it can carry |
+|---|---|---|---|
+| Google AI Studio — Gemini Flash (3.8, 3.7, 3.6, 3.5, 3-preview) | **20 requests/day per model**, per Google project | best free designer | 5 models × 20 = 100 strong calls → **~2 decks** designed on Gemini |
+| Google AI Studio — Flash-Lite (3.5, 3.1) | ~500/day per model | brief / research / outline / vision | small roles for 100+ decks |
+| Google AI Studio — Gemma 4 31B / 26B | high daily limit, but 16k input tokens/min and many HTTP 500/503 "high demand" replies (31 Oct test: ~half of 31B calls failed) | backup designer | a deck takes 60–90 min; a few per day in practice |
+| OpenRouter `:free` (Gemma 4, Nemotron, Inkling…) | **50 requests/day per account** (all free models together), 20/min | backup designer + vision | **< 1 deck** |
+| OpenRouter `:free` after buying ≥10 credits once | **1,000 requests/day**, 20/min | designer + vision | **~15–20 decks** (20/min ≈ one deck every few minutes) |
+| Groq free — gpt-oss-120b / qwen3.8-27b | 1,000 requests/day, 30/min, but **8,000 tokens/min** | small roles (a design request is too big for 8k TPM) | small roles for ~200 decks |
+| Cloudflare Workers AI | 10,000 Neurons/day | Flux images + last-resort text | images for ~30–40 decks |
+| NVIDIA build.nvidia.com | rate limits not published (users report ~40/min) | /benchmark; production only with `ALLOW_NVIDIA_PRODUCTION=true` (trial terms risk) | many while the key lasts |
+| Ollama Cloud (paid per token) | 3 requests at a time | strong designer | as many as you pay for |
+
+**What this means:** with one free account on each provider and no credits, expect **about 2 high-quality (Gemini-designed) decks per day**, then the engine continues on Gemma 4 / OpenRouter free at lower quality and much slower. The single biggest legit step up is buying OpenRouter credits once (≥10) → 1,000 free-model requests/day → roughly **15–20 more decks/day** on the free Nemotron / Inkling / Gemma models. Beyond that, the designer step needs a paid model (Gemini Flash on a billed Google project, or a cheap paid model on OpenRouter) — the other roles can stay free. Do **not** multiply free accounts of the same provider: it breaks their terms and a ban takes the whole site down.
 
 ## Run it on your computer
 

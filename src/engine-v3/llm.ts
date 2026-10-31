@@ -94,6 +94,8 @@ interface ProviderCfg {
 
 const cfg = modelsConfig as any;
 const ENV_BASE: Record<string, string> = {
+  ollama: "OLLAMA_BASE_URL",
+  nvidia: "NVIDIA_BASE_URL",
   google: "GOOGLE_AI_BASE_URL",
   groq: "GROQ_BASE_URL",
   openrouter: "OPENROUTER_BASE_URL",
@@ -186,9 +188,28 @@ export function routesFor(role: Role, opts: { all?: boolean } = {}): Route[] {
   const ctx = llmContext.getStore();
   const forced = ctx?.routes?.[role] || ctx?.routes?.["*"];
   if (forced?.length) routes = forced;
-  // trial-only providers (NVIDIA) never serve production traffic — only a /benchmark run may force them
-  else routes = routes.filter((r) => !isBenchmarkOnly(r.provider));
+  else {
+    // Opt-in production routes (models.json → engineV3.optInRoutes.<provider>), e.g. ALLOW_NVIDIA_PRODUCTION=true
+    // puts NVIDIA's Kimi K2.6 / DeepSeek / GLM first in the designer chain.
+    const optIn = (cfg.engineV3?.optInRoutes || {}) as Record<string, any>;
+    for (const [prov, o] of Object.entries(optIn)) {
+      if (prov.startsWith("_") || !o?.env || process.env[o.env] !== "true") continue;
+      const pre = ((o.prepend?.[role] || []) as any[]).map(parseRoute).filter(Boolean) as Route[];
+      const post = ((o.append?.[role] || []) as any[]).map(parseRoute).filter(Boolean) as Route[];
+      routes = [...pre, ...routes, ...post];
+    }
+    // trial-only providers (NVIDIA) never serve production traffic unless their opt-in env is set
+    routes = routes.filter((r) => !isBenchmarkOnly(r.provider) || productionOptedIn(r.provider));
+    // pay-per-token providers can be pushed to the end of every chain (OLLAMA_PRIORITY=last)
+    if (process.env.OLLAMA_PRIORITY === "last") routes = [...routes.filter((r) => r.provider !== "ollama"), ...routes.filter((r) => r.provider === "ollama")];
+    routes = routes.filter((r, i, a) => a.findIndex((x) => x.provider === r.provider && x.model === r.model) === i);
+  }
   return opts.all ? routes : routes.filter((r) => providerReady(r.provider));
+}
+
+function productionOptedIn(provider: string): boolean {
+  const o = (cfg.engineV3?.optInRoutes || {})[provider];
+  return !!o?.env && process.env[o.env] === "true";
 }
 
 export function isBenchmarkOnly(provider: string): boolean {

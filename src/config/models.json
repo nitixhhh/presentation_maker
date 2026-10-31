@@ -46,7 +46,7 @@
       "note": "testing only (NVIDIA trial terms)",
       "concurrency": 2,
       "dailyReset": "rolling",
-      "_note": "NVIDIA API Trial Terms of Service (v. 19 Sep 2025) §1.4: without a paid subscription the API may be used 'only ... for internal testing and evaluation purposes, not in production'. So the engine NEVER routes production jobs here; these models appear only on /benchmark. NVIDIA no longer uses credits; per-model rate limits are not published (shown at the top right of build.nvidia.com; users report ~40 requests/min)."
+      "_note": "NVIDIA API Trial Terms of Service (v. 19 Sep 2025) §1.4: without a paid subscription the API may be used 'only ... for internal testing and evaluation purposes, not in production'. So the engine NEVER routes production jobs here; these models appear only on /benchmark. NVIDIA no longer uses credits; per-model rate limits are not published (shown at the top right of build.nvidia.com; users report ~40 requests/min). Exception: ALLOW_NVIDIA_PRODUCTION=true (owner's own decision and risk) adds them to production routes via engineV3.optInRoutes.nvidia."
     },
     "cloudflare": {
       "name": "Cloudflare Workers AI",
@@ -84,6 +84,21 @@
         "rpm": 20,
         "rpd": 200,
         "tokensPerDay": 200000
+      }
+    },
+    "ollama": {
+      "name": "Ollama Cloud (pay per token)",
+      "baseUrl": "https://ollama.com/v1",
+      "apiKeyEnv": "OLLAMA_API_KEY",
+      "enabled": true,
+      "allowedForProduction": true,
+      "concurrency": 3,
+      "dailyReset": "rolling",
+      "_note": "ollama.com hosted models through an API key, no own server (docs.ollama.com/cloud; OpenAI-compatible at https://ollama.com/v1). NOT free: 'Pay as you go — Pay per token for every cloud model' (ollama.com/pricing, 31 Oct 2026); 3 concurrent requests on pay-as-you-go. One account per person. Only used when OLLAMA_API_KEY is set; OLLAMA_PRIORITY=last moves it to the end of every chain.",
+      "limits": {
+        "rpm": 60,
+        "rpd": 100000,
+        "tokensPerDay": 50000000
       }
     },
     "custom": {
@@ -200,7 +215,7 @@
     }
   },
   "engineV3": {
-    "_comment": "Engine v3 routes per role, best first ('provider:model'). Small fast models do brief/research/outline; the strongest free models do art direction, slide design and vision QA. A 429 or a used-up daily quota moves to the next route instantly. Override at runtime with ENGINE_V3_ROUTES (same shape as 'roles'). Use the /benchmark page to pick the best model per role on your own keys.",
+    "_comment": "Engine v3 routes per role, best first ('provider:model'). Small fast models do brief/research/outline; the strongest free models do art direction, slide design and vision QA. A 429 or a used-up daily quota moves to the next route instantly. Override at runtime with ENGINE_V3_ROUTES (same shape as 'roles'). Use the /benchmark page to pick the best model per role on your own keys. Order (31 Oct 2026): free Gemini Flash first (best free designer on Design Arena votes), then Ollama Cloud's cheap paid models IF OLLAMA_API_KEY is set (OLLAMA_PRIORITY=last to use them only at the end), then OpenRouter free (Inkling > Nemotron 3.5 Super VL > Nemotron 3 Ultra on Design Arena), Gemma 4, Groq, Cloudflare. NVIDIA only with ALLOW_NVIDIA_PRODUCTION=true.",
     "roles": {
       "brief": [
         "google:gemini-3.5-flash-lite",
@@ -226,12 +241,15 @@
         "google:gemma-4-26b-a4b-it",
         "google:gemma-4-31b-it",
         "openrouter:google/gemma-4-31b-it:free",
+        "ollama:glm-5.3-flash",
         "cloudflare:@cf/openai/gpt-oss-120b"
       ],
       "art": [
         "google:gemini-3.8-flash",
         "google:gemini-3.7-flash",
         "google:gemini-3.6-flash",
+        "ollama:deepseek-v4.1-flash",
+        "openrouter:thinkingmachines/inkling:free",
         "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free",
         "google:gemma-4-31b-it",
         "google:gemma-4-26b-a4b-it",
@@ -244,8 +262,11 @@
         "google:gemini-3.6-flash",
         "google:gemini-3.5-flash",
         "google:gemini-3-flash-preview",
-        "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free",
+        "ollama:deepseek-v4.1-flash",
+        "ollama:glm-5.3-flash",
         "openrouter:thinkingmachines/inkling:free",
+        "openrouter:nvidia/nemotron-3.5-super-vl:free",
+        "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free",
         "google:gemma-4-31b-it",
         "google:gemma-4-26b-a4b-it",
         "openrouter:google/gemma-4-31b-it:free",
@@ -257,10 +278,11 @@
         "google:gemini-3.6-flash",
         "google:gemini-3.5-flash",
         "google:gemini-3.5-flash-lite",
-        "google:gemma-4-31b-it",
-        "google:gemma-4-26b-a4b-it",
+        "ollama:gemma4:31b",
         "openrouter:nvidia/nemotron-3.5-super-vl:free",
         "openrouter:thinkingmachines/inkling:free",
+        "google:gemma-4-31b-it",
+        "google:gemma-4-26b-a4b-it",
         "groq:qwen/qwen3.8-27b",
         "cloudflare:@cf/meta/llama-4-scout-17b-16e-instruct"
       ]
@@ -474,6 +496,36 @@
         "ctx": 1000000,
         "maxOutput": 16000,
         "vision": true
+      },
+      "ollama:glm-5.3-flash": {
+        "rpm": 60,
+        "ctx": 1000000,
+        "maxOutput": 16000,
+        "vision": false
+      },
+      "ollama:deepseek-v4.1-flash": {
+        "rpm": 60,
+        "ctx": 1000000,
+        "maxOutput": 16000,
+        "vision": false
+      },
+      "ollama:kimi-k2.6": {
+        "rpm": 60,
+        "ctx": 256000,
+        "maxOutput": 16000,
+        "vision": true
+      },
+      "ollama:gemma4:31b": {
+        "rpm": 60,
+        "ctx": 256000,
+        "maxOutput": 16000,
+        "vision": true
+      },
+      "ollama:minimax-m3.1-flash": {
+        "rpm": 60,
+        "ctx": 1000000,
+        "maxOutput": 16000,
+        "vision": true
       }
     },
     "imageGeneration": {
@@ -512,6 +564,38 @@
       "brief": [
         "nvidia:z-ai/glm-5.3-flash"
       ]
+    },
+    "optInRoutes": {
+      "_comment": "Routes added to production only when the named env var is 'true'. prepend = tried first, append = tried after the normal routes.",
+      "nvidia": {
+        "env": "ALLOW_NVIDIA_PRODUCTION",
+        "prepend": {
+          "design": [
+            "nvidia:moonshotai/kimi-k2.6",
+            "nvidia:deepseek-ai/deepseek-v4.1-flash",
+            "nvidia:z-ai/glm-5.3-flash"
+          ],
+          "art": [
+            "nvidia:moonshotai/kimi-k2.6",
+            "nvidia:deepseek-ai/deepseek-v4.1-flash"
+          ],
+          "vision": [
+            "nvidia:moonshotai/kimi-k2.6"
+          ]
+        },
+        "append": {
+          "outline": [
+            "nvidia:deepseek-ai/deepseek-v4.1-flash",
+            "nvidia:z-ai/glm-5.3-flash"
+          ],
+          "research": [
+            "nvidia:z-ai/glm-5.3-flash"
+          ],
+          "brief": [
+            "nvidia:z-ai/glm-5.3-flash"
+          ]
+        }
+      }
     }
   }
 }
