@@ -7,8 +7,8 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 const newsreader = Newsreader({ variable: "--font-newsreader", subsets: ["latin"], style: ["italic"], weight: ["500"], display: "swap" });
 
 export const metadata: Metadata = {
-  title: "DeckCraft — Topic do, ready PPT lo",
-  description: "Research-backed academic presentations for Indian college students. Real sources, designed slides, your college's title slide. Free preview, PDF and editable PowerPoint.",
+  title: "DeckCraft — Give a topic, get a ready deck",
+  description: "Research-backed academic presentations for students. Real sources, designed slides, your college's title slide. Free preview, PDF and editable PowerPoint.",
 };
 
 export const viewport: Viewport = {

@@ -3,19 +3,19 @@ import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 
 const QA: { q: string; a: React.ReactNode }[] = [
-  { q: "Preview sach me free hai?", a: "Haan. Poori deck watermark ke saath free dekh sakte ho. Pay tabhi karo jab clean PDF aur editable PPTX chahiye." },
-  { q: "Kitna time lagta hai?", a: "Aam taur pe 6 se 10 minute. Rush time pe thoda zyada. App band kar do, deck server pe banti rehti hai aur My decks me mil jaayegi." },
-  { q: "Hindi ya Hinglish me ban sakti hai?", a: "Haan. English, Hindi aur Hinglish, teeno me." },
-  { q: "College ka title slide aur format?", a: "Naam, roll no., guide, department, college aur logo do, title slide waise hi banegi. Required sections (Introduction, Methodology, References) bhi likh sakte ho." },
-  { q: "PowerPoint edit kar sakte hain?", a: "Haan, PPTX fully editable hai. Unlock ke baad 2 slides free me dobara banwa sakte ho: slide chuno, bolo kya badalna hai." },
-  { q: "Facts kahan se aate hain?", a: "Real sources padh ke, aur references last slide pe milte hain. Phir bhi submit karne se pehle ek baar padh lena. AI se bhi galti ho sakti hai." },
+  { q: "Is the preview really free?", a: "Yes. You can see the whole deck with a watermark for free. Pay only when you want the clean PDF and editable PPTX." },
+  { q: "How long does it take?", a: "Usually 6 to 10 minutes, a little longer at busy times. You can close the app: the deck keeps building on the server and will be waiting in My decks." },
+  { q: "Can it make decks in Hindi or Hinglish?", a: "Yes. English, Hindi and Hinglish are all supported." },
+  { q: "My college's title slide and format?", a: "Give your name, roll no., guide, department, college and logo, and the title slide is made that way. You can also list required sections (Introduction, Methodology, References)." },
+  { q: "Can I edit the PowerPoint?", a: "Yes, the PPTX is fully editable. After unlocking you can redo 2 slides for free: pick a slide and say what should change." },
+  { q: "Where do the facts come from?", a: "From real sources, listed on the references slide. Still, read it once before you submit: AI can make mistakes." },
   {
-    q: "Mera data safe hai?",
+    q: "Is my data safe?",
     a: (
       <>
-        Google login sirf aapke account aur decks ke liye hai. Topic aur details AI models ko sirf deck banane ke liye bheje jaate hain, isliye personal ya confidential info mat daalo.{" "}
+        Google sign-in is used only for your account and your decks. Your topic and details are sent to AI models only to make the deck, so don't include personal or confidential information.{" "}
         <a href="/privacy" className="font-medium text-[var(--accent-ink)] underline decoration-[var(--rule-2)] underline-offset-4">
-          Privacy padho
+          Read the privacy policy
         </a>
       </>
     ),

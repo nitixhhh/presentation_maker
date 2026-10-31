@@ -45,16 +45,16 @@ export default function Landing() {
       <section className="relative px-5 pb-10 pt-[104px] sm:pt-[140px]">
         <div className="mx-auto max-w-[1000px] text-center">
           <div className="glass rise inline-flex items-center gap-2 rounded-full py-1.5 pl-1.5 pr-3.5 text-[13px] font-medium text-[var(--ink-2)]">
-            <span className="rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-[12px] font-semibold text-[var(--accent-ink)]">Naya</span>
-            Hindi aur Hinglish decks bhi
+            <span className="rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-[12px] font-semibold text-[var(--accent-ink)]">New</span>
+            Decks in Hindi and Hinglish too
           </div>
           <h1 className="display rise d1 mt-6 text-[46px] sm:text-[84px]">
-            Topic do.
+            Give a topic.
             <br />
-            <span className="accent-serif whitespace-nowrap">10 minute me</span> <span className="whitespace-nowrap">ready PPT.</span>
+            <span className="accent-serif whitespace-nowrap">Get a ready deck</span> <span className="whitespace-nowrap">in 10 minutes.</span>
           </h1>
           <p className="lede rise d2 mx-auto mt-5 max-w-[600px] text-[16.5px] sm:text-[19px]">
-            Research-backed slides with real sources, clean diagrams aur aapke college ka title slide. Preview free hai, pay sirf us deck ka jo aap rakhte ho.
+            Research-backed slides with real sources, clean diagrams and your college's title slide. The preview is free; pay only for the decks you keep.
           </p>
           <div className="rise d3 relative z-20 mx-auto mt-8 max-w-[680px]">
             <HeroComposer />
@@ -62,10 +62,10 @@ export default function Landing() {
           <div className="rise d4 mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <GoogleStart className="w-full max-w-[340px] sm:w-auto" />
             <a href="#compare" className="btn btn-ghost w-full max-w-[340px] sm:w-auto">
-              Sample dekho
+              See samples
             </a>
           </div>
-          <p className="rise d4 mt-3 text-[13px] text-[var(--muted)]">Free preview. Koi card nahi chahiye.</p>
+          <p className="rise d4 mt-3 text-[13px] text-[var(--muted)]">Free preview. No card needed.</p>
         </div>
 
         <div className="rise d5 relative mx-auto mt-12 max-w-[1080px] sm:mt-16" aria-label="Slides made by DeckCraft">
@@ -94,14 +94,14 @@ export default function Landing() {
       {/* ---------- how it works ---------- */}
       <section id="how" className="scroll-mt-24 px-5 py-14 sm:py-24">
         <div className="mx-auto max-w-[1080px]">
-          <SectionHead eyebrow="Kaise kaam karta hai" title="Teen steps." accent="Zero formatting.">
-            Aap topic do. DeckCraft padhta hai, likhta hai, design karta hai aur har slide check karta hai. Pay karne se pehle poori deck dikhata hai.
+          <SectionHead eyebrow="How it works" title="Three steps." accent="Zero formatting.">
+            You give a topic. DeckCraft reads, writes, designs and checks every slide, then shows you the whole deck before you pay.
           </SectionHead>
           <div className="grid gap-4 md:grid-cols-3 md:gap-5">
             <div data-reveal className="panel flex flex-col rounded-[var(--r-lg)] p-6">
               <span className="eyebrow text-[var(--accent-ink)]">01</span>
-              <h3 className="mt-3 text-[21px] font-semibold tracking-[-0.025em]">Topic likho</h3>
-              <p className="mt-2 text-[15px] leading-relaxed text-[var(--muted)]">Topic, class aur slides. Roll no., guide aur college logo daalo toh proper title slide bhi.</p>
+              <h3 className="mt-3 text-[21px] font-semibold tracking-[-0.025em]">Write your topic</h3>
+              <p className="mt-2 text-[15px] leading-relaxed text-[var(--muted)]">Topic, class and number of slides. Add your roll no., guide and college logo for a proper title slide.</p>
               <div className="mt-6 space-y-2 rounded-[var(--r-md)] border border-[var(--rule)] bg-[var(--card)] p-4 text-[13.5px]">
                 <div className="flex justify-between gap-3">
                   <span className="font-medium">Smart Library System</span>
@@ -112,8 +112,8 @@ export default function Landing() {
             </div>
             <div data-reveal style={{ ["--delay" as string]: "90ms" }} className="panel flex flex-col rounded-[var(--r-lg)] p-6">
               <span className="eyebrow text-[var(--accent-ink)]">02</span>
-              <h3 className="mt-3 text-[21px] font-semibold tracking-[-0.025em]">Research, phir design</h3>
-              <p className="mt-2 text-[15px] leading-relaxed text-[var(--muted)]">Real sources padh ke facts cite hote hain. Har slide ka layout aur diagram alag banta hai, phir quality check.</p>
+              <h3 className="mt-3 text-[21px] font-semibold tracking-[-0.025em]">Research, then design</h3>
+              <p className="mt-2 text-[15px] leading-relaxed text-[var(--muted)]">Facts are cited from real sources. Every slide gets its own layout and diagram, then a quality check.</p>
               <div className="mt-6 space-y-2 rounded-[var(--r-md)] border border-[var(--rule)] bg-[var(--card)] p-4 text-[13.5px]">
                 {["NCERT Biology XI", "Britannica: Calvin cycle", "Khan Academy"].map((x) => (
                   <div key={x} className="flex items-center justify-between gap-3">
@@ -128,8 +128,8 @@ export default function Landing() {
             </div>
             <div data-reveal style={{ ["--delay" as string]: "180ms" }} className="panel flex flex-col rounded-[var(--r-lg)] p-6">
               <span className="eyebrow text-[var(--accent-ink)]">03</span>
-              <h3 className="mt-3 text-[21px] font-semibold tracking-[-0.025em]">Preview, phir unlock</h3>
-              <p className="mt-2 text-[15px] leading-relaxed text-[var(--muted)]">Poori deck free me dekho. Pasand aaye toh clean PDF aur editable PPTX unlock karo.</p>
+              <h3 className="mt-3 text-[21px] font-semibold tracking-[-0.025em]">Preview, then unlock</h3>
+              <p className="mt-2 text-[15px] leading-relaxed text-[var(--muted)]">See the whole deck for free. Like it? Unlock the clean PDF and editable PPTX.</p>
               <div className="mt-6 grid grid-cols-3 gap-2">
                 <div className="overflow-hidden rounded-[10px]">
                   <Slide src="/landing/ps01.webp" alt="" />
@@ -150,8 +150,8 @@ export default function Landing() {
       {/* ---------- before / after ---------- */}
       <section id="compare" className="scroll-mt-24 px-5 py-14 sm:py-24">
         <div className="mx-auto max-w-[1000px]">
-          <SectionHead eyebrow="Before / after" title="Same topic." accent="Alag hi level.">
-            Left: wo template jo raat 2 baje banta hai. Right: B.Sc Chemistry ke liye asli DeckCraft export. Drag karke compare karo.
+          <SectionHead eyebrow="Before / after" title="Same topic." accent="Different league.">
+            Left: the template made at 2 a.m. Right: a real DeckCraft export for B.Sc Chemistry. Drag to compare.
           </SectionHead>
           <div data-reveal>
             <Compare />
@@ -179,14 +179,14 @@ export default function Landing() {
       {/* ---------- pricing ---------- */}
       <section id="pricing" className="scroll-mt-24 px-5 py-14 sm:py-24">
         <div className="mx-auto max-w-[1080px]">
-          <SectionHead eyebrow="Pricing" title="Pay per deck." accent="Subscription nahi.">
-            Har deck pehle free watermarked preview ke saath aati hai. Pay sirf clean files ke liye.
+          <SectionHead eyebrow="Pricing" title="Pay per deck." accent="No subscription.">
+            Every deck starts with a free watermarked preview. You pay only for the clean files.
           </SectionHead>
           <div className="grid gap-4 md:grid-cols-3 md:gap-5">
             {[
-              { name: "First deck", tag: "Intro price", amt: "₹9", unit: "", note: "Aapki pehli deck, fully unlocked.", feat: true },
-              { name: "Single deck", tag: "", amt: "₹39", unit: "per deck", note: "Bina watermark, rakh lo aur edit karo." },
-              { name: "Semester pack", tag: "Best value", amt: "₹149", unit: "for 5 decks", note: "Ek deck lagbhag ₹30. Jab chaho use karo." },
+              { name: "First deck", tag: "Intro price", amt: "₹9", unit: "", note: "Your first deck, fully unlocked.", feat: true },
+              { name: "Single deck", tag: "", amt: "₹39", unit: "per deck", note: "No watermark. Keep it and edit it." },
+              { name: "Semester pack", tag: "Best value", amt: "₹149", unit: "for 5 decks", note: "About ₹30 a deck. Use them any time." },
             ].map((p, i) => (
               <div
                 key={p.name}
@@ -207,7 +207,7 @@ export default function Landing() {
             ))}
           </div>
           <div data-reveal className="mx-auto mt-6 flex max-w-[860px] flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[14px] text-[var(--ink-2)]">
-            {["PDF bina watermark", "Editable PPTX", "Speaker notes", "2 free slide edits"].map((x) => (
+            {["PDF without watermark", "Editable PPTX", "Speaker notes", "2 free slide edits"].map((x) => (
               <span key={x} className="flex items-center gap-1.5">
                 <Check className="h-4 w-4 text-[var(--accent)]" strokeWidth={2.4} />
                 {x}
@@ -215,7 +215,7 @@ export default function Landing() {
             ))}
           </div>
           <p data-reveal className="mt-3 text-center text-[13.5px] text-[var(--muted)]">
-            UPI, cards aur wallets. Preview hamesha free.
+            UPI, cards and wallets. The preview is always free.
           </p>
         </div>
       </section>
@@ -223,7 +223,7 @@ export default function Landing() {
       {/* ---------- FAQ ---------- */}
       <section id="faq" className="scroll-mt-24 px-5 py-14 sm:py-24">
         <div className="mx-auto max-w-[760px]">
-          <SectionHead eyebrow="FAQ" title="Sawaal?" accent="Seedhe jawaab." />
+          <SectionHead eyebrow="FAQ" title="Questions?" accent="Straight answers." />
           <div data-reveal>
             <Faq />
           </div>
@@ -233,14 +233,14 @@ export default function Landing() {
       {/* ---------- final CTA ---------- */}
       <section className="px-5 pb-16 pt-6 sm:pb-24">
         <div data-reveal className="glass mx-auto max-w-[1080px] rounded-[var(--r-xl)] px-6 py-14 text-center sm:py-20">
-          <span className="eyebrow">Kal submission hai?</span>
+          <span className="eyebrow">Submission due tomorrow?</span>
           <h2 className="display mt-3 text-[34px] sm:text-[60px]">
-            Topic likho.
+            Write your topic.
             <br />
-            <span className="accent-serif">Baaki hum dekh lenge.</span>
+            <span className="accent-serif">We'll handle the rest.</span>
           </h2>
           <Link href="/create" className="btn btn-ink mt-8">
-            Free preview banao <ArrowRight className="h-[18px] w-[18px]" />
+            Make a free preview <ArrowRight className="h-[18px] w-[18px]" />
           </Link>
         </div>
       </section>
@@ -249,7 +249,7 @@ export default function Landing() {
         <div className="mx-auto flex max-w-[1080px] flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <Wordmark />
-            <p className="mt-2 text-[13px] text-[var(--muted)]">Made in India, Indian classrooms ke liye.</p>
+            <p className="mt-2 text-[13px] text-[var(--muted)]">Made in India, for classrooms everywhere.</p>
           </div>
           <nav className="flex flex-wrap gap-x-6 gap-y-2 text-[14px] text-[var(--ink-2)]">
             <Link href="/create" className="hover:text-[var(--ink)]">Create</Link>

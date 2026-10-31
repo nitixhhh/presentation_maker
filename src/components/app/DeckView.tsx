@@ -127,7 +127,7 @@ export default function DeckView({ deck, me, onReload }: { deck: DeckSummary; me
       {locked && p ? (
         <div className="glass rise d2 space-y-3.5 rounded-[var(--r-xl)] p-5 sm:p-6">
           <p className="flex items-center gap-2 text-[16px] font-semibold text-[var(--ink)]">
-            <Lock className="h-4 w-4 text-[var(--accent)]" /> Pasand aaya? Clean files unlock karo
+            <Lock className="h-4 w-4 text-[var(--accent)]" /> Like it? Unlock the clean files
           </p>
           <ul className="space-y-1.5 text-[14px] text-[var(--ink-2)]">
             {["PDF without watermark", "Editable PowerPoint (PPTX)", "Speaker notes (in the PPTX + a separate PDF)", `${deck.edits?.free ?? 2} free slide edits`].map((t) => (

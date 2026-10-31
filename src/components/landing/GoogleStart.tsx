@@ -4,8 +4,8 @@ import { Loader2 } from "lucide-react";
 import { GoogleG } from "@/components/brand/Brand";
 import { accessToken, signInWithGoogle } from "@/lib/client/auth";
 
-/** "Google se start karo": signed in -> straight to /create; else the existing Google sign-in, returning to /create. */
-export default function GoogleStart({ className = "", label = "Google se start karo" }: { className?: string; label?: string }) {
+/** "Start with Google": signed in -> straight to /create; else the existing Google sign-in, returning to /create. */
+export default function GoogleStart({ className = "", label = "Start with Google" }: { className?: string; label?: string }) {
   const [busy, setBusy] = useState(false);
   return (
     <button

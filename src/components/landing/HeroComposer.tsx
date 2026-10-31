@@ -39,7 +39,7 @@ export default function HeroComposer() {
               go();
             }
           }}
-          placeholder="Kis topic pe PPT chahiye? e.g. Photosynthesis"
+          placeholder="What is your presentation about? e.g. Photosynthesis"
           className="w-full resize-none bg-transparent text-[17px] leading-[1.4] text-[var(--ink)] outline-none placeholder:text-[var(--faint)] sm:text-[19px]"
         />
         <div className="mt-2 flex items-center justify-between gap-2">

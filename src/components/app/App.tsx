@@ -135,14 +135,14 @@ export default function App() {
             <div className="rise px-1 text-center sm:text-left">
               <span className="eyebrow">New deck</span>
               <h1 className="display mt-2.5 text-[36px] sm:text-[48px]">
-                Topic do, <span className="accent-serif">deck lo.</span>
+                Give a topic, <span className="accent-serif">get a deck.</span>
               </h1>
-              <p className="lede mt-2.5 text-[15.5px]">Real sources with references, har slide alag se designed, PDF aur editable PowerPoint dono.</p>
+              <p className="lede mt-2.5 text-[15.5px]">Real sources with references, every slide designed on its own, and both PDF and editable PowerPoint.</p>
             </div>
             <div className="glass rise d1 rounded-[var(--r-xl)] p-4 sm:p-6">
               <CreateForm onSubmit={start} busy={busy} error={error} />
             </div>
-            {me?.auth.required && !me.user && <p className="-mt-6 text-center text-[13px] text-[var(--muted)]">Deck start hone se pehle Google se sign in hoga.</p>}
+            {me?.auth.required && !me.user && <p className="-mt-6 text-center text-[13px] text-[var(--muted)]">You'll sign in with Google before the deck starts.</p>}
             {me && <RecentDecks key={me.user?.id || "anon"} onOpen={(id) => go({ name: "job", id })} limit={3} onAll={() => go({ name: "decks" })} signedIn={!!me.user} />}
             <Gallery />
           </div>
@@ -268,7 +268,7 @@ function RecentDecks({ onOpen, limit, onAll, signedIn }: { onOpen: (id: string) 
   if (!saved) return null;
   if (!saved.length)
     return limit ? null : (
-      <p className="panel rounded-[var(--r-lg)] px-6 py-12 text-center text-[15px] text-[var(--muted)]">{signedIn ? "Tumhare account ki decks yahan dikhengi." : "Is phone pe banayi decks yahan dikhengi."}</p>
+      <p className="panel rounded-[var(--r-lg)] px-6 py-12 text-center text-[15px] text-[var(--muted)]">{signedIn ? "Decks from your account will show up here." : "Decks you make on this device will show up here."}</p>
     );
   const list = limit ? saved.slice(0, limit) : saved;
 

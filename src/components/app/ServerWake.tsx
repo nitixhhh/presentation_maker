@@ -49,7 +49,7 @@ export function WakeNotice() {
     <div role="status" aria-live="polite" className="glass rise mx-auto mb-6 flex max-w-[600px] items-center gap-3 rounded-[var(--r-md)] px-4 py-3 text-[14px] text-[var(--muted)]">
       <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--accent)]" />
       <span>
-        <span className="font-medium text-[var(--ink)]">Server jaag raha hai…</span> free server hai, pehli baar 30-60 sec lag sakte hain. Tab tak form bharte raho.
+        <span className="font-medium text-[var(--ink)]">Waking up the server…</span> it\'s a free server, so the first load can take 30-60 seconds. You can fill in the form meanwhile.
       </span>
     </div>
   );

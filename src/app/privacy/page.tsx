@@ -16,7 +16,7 @@ export default function Privacy() {
       <article className="panel mt-6 rounded-[var(--r-lg)] p-6 sm:p-9">
         <span className="eyebrow">Privacy</span>
         <h1 className="display mt-3 text-[34px] sm:text-[44px]">
-          Aapka data, <span className="accent-serif">seedhi baat.</span>
+          Your data, <span className="accent-serif">in plain words.</span>
         </h1>
         <p className="mt-2 text-[13px] text-[var(--muted)]">Last updated 31 October 2026</p>
         <div className="mt-7 space-y-6 text-[15.5px] leading-relaxed text-[var(--ink-2)]">
