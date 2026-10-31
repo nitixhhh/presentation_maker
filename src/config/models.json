@@ -120,7 +120,7 @@
     "Owner": {
       "primary": {
         "provider": "google",
-        "model": "gemini-2.5-flash"
+        "model": "gemini-flash-latest"
       },
       "fallbacks": [
         {
@@ -132,7 +132,7 @@
     "Researcher": {
       "primary": {
         "provider": "google",
-        "model": "gemini-2.5-flash"
+        "model": "gemini-flash-latest"
       },
       "fallbacks": [
         {
@@ -144,7 +144,7 @@
     "SlideWriter": {
       "primary": {
         "provider": "google",
-        "model": "gemini-2.5-flash"
+        "model": "gemini-flash-latest"
       },
       "fallbacks": [
         {
@@ -156,7 +156,7 @@
     "ArtDirector": {
       "primary": {
         "provider": "google",
-        "model": "gemini-2.5-flash"
+        "model": "gemini-flash-latest"
       },
       "fallbacks": [
         {
@@ -173,7 +173,7 @@
       "fallbacks": [
         {
           "provider": "google",
-          "model": "gemini-2.5-flash"
+          "model": "gemini-flash-latest"
         }
       ]
     },
@@ -185,14 +185,14 @@
       "fallbacks": [
         {
           "provider": "google",
-          "model": "gemini-2.5-flash"
+          "model": "gemini-flash-latest"
         }
       ]
     },
     "VisionQA": {
       "primary": {
         "provider": "google",
-        "model": "gemini-2.5-flash"
+        "model": "gemini-flash-latest"
       },
       "fallbacks": [
         {
@@ -552,6 +552,12 @@
           "out": 0.6,
           "_source": "ollama.com/pricing, 31 Oct 2026, USD per 1M tokens (peak)"
         }
+      },
+      "nvidia:nvidia/nemotron-3-ultra-550b-a55b": {
+        "rpm": 35,
+        "ctx": 128000,
+        "maxOutput": 16000,
+        "vision": false
       }
     },
     "imageGeneration": {
@@ -597,30 +603,36 @@
         "env": "ALLOW_NVIDIA_PRODUCTION",
         "prepend": {
           "design": [
-            "nvidia:moonshotai/kimi-k2.6",
-            "nvidia:deepseek-ai/deepseek-v4.1-flash",
+            "nvidia:mistralai/mistral-large-4-1t-a52b",
+            "nvidia:minimaxai/minimax-m3.1-flash",
+            "nvidia:nvidia/nemotron-3-ultra-550b-a55b",
             "nvidia:z-ai/glm-5.3-flash"
           ],
           "art": [
-            "nvidia:moonshotai/kimi-k2.6",
-            "nvidia:deepseek-ai/deepseek-v4.1-flash"
+            "nvidia:mistralai/mistral-large-4-1t-a52b",
+            "nvidia:minimaxai/minimax-m3.1-flash",
+            "nvidia:nvidia/nemotron-3-ultra-550b-a55b"
           ],
           "vision": [
-            "nvidia:moonshotai/kimi-k2.6"
+            "nvidia:nvidia/nemotron-3.5-super-vl-120b-a12b",
+            "nvidia:minimaxai/minimax-m3.1-flash"
           ]
         },
         "append": {
           "outline": [
-            "nvidia:deepseek-ai/deepseek-v4.1-flash",
+            "nvidia:minimaxai/minimax-m3.1-flash",
             "nvidia:z-ai/glm-5.3-flash"
           ],
           "research": [
+            "nvidia:minimaxai/minimax-m3.1-flash",
             "nvidia:z-ai/glm-5.3-flash"
           ],
           "brief": [
+            "nvidia:minimaxai/minimax-m3.1-flash",
             "nvidia:z-ai/glm-5.3-flash"
           ]
-        }
+        },
+        "_tested": "31 Oct 2026 on Nitish's key: mistral-large-4, minimax-m3.1-flash, nemotron-3-ultra, nemotron-3.5-super-vl answer in ~1-2 s; glm-5.3-flash answers but slow (~29 s); kimi-k2.6, nemotron-3-super, nemotron-ultra-253b = 404 'Function not found for account'; deepseek-v4.1-flash and nemotron-3.5-lightning time out (60 s). Re-test before re-adding them."
       }
     }
   }
