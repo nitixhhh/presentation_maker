@@ -164,7 +164,9 @@ export interface Deck {
   /** gallery sample: anyone may see its previews */
   public?: boolean;
   /** every AI call made for this deck (role, provider, model, time) */
-  calls?: { role: string; provider: string; model: string; ms: number; waitedMs: number; ok: boolean; error?: string }[];
+  calls?: { role: string; provider: string; model: string; ms: number; waitedMs: number; ok: boolean; error?: string; tokensIn?: number; tokensOut?: number }[];
+  /** per-deck AI usage + estimated paid cost (USD), filled at the end of generation */
+  usage?: import("./llm").UsageSummary;
 }
 
 export interface ProgressEvent {

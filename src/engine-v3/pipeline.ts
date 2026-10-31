@@ -19,7 +19,7 @@ import { visionReview, type VisionVerdict } from "./qa/vision";
 import { formatReference } from "./research/sources";
 import { referencesSlideHtml } from "./agents/referencesSlide";
 import { assetDir, deckDir, newDeckId, saveDeck } from "./store";
-import { availableProviders, llmContext } from "./llm";
+import { availableProviders, llmContext, usageSummary, usageLine } from "./llm";
 import type { Deck, ProgressFn, SlideDesign, V3Request } from "./types";
 
 export interface PipelineOptions {
@@ -31,6 +31,9 @@ export interface PipelineOptions {
 }
 
 export async function generateDeckV3(req: V3Request, opts: PipelineOptions = {}): Promise<Deck> {
+  // always collect per-call stats (job runs already have a context; CLI / scripts get one here)
+  const outer = llmContext.getStore();
+  if (!outer?.stats) return llmContext.run({ ...(outer || {}), stats: [] }, () => generateDeckV3(req, opts));
   const t0 = Date.now();
   const id = newDeckId();
   opts.onDeckId?.(id);
@@ -185,7 +188,12 @@ export async function generateDeckV3(req: V3Request, opts: PipelineOptions = {})
   const avg = scored.length ? scored.reduce((s, x) => s + (x.qa?.visionScore || 0), 0) / scored.length : 0;
   const clean = deck.slides.filter((x) => !(x.qa?.domIssues || []).some((i) => i.severity !== "low")).length;
   const ctxStats = llmContext.getStore()?.stats;
-  if (ctxStats) deck.calls = ctxStats.slice();
+  if (ctxStats) {
+    deck.calls = ctxStats.slice();
+    deck.usage = usageSummary(deck.calls);
+    console.log(`[v3/usage] deck ${deck.id}: ${usageLine(deck.usage)}`);
+    emit("Done", 99, "Owner", `AI usage: ${usageLine(deck.usage)}`);
+  }
   emit("Done", 100, "Owner", `Deck ready in ${Math.round((Date.now() - t0) / 1000)}s · ${clean}/${deck.slides.length} slides render cleanly${scored.length ? ` · vision score ${avg.toFixed(1)}/10 on ${scored.length} checked` : ""}`);
   saveDeck(deck);
   return deck;

@@ -262,8 +262,8 @@
         "google:gemini-3.6-flash",
         "google:gemini-3.5-flash",
         "google:gemini-3-flash-preview",
-        "ollama:deepseek-v4.1-flash",
         "ollama:glm-5.3-flash",
+        "ollama:deepseek-v4.1-flash",
         "openrouter:thinkingmachines/inkling:free",
         "openrouter:nvidia/nemotron-3.5-super-vl:free",
         "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free",
@@ -501,31 +501,56 @@
         "rpm": 60,
         "ctx": 1000000,
         "maxOutput": 16000,
-        "vision": false
+        "vision": false,
+        "price": {
+          "in": 0.15,
+          "out": 0.5,
+          "_source": "ollama.com/pricing, 31 Oct 2026, USD per 1M tokens (peak)"
+        }
       },
       "ollama:deepseek-v4.1-flash": {
         "rpm": 60,
         "ctx": 1000000,
         "maxOutput": 16000,
-        "vision": false
+        "vision": false,
+        "price": {
+          "in": 0.3,
+          "out": 1.2,
+          "_source": "ollama.com/pricing, 31 Oct 2026, USD per 1M tokens (peak)"
+        }
       },
       "ollama:kimi-k2.6": {
         "rpm": 60,
         "ctx": 256000,
         "maxOutput": 16000,
-        "vision": true
+        "vision": true,
+        "price": {
+          "in": 0.95,
+          "out": 4.0,
+          "_source": "ollama.com/pricing, 31 Oct 2026, USD per 1M tokens (peak)"
+        }
       },
       "ollama:gemma4:31b": {
         "rpm": 60,
         "ctx": 256000,
         "maxOutput": 16000,
-        "vision": true
+        "vision": true,
+        "price": {
+          "in": 0.14,
+          "out": 0.4,
+          "_source": "ollama.com/pricing, 31 Oct 2026, USD per 1M tokens (peak)"
+        }
       },
       "ollama:minimax-m3.1-flash": {
         "rpm": 60,
         "ctx": 1000000,
         "maxOutput": 16000,
-        "vision": true
+        "vision": true,
+        "price": {
+          "in": 0.15,
+          "out": 0.6,
+          "_source": "ollama.com/pricing, 31 Oct 2026, USD per 1M tokens (peak)"
+        }
       }
     },
     "imageGeneration": {

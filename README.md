@@ -32,6 +32,33 @@ The student sees a watermarked preview first and pays only if they like it (₹3
 
 The container listens on port **7860**, runs as user 1000, and stores files in `/data/deckcraft`.
 
+## Recommended setup (100% free)
+
+Put these keys in HF Secrets — one account per provider, all free:
+
+| Secret | Value |
+|---|---|
+| `NVIDIA_NIM_API_KEY` | your key from build.nvidia.com |
+| `ALLOW_NVIDIA_PRODUCTION` | `true` |
+| `GOOGLE_AI_API_KEY` | your key from aistudio.google.com/apikey |
+| `OPENROUTER_API_KEY` | your key from openrouter.ai/keys |
+| `GROQ_API_KEY` | your key from console.groq.com/keys (small steps) |
+| `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` | AI images + last resort |
+| `OLLAMA_API_KEY` | **leave empty** (paid, for later) |
+
+What the slide designer then uses, in this order (the engine moves to the next one by itself when a model is busy or its daily limit is used up):
+
+1. **NVIDIA (free trial API):** Kimi K2.6 → DeepSeek V4.1 Flash → GLM-5.3-Flash
+2. **Google Gemini Flash (free):** 3.8 → 3.7 → 3.6 → 3.5 → 3 Flash (20 requests/day each)
+3. **OpenRouter free:** Inkling → Nemotron 3.5 Super VL → Nemotron 3 Ultra
+4. **Gemma 4** 31B / 26B (Google free, slow at busy times) → Groq gpt-oss-120b → Cloudflare
+
+Vision checks: NVIDIA Kimi K2.6 → Gemini 3.6 / 3.5 Flash → Flash-Lite → OpenRouter Nemotron 3.5 Super VL / Inkling → Gemma 4. Brief, research and outline: Gemini Flash-Lite → Groq → Gemma → OpenRouter → (NVIDIA DeepSeek / GLM as backup).
+
+**Know the risk of step 1:** NVIDIA's trial terms say its free API is for testing, not production. Fine for a small beta; NVIDIA can switch the key off without notice. If that happens nothing breaks — decks continue on Gemini → OpenRouter → Gemma, just with lower quality on busy days.
+
+Every finished deck writes one line to the server log, e.g. `[v3/usage] deck … : 54 AI calls, 310k in / 140k out tokens, paid cost ~$0.000 — nvidia:moonshotai/kimi-k2.6 31 calls … | google:gemini-3.6-flash 12 calls …`, and the same numbers are saved in the deck record (`usage`). With the free setup the paid cost stays 0.
+
 ## Secrets and settings
 
 Put these in HF *Secrets* (or `.env.local` when running locally). Never commit them.
@@ -49,7 +76,7 @@ Put these in HF *Secrets* (or `.env.local` when running locally). Never commit t
 | `BENCHMARK_PASSWORD` | Optional — turns on `/benchmark` | any password you choose |
 | `NVIDIA_NIM_API_KEY` | Optional — Kimi K2.6, DeepSeek V4.1 Flash, GLM-5.3-Flash… free on NVIDIA. Used on **/benchmark only**, unless you also set `ALLOW_NVIDIA_PRODUCTION` | build.nvidia.com → Get API Key |
 | `ALLOW_NVIDIA_PRODUCTION` | Optional (`true`) — **your own risk**: puts NVIDIA's Kimi K2.6 / DeepSeek V4.1 Flash / GLM-5.3-Flash first in the designer chain for real decks. See the NVIDIA note below | — |
-| `OLLAMA_API_KEY` | Optional — Ollama Cloud (no server needed). **Paid per token**, very cheap per deck; strong models (DeepSeek V4.1 Flash, GLM-5.3-Flash, Kimi K2.6) | ollama.com → Settings → API keys |
+| `OLLAMA_API_KEY` | **Paid — optional, later.** Leave empty for the free setup: without this key Ollama is never used. Ollama Cloud = strong models (GLM-5.3-Flash, DeepSeek V4.1 Flash, Kimi K2.6) paid per token, no server needed | ollama.com → Settings → API keys |
 | `OLLAMA_PRIORITY` | Optional — `last` = use Ollama only after every free model is busy (default: right after free Gemini Flash, quality first) | — |
 
 **Site**
@@ -133,7 +160,7 @@ Each AI step has a role, and each role has its own ordered list of free models i
 * **Gemini free tier** (ai.google.dev pricing lists these as free; limits from Google's own 429 replies on a free key): Flash models (`gemini-3.8-flash`, `3.7`, `3.6`, `3.5`, `3-flash-preview`) **20 requests/day each**. Flash-Lite (`gemini-3.5-flash-lite`, `3.1-flash-lite`) 500/day each. Resets at midnight Pacific. Every Flash model has its own daily quota, so the routes rotate through them. Gemma 4 (`gemma-4-31b-it`, `gemma-4-26b-a4b-it`) is free with much higher limits, but in testing its endpoint often answered HTTP 500 (the scheduler retries/fails over).
 * **OpenRouter** free models (`:free`, checked 31 Oct 2026 on openrouter.ai/api/v1/models): Gemma 4 31B / 26B (vision), Nemotron 3 Ultra 550B, Nemotron 3.5 Super VL (vision), Nemotron 3.5 Lightning, Inkling / Inkling Small (vision), Laguna, Dots 3 Note… There is **no** free Kimi, DeepSeek, Qwen, GLM or Llama on OpenRouter. Limits (openrouter.ai/docs/api-reference/limits): 20 req/min and 50 req/day per account across all free models; **1,000/day once the account has bought at least 10 credits ever** → set `V3_ACCOUNT_OPENROUTER_RPD=1000`. That one purchase is the biggest legit capacity boost.
 * **NVIDIA build.nvidia.com**: has Kimi K2.6, DeepSeek V4.1 Flash, GLM-5.3-Flash, MiniMax M3.1 Flash, Mistral Large 4 for free, but its Trial Terms allow use "only ... for internal testing and evaluation purposes, not in production". By default the engine offers NVIDIA models **only on /benchmark** (marked "testing only"). With `ALLOW_NVIDIA_PRODUCTION=true` they become the first designer choice for real decks (`engineV3.optInRoutes.nvidia`). **Risk, plainly:** that breaks NVIDIA's trial terms for a paid product; NVIDIA can cut the key off at any time without notice. If that happens the engine simply fails over to Gemini / OpenRouter / Gemma, so decks keep coming, but quality drops back. Fine for a small beta; for a real launch use Ollama Cloud or another paid route for the designer.
-* **Ollama Cloud** (docs.ollama.com/cloud, ollama.com/pricing, checked 31 Oct 2026): hosted models through an API key — no server, no download (`https://ollama.com/v1`, OpenAI-compatible). **Not free:** "Pay as you go — Pay per token for every cloud model", 3 requests at a time. Models include `deepseek-v4.1-flash`, `glm-5.3-flash`, `kimi-k2.6`, `kimi-k3`, `gemma4:31b`, `minimax-m3.1-flash`. Prices per million tokens are on ollama.com/pricing (off-peak half price for some models outside 12:00–18:00 UTC on weekdays). A 12-slide deck uses roughly 170k input + 150k output tokens, so DeepSeek / GLM Flash cost only a few rupees to tens of rupees per deck — the cheapest legit way to get near-Kimi quality. Ollama: "one account per person"; prompts "never logged or trained on".
+* **Ollama Cloud — paid, optional, later** (docs.ollama.com/cloud, ollama.com/pricing, checked 31 Oct 2026). Dormant unless `OLLAMA_API_KEY` is set: hosted models through an API key — no server, no download (`https://ollama.com/v1`, OpenAI-compatible). **Not free:** "Pay as you go — Pay per token for every cloud model", 3 requests at a time. Models include `deepseek-v4.1-flash`, `glm-5.3-flash`, `kimi-k2.6`, `kimi-k3`, `gemma4:31b`, `minimax-m3.1-flash`. Prices per million tokens are on ollama.com/pricing (off-peak half price for some models outside 12:00–18:00 UTC on weekdays). A 12-slide deck uses roughly 170k input + 150k output tokens, so DeepSeek / GLM Flash cost only a few rupees to tens of rupees per deck — the cheapest legit way to get near-Kimi quality. Ollama: "one account per person"; prompts "never logged or trained on".
 * **Cloudflare Workers AI**: 10,000 Neurons/day free, shared by all models (≈15–20 slide designs with gpt-oss-120b, or ~200 Flux Schnell images). Kimi and GLM on Workers AI need a paid plan.
 
 **Use the benchmark** (`/benchmark`, set `BENCHMARK_PASSWORD`) to run the same topic through several models for one role on *your* keys. It shows QA score, clean-slide count, time and the slides side by side, so you can reorder `engineV3.roles`.

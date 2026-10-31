@@ -748,3 +748,51 @@ export async function chatJson<T = any>(role: Role, messages: Msg[], opts: CallO
     return { data: extractJson<T>(retry.text), meta: retry };
   }
 }
+
+
+// ── per-deck usage + cost (prices per 1M tokens from models.json → engineV3.models[...].price) ──
+export interface UsageRow { route: string; calls: number; failed: number; tokensIn: number; tokensOut: number; cost: number | null }
+export interface UsageSummary { rows: UsageRow[]; calls: number; failed: number; tokensIn: number; tokensOut: number; cost: number; currency: "USD"; costKnown: boolean }
+
+export function usageSummary(calls: { provider: string; model: string; ok: boolean; tokensIn?: number; tokensOut?: number }[]): UsageSummary {
+  const m = new Map<string, UsageRow>();
+  for (const c of calls) {
+    const key = `${c.provider}:${c.model}`;
+    const r = m.get(key) || { route: key, calls: 0, failed: 0, tokensIn: 0, tokensOut: 0, cost: 0 };
+    r.calls++;
+    if (!c.ok) r.failed++;
+    if (c.ok) {
+      r.tokensIn += c.tokensIn || 0;
+      r.tokensOut += Math.max(0, c.tokensOut || 0);
+    }
+    m.set(key, r);
+  }
+  let costKnown = true;
+  for (const r of m.values()) {
+    const price = cfg.engineV3?.models?.[r.route]?.price as { in: number; out: number } | undefined;
+    const free = /:free$/.test(r.route) || ["google", "groq", "cloudflare", "nvidia"].includes(r.route.split(":")[0]);
+    if (price) r.cost = (r.tokensIn * price.in + r.tokensOut * price.out) / 1e6;
+    else if (free) r.cost = 0;
+    else {
+      r.cost = null;
+      costKnown = false;
+    }
+  }
+  const rows = [...m.values()].sort((a, b) => b.calls - a.calls);
+  return {
+    rows,
+    calls: rows.reduce((s, r) => s + r.calls, 0),
+    failed: rows.reduce((s, r) => s + r.failed, 0),
+    tokensIn: rows.reduce((s, r) => s + r.tokensIn, 0),
+    tokensOut: rows.reduce((s, r) => s + r.tokensOut, 0),
+    cost: rows.reduce((s, r) => s + (r.cost || 0), 0),
+    currency: "USD",
+    costKnown,
+  };
+}
+
+export function usageLine(u: UsageSummary): string {
+  const k = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
+  const parts = u.rows.map((r) => `${r.route} ${r.calls} calls${r.failed ? ` (${r.failed} failed)` : ""} ${k(r.tokensIn)} in/${k(r.tokensOut)} out${r.cost ? ` ~$${r.cost.toFixed(3)}` : r.cost === 0 ? " free" : " price?"}`);
+  return `${u.calls} AI calls, ${k(u.tokensIn)} in / ${k(u.tokensOut)} out tokens, paid cost ~$${u.cost.toFixed(3)}${u.costKnown ? "" : " (+ routes without a price)"} — ${parts.join(" | ")}`;
+}
