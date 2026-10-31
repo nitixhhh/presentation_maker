@@ -14,7 +14,7 @@ import { pickRecipes } from "./design/pickRecipes";
 import { runImageDirector } from "./agents/imageDirector";
 import { addLogoAsset } from "./assets/logo";
 import { sourceImages } from "./assets/images";
-import { inspectSlide, type Inspection } from "./qa/inspect";
+import { inspectSlide, LAYOUT_TYPES, GEOMETRY_TYPES, type Inspection } from "./qa/inspect";
 import { visionReview, type VisionVerdict } from "./qa/vision";
 import { formatReference } from "./research/sources";
 import { referencesSlideHtml } from "./agents/referencesSlide";
@@ -98,6 +98,14 @@ export async function generateDeckV3(req: V3Request, opts: PipelineOptions = {})
   const usedRecipes = new Map<string, number>();
   const inspiration = new Map(outline.slides.map((os) => [os.n, pickRecipes(os, assets, usedRecipes, 3)]));
   const referenceTexts = references.map((r) => r.text);
+  const missingReferences = (html: string) => {
+    const flat = html.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ");
+    return referenceTexts.filter((t) => !flat.includes(t.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").slice(0, 40)));
+  };
+  const checkReferences = (insp: Inspection) => {
+    const missing = missingReferences(insp.html);
+    if (missing.length) insp.issues.push({ type: "references-missing", severity: "high", detail: `${missing.length} reference(s) missing or altered — every reference must appear exactly as given, e.g. "${missing[0].slice(0, 80)}"` });
+  };
 
   // Designers in parallel (the provider scheduler throttles), each followed by its own QA loop
   const renderDir = path.join(deckDir(id), "render");
@@ -116,11 +124,7 @@ export async function generateDeckV3(req: V3Request, opts: PipelineOptions = {})
       for (let round = 0; round <= maxRevisions; round++) {
         const insp = await inspectSlide(deck, os.n, d.html, renderDir, os.role, allowed);
         // the references slide must carry every reference exactly (mechanical check)
-        if (isRefs) {
-          const flat = insp.html.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ");
-          const missing = referenceTexts.filter((t) => !flat.includes(t.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").slice(0, 40)));
-          if (missing.length) insp.issues.push({ type: "references-missing", severity: "high", detail: `${missing.length} reference(s) missing or altered — every reference must appear exactly as given, e.g. "${missing[0].slice(0, 80)}"` });
-        }
+        if (isRefs) checkReferences(insp);
         const high = insp.issues.filter((x) => x.severity === "high").length;
         const med = insp.issues.filter((x) => x.severity === "medium").length;
         const wantVision = visionMode === "always" || (visionMode === "smart" && (high + med > 0 || (os.role === "title" && round === 0)));
@@ -129,7 +133,9 @@ export async function generateDeckV3(req: V3Request, opts: PipelineOptions = {})
         const rank = score - 2 * high - 0.5 * med;
         const rec: Rec = { d: { ...d, html: insp.html }, insp, vision, rank };
         if (!best || rank > best.rank) best = rec;
-        const needFix = high > 0 || !!vision?.fix;
+        // the code decides whether the layout is clean: any geometry problem (overlap, line over text, cut-off or tiny
+        // label) needs another round even when the vision model is happy — the AI never approves its own layout
+        const needFix = high > 0 || !!vision?.fix || insp.issues.some((x) => GEOMETRY_TYPES.has(x.type));
         emit("Visual QA", 55 + Math.round((done / total) * 35), `QA ${os.n}`, `round ${round + 1}: ${vision ? `score ${vision.score}/10, ` : wantVision ? "" : "clean render, "}${high} serious + ${med} minor issues${insp.autoFixes.length ? `, auto-fit ${insp.autoFixes.length}` : ""}`);
         if (!needFix) break;
         if (round === maxRevisions) {
@@ -139,6 +145,7 @@ export async function generateDeckV3(req: V3Request, opts: PipelineOptions = {})
             try {
               d = await designSlide(deck, os, citeMap, i + 1, pickRecipes(os, assets, usedRecipes, 2), "IMPORTANT: an earlier design of this slide kept breaking (text cut off or overlapping). Choose a simpler, more robust composition with fewer elements and more space, still distinctive.");
               const insp2 = await inspectSlide(deck, os.n, d.html, renderDir, os.role, allowed);
+              if (isRefs) checkReferences(insp2);
               const h2 = insp2.issues.filter((x) => x.severity === "high").length;
               const m2 = insp2.issues.filter((x) => x.severity === "medium").length;
               const r2 = (h2 ? 4 : m2 ? 6 : 7.5) - 2 * h2 - 0.5 * m2;
@@ -159,9 +166,24 @@ export async function generateDeckV3(req: V3Request, opts: PipelineOptions = {})
           break;
         }
       }
-      // Safety net for citations only: if the AI's references slide still drops references, use the
-      // engine's exact list so the deck never carries wrong citations.
-      if (isRefs && best && best.insp.issues.some((x) => x.type === "references-missing")) {
+      // Layout guarantee: after the AI rounds, if the code still measures overlaps / lines over text / cut-off text,
+      // the engine fixes them deterministically (shrink to a floor, move labels, backdrop/halo) and re-measures.
+      if (best && best.insp.issues.some((x) => LAYOUT_TYPES.has(x.type) && x.severity === "high")) {
+        const before = best.insp.issues.filter((x) => LAYOUT_TYPES.has(x.type) && x.severity === "high").length;
+        try {
+          const fixed = await inspectSlide(deck, os.n, best.d.html, renderDir, os.role, allowed, { enforce: true });
+          if (isRefs) checkReferences(fixed);
+          const after = fixed.issues.filter((x) => LAYOUT_TYPES.has(x.type) && x.severity === "high").length;
+          if (after < before) best = { ...best, d: { ...best.d, html: fixed.html }, insp: fixed };
+          emit("Visual QA", 90, `QA ${os.n}`, `layout auto-fix: ${before} → ${Math.min(before, after)} layout problems${fixed.autoFixes.length ? ` (${fixed.autoFixes.slice(0, 4).join(", ")})` : ""}`);
+        } catch (e: any) {
+          emit("Visual QA", 90, `QA ${os.n}`, `layout auto-fix unavailable: ${String(e?.message || e).slice(0, 100)}`);
+        }
+      }
+      // Safety net for citations only: if the AI's references slide still drops references (checked again on the
+      // final HTML, whichever round it came from), use the engine's exact list so the deck never carries wrong
+      // or generic citations ("Course textbook").
+      if (isRefs && best && (best.insp.issues.some((x) => x.type === "references-missing") || missingReferences(best.d.html).length)) {
         const html = referencesSlideHtml(deck, os.title || "References");
         const insp = await inspectSlide(deck, os.n, html, renderDir, "references");
         best = { d: { ...best.d, html: insp.html, provider: "engine", model: "references" }, insp, vision: null, rank: 6 };

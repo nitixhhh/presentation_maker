@@ -57,6 +57,12 @@ ${terms}`;
   }));
   if (!slides.length) throw new Error("Outline agent returned no slides");
   if (slides[0].role !== "title") slides[0].role = "title";
+  // a slide the model titled "References" (e.g. "References & Thank You") IS the references slide: the engine fills it
+  // with the real collected sources — never let the designer write generic ones like "Course textbook"
+  if (!slides.some((s) => s.role === "references") && research.sources.length) {
+    const r = slides.findIndex((s, i) => i > 0 && /referenc|bibliograph|works cited|sources|संदर्भ/i.test(s.title));
+    if (r > 0) slides[r] = { ...slides[r], role: "references", points: [], visual: { kind: "none" } };
+  }
   if (!slides.some((s) => s.role === "references") && research.sources.length) {
     const closingIdx = slides.findIndex((s) => s.role === "closing");
     const ref: OutlineSlide = { n: 0, role: "references", title: brief.language === "Hindi" ? "संदर्भ (References)" : "References", keyMessage: "", points: [], visual: { kind: "none" } };

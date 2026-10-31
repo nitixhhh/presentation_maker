@@ -49,6 +49,7 @@ TECHNICAL CONTRACT (the engine renders exactly what you write; the PPTX export r
    data-kind: flow (steps with arrows; vertical automatically if the box is tall), cycle (circular loop), hub (first li = centre, rest around it), layers (stacked architecture layers, top to bottom), timeline, compare (first half of items = left column, second half = right), bars (bar chart: <li data-value="42" data-unit="%">Label</li> — ONLY when the VISUAL line below says "chart" and only with numbers that appear in the points; otherwise never draw a chart).
    Keep items to 3–6 with 1–4 word titles and ≤ 8-word descriptions. Give the figure a generous box (at least 480×300). Optional data-size="22" sets the label size.
    Use hand-written inline <svg> only for simple illustrations/icons/motifs (e.g. a cuvette, a wave, a molecule outline), never for charts.
+   Hand-drawn SVG rules (the engine measures every label, line and arrow and sends the slide back if any rule is broken): every <text> label renders at 18px or more and sits fully inside the <svg> box; no two labels touch; no line, arrow or outline passes through any text (start and end arrows at box edges, route them around labels and headings); never draw a shape on top of a label. Prefer the v3-diagram component or HTML boxes laid out with flex/grid over absolutely-positioned SVG text.
 8. Citations: when a point carries a marker like [2], put it right after that sentence as <sup>[2]</sup>. NEVER invent citations, author names, years, footers or sources. If you add a small source footer, use ONLY the exact source labels given for this slide.
 8b. Truth: never invent numbers, percentages, chart values, dates or claims. A chart may only plot numbers that appear in the points. No generic clip-art icons (plus signs, random circles); if you draw an icon it must clearly depict the concept, otherwise use a number or a word. Every arrow must connect two things.
 9. Contrast: text must be clearly readable on a classroom projector (ink on bg, or white on dark scrim). No light-grey text on white, no text over busy photo areas without a scrim.
@@ -228,7 +229,7 @@ export async function reviseSlide(prev: DesignOut, feedback: string): Promise<De
     { role: "assistant", content: `<slide>\n${prev.html}\n</slide>\n<notes>${prev.notes}</notes>` },
     {
       role: "user",
-      content: `The engine rendered your slide in Chromium and found these problems:\n${feedback}\n\nFix every problem while keeping the design idea (you may rethink the composition if it is the cause). Remember the size limits and keep everything inside the 1280×720 canvas. Output the complete corrected <slide>…</slide><notes>…</notes> (keep the speaker notes as they were).`,
+      content: `The engine rendered your slide in Chromium and found these problems (positions are slide pixels: x from the left edge, y from the top, w×h):\n${feedback}\n\nFix every problem while keeping the design idea (you may rethink the composition if it is the cause). Remember the size limits and keep everything inside the 1280×720 canvas. Output the complete corrected <slide>…</slide><notes>…</notes> (keep the speaker notes as they were).`,
     },
   ];
   let r;

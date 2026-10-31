@@ -313,7 +313,7 @@ return changed;
 
 export const SERIALIZE_JS = String.raw`(function(){
 var s = document.querySelector('section.slide').cloneNode(true);
-s.querySelectorAll('[data-v3-text],[data-v3-img],[data-v3-inl]').forEach(function(e){ e.removeAttribute('data-v3-text'); e.removeAttribute('data-v3-img'); e.removeAttribute('data-v3-inl'); });
+s.querySelectorAll('[data-v3-text],[data-v3-img],[data-v3-inl],[data-v3-svgt]').forEach(function(e){ e.removeAttribute('data-v3-text'); e.removeAttribute('data-v3-img'); e.removeAttribute('data-v3-inl'); e.removeAttribute('data-v3-svgt'); });
 // drawn component layers are regenerated on every load — never store them
 s.querySelectorAll('figure.v3-diagram > .v3d').forEach(function(e){ e.remove(); });
 return s.innerHTML;

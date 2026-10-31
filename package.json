@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test src/engine-v3/llm.test.ts src/server/keepAlive.test.ts"
+    "test": "tsx --test src/engine-v3/llm.test.ts src/server/keepAlive.test.ts src/engine-v3/render/geometry.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

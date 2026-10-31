@@ -3,6 +3,7 @@ import sharp from "sharp";
 import { openSlide, closePage } from "../render/browser";
 import { slideDocument } from "../render/document";
 import { MEASURE_JS, HIDE_JS, UNHIDE_JS, SHRINK_JS, SERIALIZE_JS, NUDGE_JS } from "../render/domScripts";
+import { GEOMETRY_JS, GEOMETRY_FIX_JS } from "../render/geometry";
 import { contrast } from "../agents/artDirector";
 import type { Deck, QaIssue } from "../types";
 
@@ -45,7 +46,20 @@ function inventedNumbers(texts: any[], allowed: string, n: number): string[] {
   return out;
 }
 
-export async function inspectSlide(deck: Pick<Deck, "assets" | "design">, n: number, html: string, renderDir: string, role = "", allowedText = ""): Promise<Inspection> {
+/** issue types that mean the layout is physically broken (overlap / cut off / covered) — code decides, never the AI */
+export const LAYOUT_TYPES = new Set(["text-clipped", "out-of-canvas", "text-overlap", "text-covered", "label-overlap", "line-over-text", "label-clipped"]);
+/** issues GEOMETRY_JS reports (also "small-label") */
+export const GEOMETRY_TYPES = new Set(["label-overlap", "line-over-text", "label-clipped", "text-covered", "small-label"]);
+
+export async function inspectSlide(
+  deck: Pick<Deck, "assets" | "design">,
+  n: number,
+  html: string,
+  renderDir: string,
+  role = "",
+  allowedText = "",
+  opts: { enforce?: boolean } = {}
+): Promise<Inspection> {
   const assetBase = "../assets/";
   const doc = slideDocument(deck.design, html, { assetBase, deck, n });
   const page = await openSlide(doc, renderDir, `qa-${String(n).padStart(2, "0")}`);
@@ -63,6 +77,25 @@ export async function inspectSlide(deck: Pick<Deck, "assets" | "design">, n: num
       autoFixes.push(...changed.map((c) => `shrink ${c}`), ...nudged.map((c) => `nudge ${c}`));
       m = await page.evaluate(MEASURE_JS);
     }
+    // geometry: SVG labels, lines/arrows over text, labels cut off or too small (exact element + coordinates)
+    let g: { issues: (QaIssue & { id?: string })[] } = await page.evaluate(GEOMETRY_JS);
+    if (opts.enforce) {
+      // last resort after the AI rounds: deterministic fixes, re-measured each pass until the code finds nothing
+      for (let pass = 0; pass < 4; pass++) {
+        const geo = g.issues.filter((i) => i.id && i.severity === "high" && i.type !== "small-label").map((i) => ({ type: i.type, id: i.id }));
+        const ids = m.issues.filter((i) => (i.type === "text-clipped" || i.type === "out-of-canvas") && i.id).map((i) => i.id!);
+        const pairs = m.issues.filter((i) => i.type === "text-overlap" && i.id).map((i) => i.id!.split("|"));
+        if (!geo.length && !ids.length && !pairs.length) break;
+        const fixed: string[] = geo.length ? await page.evaluate(`(${GEOMETRY_FIX_JS})(${JSON.stringify(geo)})`) : [];
+        const nudged: string[] = pairs.length ? await page.evaluate(`(${NUDGE_JS})(${JSON.stringify(pairs)})`) : [];
+        const changed: string[] = ids.length ? await page.evaluate(`(${SHRINK_JS})(${JSON.stringify(ids)})`) : [];
+        if (!fixed.length && !nudged.length && !changed.length) break;
+        autoFixes.push(...fixed, ...nudged.map((c) => `nudge ${c}`), ...changed.map((c) => `shrink ${c}`));
+        m = await page.evaluate(MEASURE_JS);
+        g = await page.evaluate(GEOMETRY_JS);
+      }
+    }
+    m.issues.push(...g.issues);
     let fixedHtml = html;
     if (autoFixes.length) fixedHtml = unresolve(await page.evaluate(SERIALIZE_JS), assetBase, deck);
 
@@ -80,7 +113,7 @@ export async function inspectSlide(deck: Pick<Deck, "assets" | "design">, n: num
       const found = [...(all.match(/[\w.+-]+@[\w-]+\.[\w.]+/g) || []), ...(all.match(/\b(?:https?:\/\/|www\.)\S+/gi) || []), ...(all.match(/\+?\d[\d\s-]{8,}\d/g) || [])].filter((x) => !allowedText.includes(x));
       if (found.length) issues.push({ type: "placeholder-contact", severity: "high", detail: `Remove these contact details — nobody gave them, they look like placeholders: ${found.slice(0, 3).join(", ")}. Never invent emails, phone numbers, websites or names.` });
     }
-    if (role === "references") issues = issues.filter((i) => !["tiny-text", "small-body", "too-much-text", "sparse"].includes(i.type));
+    if (role === "references") issues = issues.filter((i) => !["tiny-text", "small-body", "small-label", "too-much-text", "sparse"].includes(i.type));
     const nativeTexts = m.texts.filter((t) => t.native && t.w > 4 && t.h > 4);
     // decorative numerals / watermarks (very short or faded text) are not reading text
     const readable = (t: any) => (t.opacity ?? 1) > 0.5 && t.lines.map((l: any[]) => l.map((r) => r.t).join("")).join(" ").trim().length > 3;
