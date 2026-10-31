@@ -2,11 +2,74 @@
 -- DeckCraft AI — Supabase schema (Engine v3)
 -- Run once: Supabase dashboard -> SQL Editor -> New query -> paste -> Run.
 -- Safe to re-run (IF NOT EXISTS / CREATE OR REPLACE everywhere).
+-- Safe on a project that already has old DeckCraft v2 tables: see step 0 (renames them to *_old_v2, never drops).
 --
 -- The server talks to these tables with SUPABASE_SERVICE_ROLE_KEY (server env only,
 -- never in the browser). RLS is ON for every table, so the public anon key can only
 -- read what the policies below allow (a signed-in user's own rows) and can write nothing.
 -- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 0. Upgrade guard (projects that already have OLD DeckCraft v2 tables)
+--    If a table with one of our names exists but does not have the v3
+--    columns, it is RENAMED to <name>_old_v2 (nothing is ever dropped, your
+--    old data stays there). Its indexes/sequences are renamed too, so the
+--    fresh v3 table below can be created without name clashes.
+--    Without this, "create table if not exists" skips the old table and the
+--    next "create index" fails with: ERROR 42703 column "owner_key" does not exist.
+-- ---------------------------------------------------------------------
+do $$
+declare
+  t text;
+  req text[];
+  missing int;
+  newname text;
+  r record;
+begin
+  for t, req in select * from (values
+    ('jobs', array['id', 'owner_key', 'user_id', 'status', 'request', 'progress', 'title', 'deck_id', 'error', 'attempt', 'created_at', 'started_at', 'finished_at', 'updated_at']),
+    ('profiles', array['id', 'email', 'name', 'referral_code', 'referred_by', 'created_at']),
+    ('credit_events', array['id', 'owner_key', 'delta', 'reason', 'ref', 'created_at']),
+    ('orders', array['id', 'owner_key', 'user_id', 'product', 'deck_id', 'amount', 'currency', 'provider', 'provider_order_id', 'provider_payment_id', 'status', 'created_at', 'paid_at']),
+    ('unlocks', array['owner_key', 'deck_id', 'via', 'ref', 'created_at']),
+    ('deck_edits', array['deck_id', 'count'])
+  ) as v(tname, cols)
+  loop
+    if to_regclass('public.' || t) is null then
+      continue;
+    end if;
+    select count(*) into missing
+      from unnest(req) as c(col)
+     where not exists (
+       select 1 from information_schema.columns
+        where table_schema = 'public' and table_name = t and column_name = c.col);
+    if missing = 0 then
+      continue;  -- already the v3 table: keep it
+    end if;
+    newname := t || '_old_v2';
+    if to_regclass('public.' || newname) is not null then
+      newname := t || '_old_v2_' || to_char(clock_timestamp(), 'YYYYMMDDHH24MISS');
+    end if;
+    -- free the index names (incl. primary key / unique) the v3 table will use
+    for r in
+      select i.relname as idx
+        from pg_index x join pg_class i on i.oid = x.indexrelid
+       where x.indrelid = ('public.' || t)::regclass
+    loop
+      execute format('alter index public.%I rename to %I', r.idx, left(newname || '__' || r.idx, 63));
+    end loop;
+    -- free sequence names (serial / identity columns)
+    for r in
+      select s.relname as seq
+        from pg_class s join pg_depend d on d.objid = s.oid
+       where s.relkind = 'S' and d.refobjid = ('public.' || t)::regclass and d.deptype in ('a', 'i')
+    loop
+      execute format('alter sequence public.%I rename to %I', r.seq, left(newname || '__' || r.seq, 63));
+    end loop;
+    execute format('alter table public.%I rename to %I', t, newname);
+    raise notice 'DeckCraft: old table public.% kept as public.% (a fresh v3 table is created next)', t, newname;
+  end loop;
+end $$;
 
 -- ---------------------------------------------------------------------
 -- 1. Generation jobs (one row per deck request)

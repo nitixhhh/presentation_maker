@@ -113,6 +113,7 @@ Without Supabase, the site is open (no login) and stores everything on its own d
 ## Set up Supabase (login + storage)
 
 1. supabase.com → New project. Open **SQL Editor**, paste `supabase/schema.sql`, Run. This makes the tables (jobs, profiles, credits, orders, unlocks) and a private `decks` storage bucket. Row-level security is on; only the server key can read them.
+   **Already have old DeckCraft (v2) tables in this project?** Just run the file as it is. Step 0 at its top finds any old `jobs` / `profiles` / `credit_events` / `orders` / `unlocks` / `deck_edits` table that lacks the v3 columns and renames it to `<name>_old_v2` (for example `jobs_old_v2`) — nothing is deleted, your old rows stay there — then creates the fresh v3 tables. (This fixes `ERROR 42703: column "owner_key" does not exist`.) Running the file again later is safe.
 2. **Authentication → Providers → Google**: turn on. It asks for a Google *Client ID* and *Secret*: make them at console.cloud.google.com → APIs & Services → Credentials → OAuth client ID → Web application. Add the redirect URL Supabase shows you (`https://<project>.supabase.co/auth/v1/callback`).
 3. **Authentication → URL Configuration**: Site URL = your Space URL. Add it to *Redirect URLs* too (`https://<you>-<space>.hf.space/**`).
 4. Copy the URL, anon key and service-role key into the secrets above.
