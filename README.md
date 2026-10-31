@@ -51,7 +51,7 @@ What the slide designer then uses, in this order (the engine moves to the next o
 1. **NVIDIA (free trial API):** Kimi K2.6 → DeepSeek V4.1 Flash → GLM-5.3-Flash
 2. **Google Gemini Flash (free):** 3.8 → 3.7 → 3.6 → 3.5 → 3 Flash (20 requests/day each)
 3. **OpenRouter free:** Inkling → Nemotron 3.5 Super VL → Nemotron 3 Ultra
-4. **Gemma 4** 31B / 26B (Google free, slow at busy times) → Groq gpt-oss-120b → Cloudflare
+4. **Gemma 4** 26B → 31B (Google free; 31B failed ~90% of calls for an hour on 31 Oct 2026, so 26B goes first) → Groq gpt-oss-120b → Cloudflare
 
 Vision checks: NVIDIA Kimi K2.6 → Gemini 3.6 / 3.5 Flash → Flash-Lite → OpenRouter Nemotron 3.5 Super VL / Inkling → Gemma 4. Brief, research and outline: Gemini Flash-Lite → Groq → Gemma → OpenRouter → (NVIDIA DeepSeek / GLM as backup).
 
@@ -78,6 +78,7 @@ Put these in HF *Secrets* (or `.env.local` when running locally). Never commit t
 | `ALLOW_NVIDIA_PRODUCTION` | Optional (`true`) — **your own risk**: puts NVIDIA's Kimi K2.6 / DeepSeek V4.1 Flash / GLM-5.3-Flash first in the designer chain for real decks. See the NVIDIA note below | — |
 | `OLLAMA_API_KEY` | **Paid — optional, later.** Leave empty for the free setup: without this key Ollama is never used. Ollama Cloud = strong models (GLM-5.3-Flash, DeepSeek V4.1 Flash, Kimi K2.6) paid per token, no server needed | ollama.com → Settings → API keys |
 | `OLLAMA_PRIORITY` | Optional — `last` = use Ollama only after every free model is busy (default: right after free Gemini Flash, quality first) | — |
+| `DESIGN_RECIPES` | Optional — `off` turns off the 38 example slides in the designer prompt. Recommended `off` when Gemma does most of the designing (see the recipes A/B below) | — |
 
 **Site**
 
@@ -169,6 +170,8 @@ Each AI step has a role, and each role has its own ordered list of free models i
 **Waste cuts (no design calls removed):** research results are cached per topic for 7 days (`V3_RESEARCH_CACHE_DAYS`, `V3_RESEARCH_CACHE=off`). The same source query is never fetched twice. Vision QA runs only on slides whose DOM checks found a problem, plus the title slide (`V3_VISION_QA=smart` default; `always` / `off`). A slide that passed is never re-checked.
 
 **Design recipe library** (`src/engine-v3/design/recipes.ts`): 38 hand-made example slides (title, agenda, definition, annotated photo, processes, cycle, comparisons, table, pros/cons, stats, chart, timelines, quote, image-led, architecture, hub, formula, applications, code, objectives, problem→solution, conclusions, closings). For every slide the engine picks 2–3 relevant ones and shows them to the designer AI as *inspiration* (technique, not layout). The designer still designs every slide itself. There is no fixed fallback layout any more: a slide that keeps breaking gets a fresh AI redesign. The only engine-made slide is an exact reference list, used if the AI's references slide drops a citation.
+
+**Recipes A/B (31 Oct 2026, Gemma 4 26B for every role, same topic "Smart Library Management System", same cached research, one run each):** recipes ON → 2278 s, 128 AI calls (53 retried), 275k input tokens, 5/13 slides clean, outside judge 7.0/10; recipes OFF → 1326 s, 86 AI calls (27 retried), 166k input tokens, 11/13 clean, judge 7.2/10. With a small free model the recipe examples make every design prompt ~65% longer, which runs into Gemma's free 16,000 input tokens/minute and leaves more slides broken. So when your decks are mostly designed by Gemma (Gemini Flash daily limits used up), set `DESIGN_RECIPES=off`. Keep them on for stronger designers (Kimi / Gemini Flash / DeepSeek) — not re-tested with those yet; use /benchmark to check on your keys.
 
 
 ### Free capacity math (how many decks a free setup can make per day)

@@ -251,8 +251,8 @@
         "ollama:deepseek-v4.1-flash",
         "openrouter:thinkingmachines/inkling:free",
         "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free",
-        "google:gemma-4-31b-it",
         "google:gemma-4-26b-a4b-it",
+        "google:gemma-4-31b-it",
         "groq:openai/gpt-oss-120b",
         "cloudflare:@cf/openai/gpt-oss-120b"
       ],
@@ -267,8 +267,9 @@
         "openrouter:thinkingmachines/inkling:free",
         "openrouter:nvidia/nemotron-3.5-super-vl:free",
         "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free",
-        "google:gemma-4-31b-it",
         "google:gemma-4-26b-a4b-it",
+        "openrouter:google/gemma-4-26b-a4b-it:free",
+        "google:gemma-4-31b-it",
         "openrouter:google/gemma-4-31b-it:free",
         "groq:openai/gpt-oss-120b",
         "groq:qwen/qwen3.8-27b",
@@ -281,14 +282,14 @@
         "ollama:gemma4:31b",
         "openrouter:nvidia/nemotron-3.5-super-vl:free",
         "openrouter:thinkingmachines/inkling:free",
-        "google:gemma-4-31b-it",
         "google:gemma-4-26b-a4b-it",
+        "google:gemma-4-31b-it",
         "groq:qwen/qwen3.8-27b",
         "cloudflare:@cf/meta/llama-4-scout-17b-16e-instruct"
       ]
     },
     "models": {
-      "_comment": "Published free-tier limits per model (checked 30 Oct 2026). Groq: console.groq.com/docs/rate-limits (Free plan table). Gemini: ai.google.dev pricing lists these models as 'Free of charge'; per-model daily limits are shown only in AI Studio (aistudio.google.com/rate-limit) — flash models measured at ~20 requests/day/model and flash-lite at ~500/day on a free key in Oct 2026; edit if your key shows more. OpenRouter limits are account-wide (see providers.openrouter). The scheduler also learns from 429 replies, so wrong numbers only cost a retry. Gemma 4 on the Gemini API free tier: 16,000 input tokens/minute per model (from Google's 429 reply); gemma-4-31b often answered HTTP 500 in testing, gemma-4-26b-a4b was reliable and fast.",
+      "_comment": "Published free-tier limits per model (checked 30 Oct 2026). Groq: console.groq.com/docs/rate-limits (Free plan table). Gemini: ai.google.dev pricing lists these models as 'Free of charge'; per-model daily limits are shown only in AI Studio (aistudio.google.com/rate-limit) — flash models measured at ~20 requests/day/model and flash-lite at ~500/day on a free key in Oct 2026; edit if your key shows more. OpenRouter limits are account-wide (see providers.openrouter). The scheduler also learns from 429 replies, so wrong numbers only cost a retry. Gemma 4 on the Gemini API free tier: 16,000 input tokens/minute per model (from Google's 429 reply); gemma-4-31b often answered HTTP 500 in testing, gemma-4-26b-a4b was reliable and fast. 31 Oct 2026: gemma-4-31b-it on the free Gemini API failed ~90% of calls for an hour (HTTP 500/503/429) while gemma-4-26b-a4b-it answered normally, so 26B is tried before 31B.",
       "google:gemini-3.8-flash": {
         "rpm": 10,
         "rpd": 20,
