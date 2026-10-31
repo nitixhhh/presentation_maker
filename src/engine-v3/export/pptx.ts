@@ -15,7 +15,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import sharp from "sharp";
 import PptxGenJS from "pptxgenjs";
-import { openSlide, closePage, pool } from "../render/browser";
+import { openSlide, closePage, pool, renderLimit } from "../render/browser";
 import { slideDocument } from "../render/document";
 import { MEASURE_JS, HIDE_JS } from "../render/domScripts";
 import { deckDir } from "../store";
@@ -188,7 +188,7 @@ function addTextBlock(slide: any, t: any, deck: Deck) {
 
 export async function exportPptx(deck: Deck): Promise<Buffer> {
   const renderDir = path.join(deckDir(deck.id), "render");
-  const layers = await pool(deck.slides, 3, (s) => captureLayers(deck, s, renderDir));
+  const layers = await pool(deck.slides, renderLimit(3), (s) => captureLayers(deck, s, renderDir));
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE"; // 13.333 × 7.5 in = 1280 × 720 px
   pptx.title = deck.brief.title;

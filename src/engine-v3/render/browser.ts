@@ -6,9 +6,19 @@ import { pathToFileURL } from "url";
 
 let browserPromise: Promise<Browser> | null = null;
 
+/** LOW_MEMORY=true (small hosts, e.g. 512 MB): one Chromium page at a time and lighter Chromium flags. */
+export const LOW_MEMORY = process.env.LOW_MEMORY === "true";
+/** how many slides render in parallel (RENDER_CONCURRENCY overrides; LOW_MEMORY → 1) */
+export function renderLimit(def: number): number {
+  const n = Number(process.env.RENDER_CONCURRENCY);
+  if (n > 0) return Math.floor(n);
+  return LOW_MEMORY ? 1 : def;
+}
+
 export async function getBrowser(): Promise<Browser> {
   if (!browserPromise) {
-    browserPromise = chromium.launch({ headless: true, args: ["--font-render-hinting=none", "--disable-lcd-text"] });
+    const low = LOW_MEMORY ? ["--disable-dev-shm-usage", "--disable-gpu", "--no-zygote", "--renderer-process-limit=1", "--disable-extensions", "--js-flags=--max-old-space-size=128"] : [];
+    browserPromise = chromium.launch({ headless: true, args: ["--font-render-hinting=none", "--disable-lcd-text", ...low] });
     browserPromise.catch(() => (browserPromise = null));
   }
   const b = await browserPromise;

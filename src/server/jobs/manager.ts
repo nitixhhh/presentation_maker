@@ -312,7 +312,9 @@ export async function buildExports(deckId: string) {
   const deck = loadDeck(deckId);
   if (!deck) throw new Error("deck missing after generation");
   fs.mkdirSync(path.join(deckDir(deckId), "exports"), { recursive: true });
-  const [pdf, pptx] = await Promise.all([exportPdf(deck), exportPptx(deck)]);
+  // LOW_MEMORY (512 MB hosts): PDF then PPTX one after the other instead of both at once
+  const lowMem = process.env.LOW_MEMORY === "true";
+  const [pdf, pptx] = lowMem ? [await exportPdf(deck), await exportPptx(deck)] : await Promise.all([exportPdf(deck), exportPptx(deck)]);
   fs.writeFileSync(exportPath(deckId, "pdf"), pdf);
   fs.writeFileSync(exportPath(deckId, "pptx"), pptx);
   await buildPreviews(deckId);
