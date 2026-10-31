@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronRight, Loader2, Plus, Trash2, LogOut, Gift } from "lucide-react";
+import { WakeNotice } from "./ServerWake";
 import { Wordmark } from "@/components/brand/Brand";
 import Gallery from "./Gallery";
 import CreateForm, { AGE_KEY, type CreateRequest } from "./CreateForm";
@@ -126,6 +127,7 @@ export default function App() {
       </header>
 
       <main key={view.name === "job" ? view.id : view.name} className={`mx-auto w-full flex-1 px-4 pb-14 pt-7 sm:px-5 sm:pt-12 ${view.name === "job" ? "max-w-[820px]" : "max-w-[600px]"}`}>
+        <WakeNotice />
         {view.name === "home" && (
           <div className="space-y-9">
             <div className="rise px-1 text-center sm:text-left">

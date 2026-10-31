@@ -7,6 +7,7 @@ import Compare from "@/components/landing/Compare";
 import Faq from "@/components/landing/Faq";
 import Reveal from "@/components/landing/Reveal";
 import LegacyRedirect from "@/components/landing/LegacyRedirect";
+import { PreWake } from "@/components/app/ServerWake";
 import { Wordmark } from "@/components/brand/Brand";
 
 const CONTACT = "nitish.gowala@mail.tab.bot";
@@ -36,6 +37,7 @@ export default function Landing() {
   return (
     <>
       <LegacyRedirect />
+      <PreWake />
       <Reveal />
       <Nav />
 
