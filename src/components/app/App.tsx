@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { ChevronRight, Loader2, Plus, Trash2, LogOut, Gift } from "lucide-react";
+import { Wordmark } from "@/components/brand/Brand";
 import Gallery from "./Gallery";
 import CreateForm, { AGE_KEY, type CreateRequest } from "./CreateForm";
 import ProgressView from "./ProgressView";
@@ -69,7 +71,7 @@ export default function App() {
   }, []);
 
   const go = useCallback((v: View, replace = false) => {
-    const url = v.name === "job" ? `/?job=${v.id}` : v.name === "decks" ? "/?view=decks" : "/";
+    const url = v.name === "job" ? `/create?job=${v.id}` : v.name === "decks" ? "/create?view=decks" : "/create";
     if (replace) window.history.replaceState(null, "", url);
     else window.history.pushState(null, "", url);
     setView(v);
@@ -100,41 +102,50 @@ export default function App() {
   };
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-[560px] flex-col px-5 pb-12">
-      <header className="sticky top-0 z-10 -mx-5 flex items-center justify-between border-b border-[var(--line)] bg-[var(--bg)]/90 px-5 py-3.5 backdrop-blur">
-        <button onClick={() => go({ name: "home" })} className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--ink)] text-[13px] font-bold tracking-tight text-white">DC</span>
-          <span className="text-[16px] font-semibold tracking-tight text-[var(--ink)]">DeckCraft</span>
-        </button>
-        <nav className="flex items-center gap-1">
-          <button onClick={() => go({ name: "decks" })} className={`rounded-lg px-3 py-2 text-[14px] font-medium ${view.name === "decks" ? "text-[var(--ink)]" : "text-[var(--muted)]"}`}>
-            My decks
-          </button>
-          {view.name !== "home" && (
-            <button onClick={() => go({ name: "home" })} aria-label="New deck" className="flex items-center gap-1 rounded-lg bg-[var(--ink)] px-3 py-2 text-[14px] font-medium text-white">
-              <Plus className="h-4 w-4" /> New
+    <div className="flex min-h-dvh flex-col">
+      <header className="sticky top-0 z-40 px-3 pt-[max(10px,env(safe-area-inset-top))] sm:px-5 sm:pt-4">
+        <div className="glass mx-auto flex h-[56px] max-w-[880px] items-center justify-between gap-2 rounded-full pl-4 pr-2 sm:pl-5">
+          <Link href="/" aria-label="DeckCraft home" className="press shrink-0">
+            <Wordmark />
+          </Link>
+          <nav className="flex items-center gap-1">
+            <button
+              onClick={() => go({ name: "decks" })}
+              className={`press rounded-full px-3 py-2 text-[14px] font-medium ${view.name === "decks" ? "bg-[rgba(29,25,19,.06)] text-[var(--ink)]" : "text-[var(--muted)]"}`}
+            >
+              My decks
             </button>
-          )}
-          <Account me={me} onChange={refresh} />
-        </nav>
+            {view.name !== "home" && (
+              <button onClick={() => go({ name: "home" })} aria-label="New deck" className="btn btn-ink btn-sm !gap-1 !px-3.5">
+                <Plus className="h-4 w-4" /> New
+              </button>
+            )}
+            <Account me={me} onChange={refresh} />
+          </nav>
+        </div>
       </header>
 
-      <main className="flex-1 pt-6">
+      <main key={view.name === "job" ? view.id : view.name} className={`mx-auto w-full flex-1 px-4 pb-14 pt-7 sm:px-5 sm:pt-12 ${view.name === "job" ? "max-w-[820px]" : "max-w-[600px]"}`}>
         {view.name === "home" && (
-          <div className="space-y-8">
-            <div>
-              <h1 className="text-[28px] font-semibold leading-[1.15] tracking-tight text-[var(--ink)]">Presentations for your class, researched and designed.</h1>
-              <p className="mt-2 text-[15px] leading-relaxed text-[var(--muted)]">Real sources with references, slides designed one by one, ready as PDF and editable PowerPoint.</p>
+          <div className="space-y-9">
+            <div className="rise px-1 text-center sm:text-left">
+              <span className="eyebrow">New deck</span>
+              <h1 className="display mt-2.5 text-[36px] sm:text-[48px]">
+                Topic do, <span className="accent-serif">deck lo.</span>
+              </h1>
+              <p className="lede mt-2.5 text-[15.5px]">Real sources with references, har slide alag se designed, PDF aur editable PowerPoint dono.</p>
             </div>
-            <CreateForm onSubmit={start} busy={busy} error={error} />
-            {me?.auth.required && !me.user && <p className="-mt-5 text-center text-[13px] text-[var(--muted)]">You will sign in with Google before the deck starts.</p>}
+            <div className="glass rise d1 rounded-[var(--r-xl)] p-4 sm:p-6">
+              <CreateForm onSubmit={start} busy={busy} error={error} />
+            </div>
+            {me?.auth.required && !me.user && <p className="-mt-6 text-center text-[13px] text-[var(--muted)]">Deck start hone se pehle Google se sign in hoga.</p>}
             <RecentDecks onOpen={(id) => go({ name: "job", id })} limit={3} onAll={() => go({ name: "decks" })} signedIn={!!me?.user} />
             <Gallery />
           </div>
         )}
         {view.name === "decks" && (
-          <div className="space-y-4">
-            <h1 className="text-[24px] font-semibold tracking-tight text-[var(--ink)]">My decks</h1>
+          <div className="rise space-y-5">
+            <h1 className="display px-1 text-[34px]">My decks</h1>
             <RecentDecks onOpen={(id) => go({ name: "job", id })} signedIn={!!me?.user} />
             {me?.user && me.referralCode && <Invite me={me} />}
           </div>
@@ -172,9 +183,9 @@ function JobScreen({ id, me, onHome, onRetry }: { id: string; me: Me | null; onH
 
   if (missing)
     return (
-      <div className="space-y-4 py-16 text-center">
-        <p className="text-[16px] font-medium text-[var(--ink)]">This deck was not found.</p>
-        <button onClick={onHome} className="rounded-xl bg-[var(--accent)] px-5 py-3 text-[15px] font-semibold text-white">
+      <div className="panel rise space-y-5 rounded-[var(--r-lg)] px-6 py-14 text-center">
+        <p className="text-[17px] font-medium text-[var(--ink)]">This deck was not found.</p>
+        <button onClick={onHome} className="btn btn-ink">
           Make a new deck
         </button>
       </div>
@@ -184,7 +195,7 @@ function JobScreen({ id, me, onHome, onRetry }: { id: string; me: Me | null; onH
       <DeckView deck={deck} me={me} onReload={onReload} />
     ) : (
       <div className="flex flex-col items-center gap-3 py-24 text-[var(--muted)]">
-        <Loader2 className="h-6 w-6 animate-spin" />
+        <Loader2 className="h-6 w-6 animate-spin text-[var(--accent)]" />
         <span className="text-[14px]">Opening your deck</span>
       </div>
     );
@@ -229,35 +240,35 @@ function RecentDecks({ onOpen, limit, onAll, signedIn }: { onOpen: (id: string) 
   }, [signedIn]);
 
   if (!saved) return null;
-  if (!saved.length) return limit ? null : <p className="py-10 text-center text-[15px] text-[var(--muted)]">Decks you create on this phone will appear here.</p>;
+  if (!saved.length) return limit ? null : <p className="panel rounded-[var(--r-lg)] px-6 py-12 text-center text-[15px] text-[var(--muted)]">Is phone pe banayi decks yahan dikhengi.</p>;
   const list = limit ? saved.slice(0, limit) : saved;
 
   return (
     <section className="space-y-2.5">
       {limit && (
-        <div className="flex items-center justify-between">
-          <h2 className="text-[15px] font-semibold text-[var(--ink)]">Recent</h2>
+        <div className="flex items-center justify-between px-1">
+          <h2 className="eyebrow">Recent</h2>
           {saved.length > limit && (
-            <button onClick={onAll} className="text-[14px] font-medium text-[var(--accent)]">
+            <button onClick={onAll} className="text-[14px] font-medium text-[var(--accent-ink)]">
               See all
             </button>
           )}
         </div>
       )}
-      <ul className="divide-y divide-[var(--line)] overflow-hidden rounded-2xl border border-[var(--line)] bg-white">
+      <ul className="panel divide-y divide-[var(--rule)] overflow-hidden rounded-[var(--r-lg)]">
         {list.map((s) => {
           const j = jobs[s.id];
           const status = !j ? "" : j.status === "done" ? "Ready" : j.status === "failed" ? "Failed" : j.status === "queued" ? "In line" : `${Math.round(j.progress.percent)}%`;
           return (
             <li key={s.id} className="flex items-center">
-              <button onClick={() => onOpen(s.id)} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3.5 text-left">
+              <button onClick={() => onOpen(s.id)} className="flex min-w-0 flex-1 items-center gap-3 px-5 py-4 text-left transition-colors hover:bg-[rgba(29,25,19,.03)]">
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[15px] font-medium text-[var(--ink)]">{j?.title || s.topic}</span>
                   <span className="block text-[13px] text-[var(--muted)]">{new Date(s.createdAt).toLocaleString(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</span>
                 </span>
                 <span
                   className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-medium ${
-                    j?.status === "done" ? "bg-[#E7F6EC] text-[#1B6B3A]" : j?.status === "failed" ? "bg-[#FDF2F2] text-[#9B1C1C]" : "bg-[var(--accent-soft)] text-[var(--accent)]"
+                    j?.status === "done" ? "bg-[var(--ok-soft)] text-[var(--ok)]" : j?.status === "failed" ? "bg-[var(--bad-soft)] text-[var(--bad)]" : "bg-[var(--accent-soft)] text-[var(--accent-ink)]"
                   }`}
                 >
                   {status || "..."}
@@ -289,19 +300,19 @@ function Account({ me, onChange }: { me: Me | null; onChange: () => void }) {
   if (!me?.auth.configured) return null;
   if (!me.user)
     return (
-      <button onClick={() => signInWithGoogle().catch(() => {})} className="rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-[14px] font-medium text-[var(--ink)]">
+      <button onClick={() => signInWithGoogle().catch(() => {})} className="btn btn-ghost btn-sm !px-3.5">
         Sign in
       </button>
     );
   const initial = (me.user.name || me.user.email || "?").trim()[0]?.toUpperCase();
   return (
     <div className="relative">
-      <button onClick={() => setOpen((o) => !o)} aria-label="Account" className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-[var(--accent-soft)] text-[14px] font-semibold text-[var(--accent)]">
+      <button onClick={() => setOpen((o) => !o)} aria-label="Account" className="press flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-[var(--accent-soft)] text-[14px] font-semibold text-[var(--accent-ink)] ring-2 ring-[rgba(255,255,255,.8)]">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         {me.user.avatar ? <img src={me.user.avatar} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" /> : initial}
       </button>
       {open && (
-        <div className="absolute right-0 z-30 mt-2 w-64 space-y-1 rounded-xl border border-[var(--line)] bg-white p-3 text-[14px] shadow-lg">
+        <div className="glass menu pop absolute right-0 z-30 mt-3 w-64 space-y-1 rounded-[20px] p-4 text-[14px]" style={{ transformOrigin: "calc(100% - 20px) -12px" }}>
           <p className="truncate font-medium text-[var(--ink)]">{me.user.name || me.user.email}</p>
           <p className="text-[var(--muted)]">{me.credits} deck credit{me.credits === 1 ? "" : "s"}</p>
           <button
@@ -325,7 +336,7 @@ function Invite({ me }: { me: Me }) {
   const link = typeof window !== "undefined" ? `${window.location.origin}/?ref=${me.referralCode}` : "";
   const n = me.pricing.referralCredits;
   return (
-    <div className="space-y-2 rounded-2xl border border-[var(--line)] bg-white p-4">
+    <div className="panel space-y-2.5 rounded-[var(--r-lg)] p-5">
       <p className="flex items-center gap-2 text-[15px] font-semibold text-[var(--ink)]">
         <Gift className="h-4 w-4 text-[var(--accent)]" /> Invite a friend, get {n} free deck{n === 1 ? "" : "s"}
       </p>
@@ -338,7 +349,7 @@ function Invite({ me }: { me: Me }) {
             setCopied(true);
           }
         }}
-        className="w-full rounded-xl bg-[var(--accent)] px-4 py-3 text-[15px] font-semibold text-white"
+        className="btn btn-ink mt-1 w-full"
       >
         {copied ? "Link copied" : "Share my link"}
       </button>

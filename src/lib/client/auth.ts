@@ -57,10 +57,10 @@ export async function api(url: string, init: RequestInit = {}): Promise<Response
   return fetch(url, { cache: "no-store", ...init, headers });
 }
 
-export async function signInWithGoogle() {
+export async function signInWithGoogle(redirectTo?: string) {
   const c = await supabase();
   if (!c) throw new Error("Sign-in is not set up on this site yet.");
-  await c.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.href } });
+  await c.auth.signInWithOAuth({ provider: "google", options: { redirectTo: redirectTo || window.location.href } });
 }
 
 export async function signOut() {

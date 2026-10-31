@@ -43,7 +43,7 @@ export default function DeckView({ deck, me, onReload }: { deck: DeckSummary; me
   }, [last]);
 
   const [x0, setX0] = useState<number | null>(null);
-  const btn = "flex items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-[15px] font-semibold";
+  const btn = "btn";
 
   const download = async (format: "pdf" | "pptx" | "notes" | "html") => {
     setMsg(null);
@@ -91,7 +91,7 @@ export default function DeckView({ deck, me, onReload }: { deck: DeckSummary; me
           name: "DeckCraft",
           description: product === "pack5" ? "5 deck credits" : deck.title.slice(0, 60),
           prefill: { email: d.user?.email || "", name: d.user?.name || "" },
-          theme: { color: "#4F46E5" },
+          theme: { color: "#A4610F" },
           handler: (resp: Record<string, string>) => verify(resp).then(resolve, reject),
           modal: { ondismiss: () => resolve() },
         });
@@ -116,55 +116,55 @@ export default function DeckView({ deck, me, onReload }: { deck: DeckSummary; me
   const p = deck.payments;
   return (
     <div className="space-y-5">
-      <div>
-        <p className="text-[13px] font-medium uppercase tracking-wide text-[var(--muted)]">{locked ? "Preview" : "Ready"}</p>
-        <h2 className="mt-1 text-[22px] font-semibold leading-tight text-[var(--ink)]">{deck.title}</h2>
-        <p className="mt-1 text-[14px] text-[var(--muted)]">
+      <div className="rise px-1">
+        <span className={`badge ${locked ? "" : "!bg-[var(--ok-soft)] !text-[var(--ok)]"}`}>{locked ? "Free preview" : "Ready"}</span>
+        <h2 className="display mt-3 text-[28px] sm:text-[34px]">{deck.title}</h2>
+        <p className="mt-2 text-[14px] text-[var(--muted)]">
           {deck.slides.length} slides · {deck.language}
         </p>
       </div>
 
       {locked && p ? (
-        <div className="space-y-3 rounded-2xl border border-[var(--line)] bg-white p-4">
-          <p className="flex items-center gap-2 text-[15px] font-semibold text-[var(--ink)]">
-            <Lock className="h-4 w-4" /> Like it? Unlock the clean files
+        <div className="glass rise d2 space-y-3.5 rounded-[var(--r-xl)] p-5 sm:p-6">
+          <p className="flex items-center gap-2 text-[16px] font-semibold text-[var(--ink)]">
+            <Lock className="h-4 w-4 text-[var(--accent)]" /> Pasand aaya? Clean files unlock karo
           </p>
-          <ul className="space-y-1 text-[14px] text-[var(--muted)]">
+          <ul className="space-y-1.5 text-[14px] text-[var(--ink-2)]">
             {["PDF without watermark", "Editable PowerPoint (PPTX)", "Speaker notes (in the PPTX + a separate PDF)", `${deck.edits?.free ?? 2} free slide edits`].map((t) => (
               <li key={t} className="flex items-center gap-2">
-                <Check className="h-4 w-4 text-[var(--accent)]" /> {t}
+                <Check className="h-4 w-4 text-[var(--accent)]" strokeWidth={2.4} /> {t}
               </li>
             ))}
           </ul>
           {p.credits > 0 ? (
-            <button onClick={useCredit} disabled={!!paying} className={`${btn} w-full bg-[var(--accent)] text-white disabled:opacity-50`}>
+            <button onClick={useCredit} disabled={!!paying} className={`${btn} btn-ink w-full`}>
               {paying === "credit" ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Use 1 credit ({p.credits} left)
             </button>
           ) : (
-            <button onClick={() => pay("deck")} disabled={!!paying} className={`${btn} w-full bg-[var(--accent)] text-white disabled:opacity-50`}>
+            <button onClick={() => pay("deck")} disabled={!!paying} className={`${btn} btn-ink w-full`}>
               {paying === "deck" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {p.price <= 0 ? "Unlock free (your first deck)" : `Unlock for ₹${p.price}`}
             </button>
           )}
-          <button onClick={() => pay("pack5")} disabled={!!paying} className={`${btn} w-full border border-[var(--line)] bg-white text-[var(--ink)] disabled:opacity-50`}>
+          <button onClick={() => pay("pack5")} disabled={!!paying} className={`${btn} btn-ghost w-full`}>
             {paying === "pack5" ? <Loader2 className="h-4 w-4 animate-spin" /> : null} 5 decks for ₹{p.pack5}
           </button>
           {p.testMode && <p className="text-center text-[12px] text-[var(--muted)]">Test mode — no real money is charged.</p>}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3">
-          <button onClick={() => download("pdf")} className={`${btn} bg-[var(--accent)] text-white`}>
+        <div className="rise d2 grid grid-cols-2 gap-3">
+          <button onClick={() => download("pdf")} className={`${btn} btn-ink`}>
             <Download className="h-4 w-4" /> PDF
           </button>
-          <button onClick={() => download("pptx")} className={`${btn} border border-[var(--line)] bg-white text-[var(--ink)]`}>
+          <button onClick={() => download("pptx")} className={`${btn} btn-ghost`}>
             <Download className="h-4 w-4" /> PowerPoint
           </button>
         </div>
       )}
-      {msg && <p className="rounded-xl bg-[#FDF2F2] px-4 py-3 text-[14px] text-[#9B1C1C]">{msg}</p>}
+      {msg && <p className="rounded-[var(--r-md)] bg-[var(--bad-soft)] px-4 py-3 text-[14px] text-[var(--bad)]">{msg}</p>}
 
       <div
-        className="relative overflow-hidden rounded-xl border border-[var(--line)] bg-[#0b0f17] shadow-sm"
+        className="relative overflow-hidden rounded-[18px] bg-[#1d1913] shadow-[var(--shadow)] ring-1 ring-[var(--hair)]"
         style={{ aspectRatio: "16 / 9" }}
         onTouchStart={(e) => setX0(e.touches[0].clientX)}
         onTouchEnd={(e) => {
@@ -180,18 +180,18 @@ export default function DeckView({ deck, me, onReload }: { deck: DeckSummary; me
       </div>
 
       <div className="flex items-center justify-between">
-        <button aria-label="Previous slide" onClick={() => setI(Math.max(0, i - 1))} disabled={i === 0} className="rounded-full border border-[var(--line)] bg-white p-3 disabled:opacity-30">
+        <button aria-label="Previous slide" onClick={() => setI(Math.max(0, i - 1))} disabled={i === 0} className="press panel rounded-full p-3 disabled:opacity-30">
           <ChevronLeft className="h-5 w-5" />
         </button>
         <span className="text-[14px] tabular-nums text-[var(--muted)]">
           {i + 1} / {deck.slides.length}
         </span>
-        <button aria-label="Next slide" onClick={() => setI(Math.min(last, i + 1))} disabled={i === last} className="rounded-full border border-[var(--line)] bg-white p-3 disabled:opacity-30">
+        <button aria-label="Next slide" onClick={() => setI(Math.min(last, i + 1))} disabled={i === last} className="press panel rounded-full p-3 disabled:opacity-30">
           <ChevronRight className="h-5 w-5" />
         </button>
       </div>
 
-      <div className="flex gap-1 rounded-xl bg-[var(--chip)] p-1">
+      <div className="flex gap-1 rounded-full bg-[rgba(29,25,19,.06)] p-1">
         {(
           [
             ["slides", "Slides"],
@@ -200,7 +200,7 @@ export default function DeckView({ deck, me, onReload }: { deck: DeckSummary; me
             ["edit", "Edit"],
           ] as const
         ).map(([k, l]) => (
-          <button key={k} onClick={() => setTab(k)} className={`flex-1 rounded-lg py-2 text-[13px] font-medium ${tab === k ? "bg-white text-[var(--ink)] shadow-sm" : "text-[var(--muted)]"}`}>
+          <button key={k} onClick={() => setTab(k)} className={`press flex-1 rounded-full py-2.5 text-[13.5px] font-medium transition-colors ${tab === k ? "bg-[var(--card)] text-[var(--ink)] shadow-[var(--shadow-sm)]" : "text-[var(--muted)]"}`}>
             {l}
           </button>
         ))}
@@ -215,7 +215,7 @@ export default function DeckView({ deck, me, onReload }: { deck: DeckSummary; me
                 setI(k);
                 window.scrollTo({ top: 0, behavior: "smooth" });
               }}
-              className={`overflow-hidden rounded-lg border-2 bg-[#0b0f17] ${k === i ? "border-[var(--accent)]" : "border-transparent"}`}
+              className={`press overflow-hidden rounded-[12px] bg-[#1d1913] ring-offset-2 ring-offset-[var(--paper)] ${k === i ? "ring-2 ring-[var(--accent)]" : "ring-1 ring-[var(--hair)]"}`}
               style={{ aspectRatio: "16 / 9" }}
               title={t.title}
             >
@@ -229,12 +229,12 @@ export default function DeckView({ deck, me, onReload }: { deck: DeckSummary; me
         (locked ? (
           <LockedNote text="Speaker notes for every slide come with the unlocked deck — inside the PowerPoint and as a separate PDF." />
         ) : (
-          <div className="space-y-3 rounded-xl border border-[var(--line)] bg-white p-4">
+          <div className="panel space-y-3 rounded-[var(--r-lg)] p-5">
             <p className="text-[13px] font-medium text-[var(--muted)]">
               Slide {i + 1}: {s?.title}
             </p>
             <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-[var(--ink)]">{s?.notes || "No notes for this slide."}</p>
-            <button onClick={() => download("notes")} className="flex items-center gap-2 text-[14px] font-medium text-[var(--accent)]">
+            <button onClick={() => download("notes")} className="flex items-center gap-2 text-[14px] font-medium text-[var(--accent-ink)]">
               <Download className="h-4 w-4" /> All speaker notes (PDF)
             </button>
           </div>
@@ -243,7 +243,7 @@ export default function DeckView({ deck, me, onReload }: { deck: DeckSummary; me
         (locked ? (
           <LockedNote text="The full reference list is on the last slide of the unlocked deck." />
         ) : (
-          <ol className="space-y-2.5 rounded-xl border border-[var(--line)] bg-white p-4">
+          <ol className="panel space-y-2.5 rounded-[var(--r-lg)] p-5">
             {deck.references.map((r) => (
               <li key={r.n} className="text-[14px] leading-snug text-[var(--ink)] [overflow-wrap:anywhere]">
                 <span className="text-[var(--muted)]">[{r.n}]</span> {r.text}
@@ -255,7 +255,7 @@ export default function DeckView({ deck, me, onReload }: { deck: DeckSummary; me
       {tab === "edit" && (locked ? <LockedNote text={`After unlocking you get ${deck.edits?.free ?? 2} free edits: pick a slide, say what to change, and the designer redoes it.`} /> : <EditPanel deck={deck} current={i} onDone={onReload} />)}
 
       {!locked && (
-        <button onClick={() => download("html")} className="flex w-full items-center justify-center gap-2 py-2 text-[14px] font-medium text-[var(--accent)]">
+        <button onClick={() => download("html")} className="press flex w-full items-center justify-center gap-2 py-2 text-[14px] font-medium text-[var(--accent-ink)]">
           <Maximize2 className="h-4 w-4" /> Present full screen
         </button>
       )}
@@ -265,7 +265,7 @@ export default function DeckView({ deck, me, onReload }: { deck: DeckSummary; me
 
 function LockedNote({ text }: { text: string }) {
   return (
-    <p className="flex gap-2 rounded-xl border border-[var(--line)] bg-white p-4 text-[14px] leading-relaxed text-[var(--muted)]">
+    <p className="panel flex gap-2.5 rounded-[var(--r-lg)] p-5 text-[14px] leading-relaxed text-[var(--muted)]">
       <Lock className="mt-0.5 h-4 w-4 shrink-0" /> {text}
     </p>
   );
@@ -303,30 +303,30 @@ function EditPanel({ deck, current, onDone }: { deck: DeckSummary; current: numb
 
   if (jobId)
     return (
-      <div className="flex items-center gap-3 rounded-xl border border-[var(--line)] bg-white p-4 text-[14px] text-[var(--muted)]">
-        <Loader2 className="h-4 w-4 animate-spin" /> {job?.progress.step || "Redesigning the slide"} {job ? `· ${Math.round(job.progress.percent)}%` : ""}
+      <div className="panel flex items-center gap-3 rounded-[var(--r-lg)] p-5 text-[14px] text-[var(--muted)]">
+        <Loader2 className="h-4 w-4 animate-spin text-[var(--accent)]" /> {job?.progress.step || "Redesigning the slide"} {job ? `· ${Math.round(job.progress.percent)}%` : ""}
       </div>
     );
   return (
-    <div className="space-y-3 rounded-xl border border-[var(--line)] bg-white p-4">
+    <div className="panel space-y-3.5 rounded-[var(--r-lg)] p-5">
       <p className="text-[14px] text-[var(--muted)]">
         <Pencil className="mr-1 inline h-4 w-4" /> {left} of {free} free edits left
       </p>
       <Select label="Slide" value={n} onChange={setN} options={deck.slides.map((s) => ({ value: s.n, label: `${s.n}. ${s.title}` }))} />
       <label className="block">
-        <span className="mb-1.5 block text-[13px] font-medium text-[var(--muted)]">What should change?</span>
+        <span className="label">What should change?</span>
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value.slice(0, 500))}
           rows={3}
           placeholder="e.g. Add the formula V = IR and make the photo smaller"
-          className="w-full rounded-xl border border-[var(--line)] px-3.5 py-3 text-[15px] outline-none focus:border-[var(--accent)]"
+          className="field resize-none"
         />
       </label>
-      <button onClick={submit} disabled={!left || text.trim().length < 4} className="flex w-full items-center justify-center rounded-xl bg-[var(--accent)] px-4 py-3.5 text-[15px] font-semibold text-white disabled:opacity-40">
+      <button onClick={submit} disabled={!left || text.trim().length < 4} className="btn btn-ink w-full">
         Redo this slide
       </button>
-      {err && <p className="text-[14px] text-[#9B1C1C]">{err}</p>}
+      {err && <p className="text-[14px] text-[var(--bad)]">{err}</p>}
     </div>
   );
 }

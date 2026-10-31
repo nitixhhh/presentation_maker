@@ -24,8 +24,8 @@ export default function Gallery() {
   if (!items.length) return null;
   return (
     <section className="space-y-3">
-      <h2 className="text-[15px] font-semibold text-[var(--ink)]">Made with DeckCraft</h2>
-      <div className="-mx-5 flex snap-x gap-3 overflow-x-auto px-5 pb-2">
+      <h2 className="eyebrow px-1">Made with DeckCraft</h2>
+      <div className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-3 sm:-mx-5 sm:px-5">
         {items.map((s) => (
           <button
             key={s.id}
@@ -33,11 +33,11 @@ export default function Gallery() {
               setOpen(s);
               setI(0);
             }}
-            className="w-[78%] shrink-0 snap-start overflow-hidden rounded-xl border border-[var(--line)] bg-white text-left sm:w-[46%]"
+            className="panel press w-[78%] shrink-0 snap-start overflow-hidden rounded-[var(--r-md)] text-left sm:w-[46%]"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={s.slides[0]} alt="" loading="lazy" className="w-full" style={{ aspectRatio: "16/9", objectFit: "cover" }} />
-            <span className="block px-3 py-2.5">
+            <span className="block px-3.5 py-3">
               <span className="block truncate text-[14px] font-medium text-[var(--ink)]">{s.title}</span>
               <span className="text-[12px] text-[var(--muted)]">
                 {s.slides.length} slides · {s.language}
@@ -47,7 +47,7 @@ export default function Gallery() {
         ))}
       </div>
       {open && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-black/90 p-4" role="dialog" aria-label={open.title}>
+        <div className="scrim-in fixed inset-0 z-50 flex flex-col bg-[rgba(20,17,12,.94)] p-4" role="dialog" aria-label={open.title}>
           <div className="flex items-center justify-between text-white">
             <p className="truncate pr-4 text-[15px] font-medium">{open.title}</p>
             <button aria-label="Close" onClick={() => setOpen(null)} className="p-2">
@@ -56,7 +56,7 @@ export default function Gallery() {
           </div>
           <div className="flex flex-1 items-center justify-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={open.slides[i]} alt="" className="max-h-full w-full max-w-[1100px] rounded" style={{ aspectRatio: "16/9", objectFit: "contain" }} />
+            <img src={open.slides[i]} alt="" className="pop max-h-full w-full max-w-[1100px] rounded-[14px]" style={{ aspectRatio: "16/9", objectFit: "contain" }} />
           </div>
           <div className="flex items-center justify-center gap-6 pb-4 text-white">
             <button aria-label="Previous" onClick={() => setI(Math.max(0, i - 1))} className="rounded-full bg-white/10 p-3">
