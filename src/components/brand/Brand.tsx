@@ -10,11 +10,12 @@ export function Mark({ className = "h-[26px] w-[26px]" }: { className?: string }
   );
 }
 
-export function Wordmark({ className = "" }: { className?: string }) {
+/** compact: the name hides on very narrow phones (< 380px) so a crowded header never overflows */
+export function Wordmark({ className = "", compact = false }: { className?: string; compact?: boolean }) {
   return (
     <span className={`flex items-center gap-2.5 ${className}`}>
       <Mark />
-      <span className="text-[17px] font-semibold tracking-[-0.03em] text-[var(--ink)]">DeckCraft</span>
+      <span className={`${compact ? "hidden min-[380px]:inline" : ""} text-[17px] font-semibold tracking-[-0.03em] text-[var(--ink)]`}>DeckCraft</span>
     </span>
   );
 }

@@ -176,7 +176,9 @@ export default function CreateForm({ onSubmit, busy, error }: { onSubmit: (r: Cr
           {busy ? "Starting" : "Create presentation"}
           {!busy && <ArrowRight className="h-5 w-5" />}
         </button>
-        <p className="text-center text-[13px] text-[var(--muted)]">Takes a few minutes. You can close the app while it works.</p>
+        <p className="text-center text-[13px] text-[var(--muted)]">
+          {r.topic.trim().length < 3 ? "Type a topic to continue." : !ageOk ? "Tick the 18+ box above to continue." : "Takes a few minutes. You can close the app while it works."}
+        </p>
       </div>
       <p className="border-t border-[var(--rule)] pt-4 text-center text-[12px] leading-relaxed text-[var(--faint)]">Privacy: your topic and the details you type are sent to AI model providers (for example Google Gemini and OpenRouter) only to make your deck. Free AI services may use what is sent to improve their models, so do not enter personal or confidential information.</p>
     </form>

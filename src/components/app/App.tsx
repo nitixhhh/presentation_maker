@@ -109,18 +109,19 @@ export default function App() {
       <header className="sticky top-0 z-40 px-3 pt-[max(10px,env(safe-area-inset-top))] sm:px-5 sm:pt-4">
         <div className="glass mx-auto flex h-[56px] max-w-[880px] items-center justify-between gap-2 rounded-full pl-4 pr-2 sm:pl-5">
           <Link href="/" aria-label="DeckCraft home" className="press shrink-0">
-            <Wordmark />
+            <Wordmark compact={view.name !== "home"} />
           </Link>
           <nav className="flex items-center gap-1">
             <button
               onClick={() => go({ name: "decks" })}
-              className={`press rounded-full px-3 py-2 text-[14px] font-medium ${view.name === "decks" ? "bg-[rgba(29,25,19,.06)] text-[var(--ink)]" : "text-[var(--muted)]"}`}
+              className={`press whitespace-nowrap rounded-full px-3 py-2 text-[14px] font-medium ${view.name === "decks" ? "bg-[rgba(29,25,19,.06)] text-[var(--ink)]" : "text-[var(--muted)]"}`}
             >
               My decks
             </button>
             {view.name !== "home" && (
               <button onClick={() => go({ name: "home" })} aria-label="New deck" className="btn btn-ink btn-sm !gap-1 !px-3.5">
-                <Plus className="h-4 w-4" /> New
+                <Plus className="h-4 w-4" />
+                <span className="hidden sm:inline">New</span>
               </button>
             )}
             <Account me={me} onChange={refresh} />
