@@ -15,6 +15,10 @@ export async function POST(req: Request) {
   } catch {
     return Response.json({ error: "Invalid request." }, { status: 400 });
   }
+  // Gemini API terms: users must be 18+ (the form asks once; REQUIRE_AGE_CONFIRM=false turns this off)
+  if (process.env.REQUIRE_AGE_CONFIRM !== "false" && body?.ageConfirmed !== true) {
+    return Response.json({ error: "Please confirm you are 18 or older to make a deck." }, { status: 400 });
+  }
   const parsed = parseV3Request(body);
   if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
   try {

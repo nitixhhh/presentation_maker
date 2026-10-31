@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ChevronRight, Loader2, Plus, Trash2, LogOut, Gift } from "lucide-react";
 import Gallery from "./Gallery";
-import CreateForm, { type CreateRequest } from "./CreateForm";
+import CreateForm, { AGE_KEY, type CreateRequest } from "./CreateForm";
 import ProgressView from "./ProgressView";
 import DeckView from "./DeckView";
 import { useJob } from "./useJob";
@@ -86,7 +86,8 @@ export default function App() {
       return;
     }
     try {
-      const res = await api("/api/v3/jobs", { method: "POST", body: JSON.stringify(r) });
+      const ageOk = (r as CreateRequest).ageConfirmed === true || localStorage.getItem(AGE_KEY) === "1";
+      const res = await api("/api/v3/jobs", { method: "POST", body: JSON.stringify({ ...r, ageConfirmed: ageOk }) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.job) throw new Error(data.error || "Could not start. Please check your internet and try again.");
       saveJob({ id: data.job.id, topic: String((r as CreateRequest).topic), createdAt: data.job.createdAt, request: r as Record<string, unknown> });

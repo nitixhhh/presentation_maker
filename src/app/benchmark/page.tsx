@@ -4,7 +4,7 @@ import { Loader2 } from "lucide-react";
 import Select from "@/components/ui/Select";
 
 type Catalog = {
-  roles: { role: string; routes: { id: string; provider: string; model: string; configured: boolean; keys: number; vision: boolean }[] }[];
+  roles: { role: string; routes: { id: string; provider: string; model: string; configured: boolean; keys: number; vision: boolean; note?: string }[] }[];
   scheduler: { rows: { role: string; provider: string; model: string; keys: { key: number; usedToday: number; exhausted: string | null }[] }[] };
   benchmarks: { id: string; topic: string; role: string; createdAt: string; runs: { candidate: string }[] }[];
 };
@@ -145,6 +145,7 @@ export default function BenchmarkPage() {
                 />
                 <span className="font-mono text-[13px]">{r.id}</span>
                 {!r.configured && <span className="text-[12px]">(no key)</span>}
+                {r.note && <span className="text-[12px] text-[var(--muted)]">{r.note}</span>}
               </label>
             ))}
           </div>

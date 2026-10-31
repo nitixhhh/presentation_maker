@@ -14,6 +14,7 @@ export interface CreateRequest {
   formatNotes: string;
   logoId?: string;
   presenter: { names: string; rollNo: string; department: string; institute: string; guide: string; course: string };
+  ageConfirmed?: boolean;
 }
 
 const EMPTY: CreateRequest = {
@@ -26,6 +27,8 @@ const EMPTY: CreateRequest = {
   presenter: { names: "", rollNo: "", department: "", institute: "", guide: "", course: "" },
 };
 
+export const AGE_KEY = "dc_age_ok";
+
 const PURPOSES = ["Seminar", "Project review", "Class presentation", "Lab report", "Lecture"];
 
 export const field =
@@ -35,6 +38,8 @@ const label = "block text-[13px] font-medium text-[var(--muted)] mb-1.5";
 export default function CreateForm({ onSubmit, busy, error }: { onSubmit: (r: CreateRequest) => void; busy: boolean; error: string | null }) {
   const [r, setR] = useState<CreateRequest>(EMPTY);
   const [more, setMore] = useState(false);
+  // Gemini API terms: users must be 18+. Asked once per phone, remembered in localStorage.
+  const [ageOk, setAgeOk] = useState(() => typeof window !== "undefined" && localStorage.getItem(AGE_KEY) === "1");
   const set = <K extends keyof CreateRequest>(k: K, v: CreateRequest[K]) => setR((x) => ({ ...x, [k]: v }));
   const setP = (k: keyof CreateRequest["presenter"], v: string) => setR((x) => ({ ...x, presenter: { ...x.presenter, [k]: v } }));
 
@@ -42,7 +47,7 @@ export default function CreateForm({ onSubmit, busy, error }: { onSubmit: (r: Cr
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (r.topic.trim().length >= 3 && !busy) onSubmit(r);
+        if (r.topic.trim().length >= 3 && ageOk && !busy) onSubmit({ ...r, ageConfirmed: true });
       }}
       className="space-y-5"
     >
@@ -133,9 +138,25 @@ export default function CreateForm({ onSubmit, busy, error }: { onSubmit: (r: Cr
 
       {error && <p className="rounded-xl border border-[#F3C7C7] bg-[#FDF2F2] px-4 py-3 text-[14px] text-[#9B1C1C]">{error}</p>}
 
+      <label className="flex items-start gap-3 rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-[14px] leading-snug text-[var(--ink)]">
+        <input
+          type="checkbox"
+          className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--accent)]"
+          checked={ageOk}
+          onChange={(e) => {
+            setAgeOk(e.target.checked);
+            if (e.target.checked) localStorage.setItem(AGE_KEY, "1");
+            else localStorage.removeItem(AGE_KEY);
+          }}
+        />
+        <span>
+          I am 18 or older. I understand my topic and details are processed by AI providers to make the presentation.
+        </span>
+      </label>
+
       <button
         type="submit"
-        disabled={busy || r.topic.trim().length < 3}
+        disabled={busy || r.topic.trim().length < 3 || !ageOk}
         className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-5 py-4 text-[16px] font-semibold text-white shadow-sm disabled:opacity-40"
       >
         {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
@@ -143,6 +164,7 @@ export default function CreateForm({ onSubmit, busy, error }: { onSubmit: (r: Cr
         {!busy && <ArrowRight className="h-5 w-5" />}
       </button>
       <p className="text-center text-[13px] text-[var(--muted)]">Takes a few minutes. You can close the app while it works.</p>
+      <p className="text-center text-[12px] text-[var(--faint)]">Privacy: your topic and the details you type are sent to AI model providers (for example Google Gemini and OpenRouter) only to make your deck. Free AI services may use what is sent to improve their models, so do not enter personal or confidential information.</p>
     </form>
   );
 }

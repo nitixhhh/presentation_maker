@@ -5,6 +5,7 @@
 import { chat, type Msg } from "../llm";
 import type { Asset, Brief, Deck, DesignSystem, OutlineSlide } from "../types";
 import type { Recipe } from "../design/recipes";
+import { recipesEnabled } from "../design/pickRecipes";
 
 export function designerSystemPrompt(ds: DesignSystem, brief: Brief): string {
   return `You are a world-class presentation designer (think Pentagram / Apple keynote / top TED decks) designing slides for a university class presentation. You design ONE slide at a time as HTML + CSS on a fixed 1280×720 px canvas. There are NO templates: you decide the composition that best communicates THIS slide's message. Make it look like a skilled human designer made it — intentional hierarchy, generous whitespace, real photography used creatively, crisp diagrams — never a generic "title + bullet list + box".
@@ -53,9 +54,9 @@ TECHNICAL CONTRACT (the engine renders exactly what you write; the PPTX export r
 9. Contrast: text must be clearly readable on a classroom projector (ink on bg, or white on dark scrim). No light-grey text on white, no text over busy photo areas without a scrim.
 10. Every card/panel must contain content. Use the motif and decorative shapes (rules, big faded numerals, gradient bands, geometric accents) behind content, never on top of text.
 11. Keep it presentable: at most 4 points on a content slide (merge or cut), one key message, one main visual.
-12. Never write placeholder text: no invented emails, phone numbers, websites, names or "Your Name" — only what you were given.
+12. Never write placeholder text: no invented emails, phone numbers, websites, names or "Your Name" — only what you were given.${recipesEnabled() ? `
 
-INSPIRATION: with each slide you get 2–3 example slides made by good designers for similar content. Study their technique (how the photo is treated, text kept inside flex/grid containers, generous type, one strong focal point). They are NOT templates: never copy their layout or sample text — invent the composition that fits YOUR content, palette and art direction.`;
+INSPIRATION: with each slide you get 2–3 example slides made by good designers for similar content. Study their technique (how the photo is treated, text kept inside flex/grid containers, generous type, one strong focal point). They are NOT templates: never copy their layout or sample text — invent the composition that fits YOUR content, palette and art direction.` : ""}`;
 }
 
 function assetLine(a: Asset): string {

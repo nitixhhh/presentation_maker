@@ -86,6 +86,10 @@ interface ProviderCfg {
   dailyReset?: string;
   /** the provider's tokens-per-minute limit counts only input tokens (Gemini) */
   tpmInputOnly?: boolean;
+  /** usable ONLY on the /benchmark page, never in production routes (e.g. NVIDIA's free API: trial terms forbid production use) */
+  benchmarkOnly?: boolean;
+  /** short label shown on the /benchmark page */
+  note?: string;
 }
 
 const cfg = modelsConfig as any;
@@ -182,7 +186,22 @@ export function routesFor(role: Role, opts: { all?: boolean } = {}): Route[] {
   const ctx = llmContext.getStore();
   const forced = ctx?.routes?.[role] || ctx?.routes?.["*"];
   if (forced?.length) routes = forced;
+  // trial-only providers (NVIDIA) never serve production traffic — only a /benchmark run may force them
+  else routes = routes.filter((r) => !isBenchmarkOnly(r.provider));
   return opts.all ? routes : routes.filter((r) => providerReady(r.provider));
+}
+
+export function isBenchmarkOnly(provider: string): boolean {
+  return !!providerCfg(provider)?.benchmarkOnly;
+}
+
+export function providerNote(provider: string): string | undefined {
+  return providerCfg(provider)?.note;
+}
+
+/** Extra candidates offered only on the /benchmark page (models.json → engineV3.benchmarkCandidates). */
+export function benchmarkCandidates(role: Role): Route[] {
+  return ((cfg.engineV3?.benchmarkCandidates?.[role] || []) as any[]).map(parseRoute).filter(Boolean) as Route[];
 }
 
 /** a model the operator put in ENGINE_V3_ROUTES for the vision role is trusted to accept images */
@@ -216,9 +235,9 @@ interface Bucket {
 }
 
 declare global {
-  var __v3Budgets: { buckets: Map<string, Bucket>; active: Map<string, number>; loaded: boolean; dirty: boolean; recent: CallStat[] } | undefined;
+  var __v3Budgets: { buckets: Map<string, Bucket>; active: Map<string, number>; loaded: boolean; dirty: boolean; recent: CallStat[]; lastSuccessAt?: number } | undefined;
 }
-type BudgetState = { buckets: Map<string, Bucket>; active: Map<string, number>; loaded: boolean; dirty: boolean; recent: CallStat[] };
+type BudgetState = { buckets: Map<string, Bucket>; active: Map<string, number>; loaded: boolean; dirty: boolean; recent: CallStat[]; lastSuccessAt?: number };
 const G: BudgetState = globalThis.__v3Budgets || (globalThis.__v3Budgets = { buckets: new Map(), active: new Map(), loaded: false, dirty: false, recent: [] as CallStat[] });
 const QUOTA_FILE = path.join(DATA_ROOT, "llm-quota.json");
 
@@ -487,7 +506,9 @@ export async function chat(role: Role, messages: Msg[], opts: CallOpts = {}): Pr
     if (!best && soonest) best = soonest;
 
     if (!best) {
-      if (Date.now() - tStart > maxWaitTotal) {
+      // give up only after maxWaitTotal with NO successful AI call anywhere in this server (a busy-but-working
+      // free tier — e.g. Gemma answering 500 half the time — must slow a deck down, not kill it after 50 minutes)
+      if (Date.now() - Math.max(tStart, G.lastSuccessAt || 0) > maxWaitTotal) {
         throw new NoCapacityError(`No AI capacity for ${role}${opts.label ? ` (${opts.label})` : ""} right now:\n${errors.slice(-6).join("\n")}`);
       }
       if (triedThisRequest.size) triedThisRequest.clear(); // everything failed once: allow retries after a pause
@@ -516,6 +537,7 @@ export async function chat(role: Role, messages: Msg[], opts: CallOpts = {}): Pr
     const t0 = Date.now();
     try {
       const res = await callOnce(r, key, messages, { ...opts, maxTokens: out });
+      G.lastSuccessAt = Date.now();
       if (res.usage && !providerCfg(r.provider)?.tpmInputOnly) correctTokens(r.provider, k, r.model, est, res.usage);
       const stat: CallStat = { role, provider: r.provider, model: r.model, ms: Date.now() - t0, waitedMs: t0 - tStart, ok: true, tokensIn: inTokens, tokensOut: res.usage ? res.usage - inTokens : undefined, at: new Date().toISOString() };
       ctx?.stats?.push(stat);

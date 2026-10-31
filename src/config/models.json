@@ -32,16 +32,21 @@
       }
     },
     "nvidia": {
-      "name": "NVIDIA NIM",
+      "name": "NVIDIA NIM (build.nvidia.com) — BENCHMARK ONLY",
       "baseUrl": "https://integrate.api.nvidia.com/v1",
       "apiKeyEnv": "NVIDIA_NIM_API_KEY",
-      "enabled": false,
+      "enabled": true,
       "allowedForProduction": false,
       "limits": {
-        "rpm": 10,
-        "rpd": 1000,
-        "tokensPerDay": 300000
-      }
+        "rpm": 35,
+        "rpd": 5000,
+        "tokensPerDay": 3000000
+      },
+      "benchmarkOnly": true,
+      "note": "testing only (NVIDIA trial terms)",
+      "concurrency": 2,
+      "dailyReset": "rolling",
+      "_note": "NVIDIA API Trial Terms of Service (v. 19 Sep 2025) §1.4: without a paid subscription the API may be used 'only ... for internal testing and evaluation purposes, not in production'. So the engine NEVER routes production jobs here; these models appear only on /benchmark. NVIDIA no longer uses credits; per-model rate limits are not published (shown at the top right of build.nvidia.com; users report ~40 requests/min)."
     },
     "cloudflare": {
       "name": "Cloudflare Workers AI",
@@ -261,7 +266,7 @@
       ]
     },
     "models": {
-      "_comment": "Published free-tier limits per model (checked 30 Oct 2026). Groq: console.groq.com/docs/rate-limits (Free plan table). Gemini: ai.google.dev pricing lists these models as 'Free of charge'; per-model daily limits are shown only in AI Studio (aistudio.google.com/rate-limit) \u2014 flash models measured at ~20 requests/day/model and flash-lite at ~500/day on a free key in Oct 2026; edit if your key shows more. OpenRouter limits are account-wide (see providers.openrouter). The scheduler also learns from 429 replies, so wrong numbers only cost a retry. Gemma 4 on the Gemini API free tier: 16,000 input tokens/minute per model (from Google's 429 reply); gemma-4-31b often answered HTTP 500 in testing, gemma-4-26b-a4b was reliable and fast.",
+      "_comment": "Published free-tier limits per model (checked 30 Oct 2026). Groq: console.groq.com/docs/rate-limits (Free plan table). Gemini: ai.google.dev pricing lists these models as 'Free of charge'; per-model daily limits are shown only in AI Studio (aistudio.google.com/rate-limit) — flash models measured at ~20 requests/day/model and flash-lite at ~500/day on a free key in Oct 2026; edit if your key shows more. OpenRouter limits are account-wide (see providers.openrouter). The scheduler also learns from 429 replies, so wrong numbers only cost a retry. Gemma 4 on the Gemini API free tier: 16,000 input tokens/minute per model (from Google's 429 reply); gemma-4-31b often answered HTTP 500 in testing, gemma-4-26b-a4b was reliable and fast.",
       "google:gemini-3.8-flash": {
         "rpm": 10,
         "rpd": 20,
@@ -433,6 +438,42 @@
         "ctx": 131000,
         "maxOutput": 4000,
         "vision": true
+      },
+      "nvidia:moonshotai/kimi-k2.6": {
+        "rpm": 35,
+        "ctx": 256000,
+        "maxOutput": 16000,
+        "vision": true
+      },
+      "nvidia:deepseek-ai/deepseek-v4.1-flash": {
+        "rpm": 35,
+        "ctx": 1000000,
+        "maxOutput": 16000,
+        "vision": false
+      },
+      "nvidia:z-ai/glm-5.3-flash": {
+        "rpm": 35,
+        "ctx": 1000000,
+        "maxOutput": 16000,
+        "vision": false
+      },
+      "nvidia:minimaxai/minimax-m3.1-flash": {
+        "rpm": 35,
+        "ctx": 1000000,
+        "maxOutput": 16000,
+        "vision": true
+      },
+      "nvidia:mistralai/mistral-large-4-1t-a52b": {
+        "rpm": 35,
+        "ctx": 256000,
+        "maxOutput": 16000,
+        "vision": true
+      },
+      "nvidia:nvidia/nemotron-3.5-super-vl-120b-a12b": {
+        "rpm": 35,
+        "ctx": 1000000,
+        "maxOutput": 16000,
+        "vision": true
       }
     },
     "imageGeneration": {
@@ -440,6 +481,36 @@
       "models": [
         "@cf/black-forest-labs/flux-1-schnell",
         "@cf/bytedance/stable-diffusion-xl-lightning"
+      ]
+    },
+    "benchmarkCandidates": {
+      "_comment": "Extra models offered ONLY on the /benchmark page (never used for real jobs). NVIDIA = free trial API, testing/evaluation only per NVIDIA's terms. Key: NVIDIA_NIM_API_KEY from build.nvidia.com.",
+      "design": [
+        "nvidia:moonshotai/kimi-k2.6",
+        "nvidia:deepseek-ai/deepseek-v4.1-flash",
+        "nvidia:z-ai/glm-5.3-flash",
+        "nvidia:minimaxai/minimax-m3.1-flash",
+        "nvidia:mistralai/mistral-large-4-1t-a52b"
+      ],
+      "art": [
+        "nvidia:moonshotai/kimi-k2.6",
+        "nvidia:deepseek-ai/deepseek-v4.1-flash",
+        "nvidia:z-ai/glm-5.3-flash"
+      ],
+      "vision": [
+        "nvidia:moonshotai/kimi-k2.6",
+        "nvidia:nvidia/nemotron-3.5-super-vl-120b-a12b",
+        "nvidia:minimaxai/minimax-m3.1-flash"
+      ],
+      "outline": [
+        "nvidia:deepseek-ai/deepseek-v4.1-flash",
+        "nvidia:z-ai/glm-5.3-flash"
+      ],
+      "research": [
+        "nvidia:deepseek-ai/deepseek-v4.1-flash"
+      ],
+      "brief": [
+        "nvidia:z-ai/glm-5.3-flash"
       ]
     }
   }

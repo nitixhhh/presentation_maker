@@ -44,7 +44,13 @@ function hash(s: string) {
   return (h >>> 0) / 4294967295;
 }
 
+/** DESIGN_RECIPES=off disables the few-shot recipe examples (for A/B tests). Default: on. */
+export function recipesEnabled(): boolean {
+  return !/^(off|0|false|no)$/i.test((process.env.DESIGN_RECIPES || "on").trim());
+}
+
 export function pickRecipes(slide: OutlineSlide, assets: Asset[], used: Map<string, number>, k = 3): Recipe[] {
+  if (!recipesEnabled()) return [];
   const role = (slide.role || "").toLowerCase();
   const text = `${slide.role} ${slide.title} ${slide.keyMessage} ${slide.points.map((p) => p.text).join(" ")}`.toLowerCase();
   const wanted = new Set([role, ...(ROLE_SYNONYMS[role] || [])]);

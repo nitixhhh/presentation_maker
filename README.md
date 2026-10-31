@@ -41,12 +41,13 @@ Put these in HF *Secrets* (or `.env.local` when running locally). Never commit t
 | Name | Needed? | Where to get it |
 |---|---|---|
 | `GOOGLE_AI_API_KEY` | **Yes** — main designer (Gemini Flash / Gemma) | aistudio.google.com/apikey |
-| `GOOGLE_AI_API_KEY_2` … `_9` | Optional — more free capacity (use keys from *different* Google Cloud projects) | same |
+| `GOOGLE_AI_API_KEY_2` … `_9` | Optional — e.g. a paid key next to the free one. Limits are per Google *project*; don't create extra projects/accounts just to multiply free quota (Google's terms: "will not attempt to circumvent" limits) | same |
 | `GROQ_API_KEY` | Recommended — fast backup | console.groq.com/keys |
 | `OPENROUTER_API_KEY` | Recommended — more free backup models | openrouter.ai/keys |
 | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` | Recommended — **AI images (Flux)** + last-resort text model | dash.cloudflare.com → AI → Workers AI → "Use REST API" |
 | `OPENALEX_API_KEY` | Optional — avoids scholarly-search limits | openalex.org (free) |
 | `BENCHMARK_PASSWORD` | Optional — turns on `/benchmark` | any password you choose |
+| `NVIDIA_NIM_API_KEY` | Optional — **/benchmark only** (Kimi K2.6, DeepSeek V4.1 Flash, GLM-5.3-Flash…). NVIDIA's free API is for testing only, so real decks never use it | build.nvidia.com → Get API Key |
 
 **Site**
 
@@ -122,12 +123,13 @@ Each AI step has a role, and each role has its own ordered list of free models i
 
 **The scheduler (`src/engine-v3/llm.ts`)** knows every model's free limits (`engineV3.models`: requests/min, requests/day, tokens/min, tokens/day) and keeps a live budget per key. It never sends a request it knows will be refused, reads `Retry-After` / Gemini `retryDelay` / Groq "try again in 7m" on a 429, and marks a model as used up for today when the provider says the daily quota is gone. That state is saved to disk, so it survives restarts. It fails over to the next route at once. For `design` and `art` it first waits a few seconds for the better model. When everything is busy the deck simply waits ("High demand on the free AI models — slowing down a little" on the progress screen). It gives up only after `V3_MAX_CAPACITY_WAIT_MIN` (default 20) minutes with no capacity at all.
 
-**More keys = more free capacity.** Every provider accepts several keys: `GOOGLE_AI_API_KEY`, `GOOGLE_AI_API_KEY_2` … `_9` (or `GOOGLE_AI_API_KEYS=k1,k2`). Gemini limits are per Google Cloud *project*, so keys from different projects add up. Keys from the same project share one quota.
+**Several keys per provider** are accepted (`GOOGLE_AI_API_KEY`, `GOOGLE_AI_API_KEY_2` … `_9`, or `GOOGLE_AI_API_KEYS=k1,k2`) — useful for a free key plus a paid key. Keys from the same Google project share one quota. **Do not create several accounts/projects of the same provider to multiply free limits**: OpenRouter's terms forbid "create multiple accounts as a single user, for purposes of bypassing or circumventing use limits" (account termination, credits not refunded), and Google's API terms say you "will not attempt to circumvent" limits. One account per provider, several providers — that is what the failover is for.
 
 **Free-tier facts (checked 30 Oct 2026, from the providers' own pages/replies):**
 * **Groq free plan** (console.groq.com/docs/rate-limits): only `openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `qwen/qwen3.8-27b` (+ Whisper): 30 req/min, 1,000 req/day, **8,000 tokens/min**, 200k tokens/day. Kimi K2 and Llama 4 Scout are no longer offered on Groq. 8k tokens/min means one big slide-design request can exceed it; the scheduler then skips Groq for that request.
 * **Gemini free tier** (ai.google.dev pricing lists these as free; limits from Google's own 429 replies on a free key): Flash models (`gemini-3.8-flash`, `3.7`, `3.6`, `3.5`, `3-flash-preview`) **20 requests/day each**. Flash-Lite (`gemini-3.5-flash-lite`, `3.1-flash-lite`) 500/day each. Resets at midnight Pacific. Every Flash model has its own daily quota, so the routes rotate through them. Gemma 4 (`gemma-4-31b-it`, `gemma-4-26b-a4b-it`) is free with much higher limits, but in testing its endpoint often answered HTTP 500 (the scheduler retries/fails over).
-* **OpenRouter** free models (`:free`): 20 req/min and 50 req/day per account in total (1,000/day once you have bought $10 of credits ever → set `V3_ACCOUNT_OPENROUTER_RPD=1000`).
+* **OpenRouter** free models (`:free`, checked 31 Oct 2026 on openrouter.ai/api/v1/models): Gemma 4 31B / 26B (vision), Nemotron 3 Ultra 550B, Nemotron 3.5 Super VL (vision), Nemotron 3.5 Lightning, Inkling / Inkling Small (vision), Laguna, Dots 3 Note… There is **no** free Kimi, DeepSeek, Qwen, GLM or Llama on OpenRouter. Limits (openrouter.ai/docs/api-reference/limits): 20 req/min and 50 req/day per account across all free models; **1,000/day once the account has bought at least 10 credits ever** → set `V3_ACCOUNT_OPENROUTER_RPD=1000`. That one purchase is the biggest legit capacity boost.
+* **NVIDIA build.nvidia.com**: has Kimi K2.6, DeepSeek V4.1 Flash, GLM-5.3-Flash, MiniMax M3.1 Flash, Mistral Large 4 for free, but its Trial Terms allow use "only ... for internal testing and evaluation purposes, not in production". The engine therefore offers NVIDIA models **only on /benchmark** (marked "testing only") and never uses them for real decks (`benchmarkOnly` in models.json).
 * **Cloudflare Workers AI**: 10,000 Neurons/day free, shared by all models (≈15–20 slide designs with gpt-oss-120b, or ~200 Flux Schnell images). Kimi and GLM on Workers AI need a paid plan.
 
 **Rough daily capacity on ONE free key per provider:** Gemini Flash ≈ 100 strong calls/day + Gemma. A 10-slide deck uses about 10 designs + 1 art direction + a few revisions + a few vision checks ≈ 20–30 strong calls. So expect a few top-quality decks per Google project per day. After that, decks continue on Gemma / OpenRouter / Groq at lower quality. Add keys from more projects to scale.

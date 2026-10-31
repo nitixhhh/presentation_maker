@@ -10,7 +10,7 @@ import { DATA_ROOT } from "./paths";
 import { createJob, getJobViews } from "./jobs/manager";
 import { loadDeck } from "@/engine-v3/store";
 import { deckToken } from "./deckAuth";
-import { ROLES, routesFor, keysFor, modelSpec, schedulerState, type Role } from "@/engine-v3/llm";
+import { ROLES, routesFor, keysFor, modelSpec, schedulerState, benchmarkCandidates, providerNote, type Role } from "@/engine-v3/llm";
 
 const DIR = path.join(DATA_ROOT, "benchmarks");
 
@@ -26,14 +26,17 @@ export function benchmarkAuthorized(req: Request): "ok" | "disabled" | "denied" 
 export function benchmarkCatalog() {
   const roles = ROLES.map((role) => ({
     role,
-    routes: routesFor(role, { all: true }).map((r) => ({
-      id: `${r.provider}:${r.model}`,
-      provider: r.provider,
-      model: r.model,
-      configured: keysFor(r.provider).length > 0,
-      keys: keysFor(r.provider).length,
-      vision: !!modelSpec(r.provider, r.model).vision,
-    })),
+    routes: [...routesFor(role, { all: true }), ...benchmarkCandidates(role)]
+      .filter((r, i, a) => a.findIndex((x) => x.provider === r.provider && x.model === r.model) === i)
+      .map((r) => ({
+        id: `${r.provider}:${r.model}`,
+        provider: r.provider,
+        model: r.model,
+        configured: keysFor(r.provider).length > 0,
+        keys: keysFor(r.provider).length,
+        vision: !!modelSpec(r.provider, r.model).vision,
+        note: providerNote(r.provider),
+      })),
   }));
   return { roles, scheduler: schedulerState() };
 }
