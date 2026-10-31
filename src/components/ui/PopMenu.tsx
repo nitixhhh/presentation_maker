@@ -1,8 +1,12 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Check, ChevronDown } from "lucide-react";
 
-/** Small token-style menu that pops from the point it was tapped (spring scale .9 -> 1, slight un-blur). */
+/**
+ * Small token-style menu that pops from the point it was tapped (spring scale .9 -> 1, slight un-blur).
+ * Opens downward when it fits; otherwise flips upward if there is more room above, and never runs past the
+ * screen edge: the list gets a max height and scrolls (so "20 slides" stays reachable on a 390x844 phone).
+ */
 export default function PopMenu<T extends string | number>({
   value,
   options,
@@ -16,7 +20,9 @@ export default function PopMenu<T extends string | number>({
 }) {
   const [open, setOpen] = useState(false);
   const [ox, setOx] = useState(24);
+  const [place, setPlace] = useState<{ up: boolean; max: number } | null>(null);
   const wrap = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLUListElement>(null);
   const current = options.find((o) => o.value === value);
 
   useEffect(() => {
@@ -28,6 +34,29 @@ export default function PopMenu<T extends string | number>({
     return () => {
       document.removeEventListener("pointerdown", off);
       document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const measure = () => {
+      const r = wrap.current?.getBoundingClientRect();
+      const ul = list.current;
+      if (!r || !ul) return;
+      const vh = window.visualViewport?.height ?? window.innerHeight;
+      const gap = 8 + 12; // offset from the button + breathing room from the screen edge
+      const below = vh - r.bottom - gap;
+      const above = r.top - gap;
+      const need = ul.scrollHeight;
+      const up = need > below && above > below;
+      setPlace({ up, max: Math.max(120, Math.floor(up ? above : below)) });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    window.visualViewport?.addEventListener("resize", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.visualViewport?.removeEventListener("resize", measure);
     };
   }, [open]);
 
@@ -47,10 +76,15 @@ export default function PopMenu<T extends string | number>({
       </button>
       {open && (
         <ul
+          ref={list}
           role="listbox"
           aria-label={label}
-          className="glass menu pop absolute left-0 top-[calc(100%+8px)] z-30 min-w-[150px] rounded-[18px] p-1.5"
-          style={{ transformOrigin: `${ox}px -8px` }}
+          className={`glass menu pop absolute left-0 z-30 min-w-[150px] overflow-y-auto overscroll-contain rounded-[18px] p-1.5 ${place?.up ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]"}`}
+          style={{
+            transformOrigin: place?.up ? `${ox}px calc(100% + 8px)` : `${ox}px -8px`,
+            maxHeight: place ? place.max : undefined,
+            visibility: place ? undefined : "hidden",
+          }}
         >
           {options.map((o) => (
             <li key={String(o.value)}>

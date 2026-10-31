@@ -8,7 +8,12 @@ const newsreader = Newsreader({ variable: "--font-newsreader", subsets: ["latin"
 
 export const metadata: Metadata = {
   title: "DeckCraft — Give a topic, get a ready deck",
-  description: "Research-backed academic presentations for students. Real sources, designed slides, your college's title slide. Free preview, PDF and editable PowerPoint.",
+  description: "Give a topic, get a ready deck in minutes. Research-backed academic presentations for students: real sources, designed slides, your college's title slide. PDF and editable PowerPoint. Free during beta.",
+  openGraph: {
+    title: "DeckCraft — Give a topic, get a ready deck",
+    description: "Get a ready deck in minutes: real sources, designed slides, your college's title slide. Free during beta.",
+    type: "website",
+  },
 };
 
 export const viewport: Viewport = {

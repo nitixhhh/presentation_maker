@@ -3,8 +3,8 @@ import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 
 const QA: { q: string; a: React.ReactNode }[] = [
-  { q: "Is the preview really free?", a: "Yes. You can see the whole deck with a watermark for free. Pay only when you want the clean PDF and editable PPTX." },
-  { q: "How long does it take?", a: "Usually 6 to 10 minutes, a little longer at busy times. You can close the app: the deck keeps building on the server and will be waiting in My decks." },
+  { q: "Is the preview really free?", a: "Yes. And during beta every deck is fully free, including the clean PDF and editable PPTX. After beta the watermarked preview stays free and you pay only for the clean files." },
+  { q: "How long does it take?", a: "A ready deck in minutes, longer at busy times while we are in beta. You can close the app: the deck keeps building on the server and will be waiting in My decks." },
   { q: "Can it make decks in Hindi or Hinglish?", a: "Yes. English, Hindi and Hinglish are all supported." },
   { q: "My college's title slide and format?", a: "Give your name, roll no., guide, department, college and logo, and the title slide is made that way. You can also list required sections (Introduction, Methodology, References)." },
   { q: "Can I edit the PowerPoint?", a: "Yes, the PPTX is fully editable. After unlocking you can redo 2 slides for free: pick a slide and say what should change." },

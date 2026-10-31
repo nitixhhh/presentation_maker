@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown } from "lucide-react";
 
@@ -32,6 +32,7 @@ export default function Select<T extends string | number>({
   const [active, setActive] = useState(0);
   const [sheet, setSheet] = useState(false);
   const [ox, setOx] = useState<number | null>(null);
+  const [place, setPlace] = useState<{ up: boolean; max: number } | null>(null);
   const wrap = useRef<HTMLDivElement>(null);
   const btn = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLUListElement>(null);
@@ -58,6 +59,25 @@ export default function Select<T extends string | number>({
     if (open) list.current?.querySelector<HTMLElement>(`[data-i="${active}"]`)?.scrollIntoView({ block: "nearest" });
   }, [active, open]);
 
+  // desktop popover: open downward when it fits, else flip up if there is more room there; never past the screen edge
+  useLayoutEffect(() => {
+    if (!open || sheet) return;
+    const measure = () => {
+      const r = wrap.current?.querySelector("button")?.getBoundingClientRect();
+      const ul = list.current;
+      if (!r || !ul) return;
+      const vh = window.visualViewport?.height ?? window.innerHeight;
+      const gap = 8 + 12;
+      const below = vh - r.bottom - gap;
+      const above = r.top - gap;
+      const up = ul.scrollHeight > below && above > below;
+      setPlace({ up, max: Math.max(140, Math.floor(up ? above : below)) });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [open, sheet]);
+
   const choose = (i: number) => {
     const o = options[i];
     if (o) onChange(o.value);
@@ -69,6 +89,7 @@ export default function Select<T extends string | number>({
     if (!open) {
       if (["Enter", " ", "ArrowDown", "ArrowUp"].includes(e.key)) {
         e.preventDefault();
+        setSheet(window.matchMedia("(max-width: 640px)").matches);
         setOpen(true);
       }
       return;
@@ -91,7 +112,7 @@ export default function Select<T extends string | number>({
   };
 
   const items = (
-    <ul ref={list} role="listbox" id={`${fieldId}-list`} aria-labelledby={label ? `${fieldId}-label` : undefined} tabIndex={-1} className="max-h-[50vh] overflow-auto py-1.5">
+    <ul ref={list} role="listbox" id={`${fieldId}-list`} aria-labelledby={label ? `${fieldId}-label` : undefined} tabIndex={-1} className="max-h-[50vh] overflow-auto overscroll-contain py-1.5" style={!sheet && place ? { maxHeight: Math.min(place.max, window.innerHeight * 0.5) } : undefined}>
       {options.map((o, i) => {
         const selected = o.value === value;
         return (
@@ -136,7 +157,10 @@ export default function Select<T extends string | number>({
         aria-activedescendant={open ? `${fieldId}-opt-${active}` : undefined}
         aria-labelledby={label ? `${fieldId}-label ${fieldId}` : undefined}
         onPointerDown={(e) => setOx(e.nativeEvent.offsetX)}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          if (!open) setSheet(window.matchMedia("(max-width: 640px)").matches);
+          setOpen((o) => !o);
+        }}
         onKeyDown={onKey}
         className="field flex items-center justify-between gap-2 text-left focus-visible:border-[var(--accent)] focus-visible:shadow-[0_0_0_4px_var(--accent-ring)]"
       >
@@ -157,7 +181,10 @@ export default function Select<T extends string | number>({
             document.body,
           )
         ) : (
-          <div className="glass menu pop absolute left-0 right-0 z-30 mt-2 overflow-hidden rounded-[20px]" style={{ transformOrigin: `${ox ?? 40}px -10px` }}>
+          <div
+            className={`glass menu pop absolute left-0 right-0 z-30 overflow-hidden rounded-[20px] ${place?.up ? "bottom-full mb-2" : "top-full mt-2"}`}
+            style={{ transformOrigin: place?.up ? `${ox ?? 40}px calc(100% + 10px)` : `${ox ?? 40}px -10px`, visibility: place ? undefined : "hidden" }}
+          >
             {items}
           </div>
         ))}

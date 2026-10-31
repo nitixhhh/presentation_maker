@@ -40,6 +40,9 @@ export default function CreateForm({ onSubmit, busy, error }: { onSubmit: (r: Cr
   const [more, setMore] = useState(false);
   // Gemini API terms: users must be 18+. Asked once per phone, remembered in localStorage.
   const [ageOk, setAgeOk] = useState(() => typeof window !== "undefined" && localStorage.getItem(AGE_KEY) === "1");
+  // pressing Create without the 18+ tick scrolls to the box, shakes it once and says why (easy to miss on a phone)
+  const [nudge, setNudge] = useState(0);
+  const ageRef = useRef<HTMLLabelElement>(null);
   const set = <K extends keyof CreateRequest>(k: K, v: CreateRequest[K]) => setR((x) => ({ ...x, [k]: v }));
   const setP = (k: keyof CreateRequest["presenter"], v: string) => setR((x) => ({ ...x, presenter: { ...x.presenter, [k]: v } }));
 
@@ -64,7 +67,13 @@ export default function CreateForm({ onSubmit, busy, error }: { onSubmit: (r: Cr
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (r.topic.trim().length >= 3 && ageOk && !busy) onSubmit({ ...r, ageConfirmed: true });
+        if (busy || r.topic.trim().length < 3) return;
+        if (!ageOk) {
+          setNudge((n) => n + 1);
+          ageRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+          return;
+        }
+        onSubmit({ ...r, ageConfirmed: true });
       }}
       className="space-y-6"
     >
@@ -154,7 +163,19 @@ export default function CreateForm({ onSubmit, busy, error }: { onSubmit: (r: Cr
 
       {error && <p className="rounded-[var(--r-md)] border border-[#EBC3B6] bg-[var(--bad-soft)] px-4 py-3 text-[14px] text-[var(--bad)]">{error}</p>}
 
-      <label className="flex cursor-pointer items-start gap-3 rounded-[var(--r-md)] border border-[var(--rule)] bg-[rgba(255,253,248,.7)] px-4 py-3.5 text-[14px] leading-snug text-[var(--ink)]">
+      <div>
+      <label
+        ref={ageRef}
+        key={nudge}
+        id="age-confirm"
+        className={`flex cursor-pointer items-start gap-3 rounded-[var(--r-md)] border px-4 py-3.5 text-[14px] leading-snug text-[var(--ink)] transition-[border-color,box-shadow,background-color] duration-300 ${
+          ageOk
+            ? "border-[var(--rule)] bg-[rgba(255,253,248,.7)]"
+            : nudge
+              ? "nudge border-[var(--accent)] bg-[var(--accent-soft)] shadow-[0_0_0_4px_var(--accent-ring)]"
+              : "border-[var(--accent)] bg-[rgba(255,253,248,.85)]"
+        }`}
+      >
         <input
           type="checkbox"
           className="check mt-px"
@@ -169,9 +190,15 @@ export default function CreateForm({ onSubmit, busy, error }: { onSubmit: (r: Cr
           I am 18 or older. I understand my topic and details are processed by AI providers to make the presentation.
         </span>
       </label>
+      {!ageOk && nudge > 0 && (
+        <p role="alert" className="mt-2 px-1 text-[13.5px] font-medium text-[var(--accent-ink)]">
+          Please tick this box to confirm you are 18 or older, then press Create.
+        </p>
+      )}
+      </div>
 
       <div className="space-y-3">
-        <button type="submit" disabled={busy || r.topic.trim().length < 3 || !ageOk} className="btn btn-ink w-full !py-[17px] !text-[16px]">
+        <button type="submit" disabled={busy || r.topic.trim().length < 3} aria-describedby={!ageOk ? "age-confirm" : undefined} className={`btn btn-ink w-full !py-[17px] !text-[16px] ${!ageOk && !busy ? "opacity-60" : ""}`}>
           {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
           {busy ? "Starting" : "Create presentation"}
           {!busy && <ArrowRight className="h-5 w-5" />}

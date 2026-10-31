@@ -367,6 +367,9 @@ html:not(.lowfx) body::after {
   .pop {
     animation: pop 520ms var(--spring) both;
   }
+  .nudge {
+    animation: nudge 520ms cubic-bezier(.36,.07,.19,.97) 250ms both;
+  }
   .sheet-up {
     animation: sheet-up 620ms var(--spring) both;
   }
@@ -396,6 +399,12 @@ html:not(.lowfx) body::after {
     opacity: 1;
     transform: none;
   }
+}
+@keyframes nudge {
+  10%, 90% { transform: translateX(-2px); }
+  20%, 80% { transform: translateX(4px); }
+  30%, 50%, 70% { transform: translateX(-7px); }
+  40%, 60% { transform: translateX(7px); }
 }
 @keyframes pop {
   from {

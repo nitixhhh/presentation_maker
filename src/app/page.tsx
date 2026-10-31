@@ -51,10 +51,10 @@ export default function Landing() {
           <h1 className="display rise d1 mt-6 text-[46px] sm:text-[84px]">
             Give a topic.
             <br />
-            <span className="accent-serif whitespace-nowrap">Get a ready deck</span> <span className="whitespace-nowrap">in 10 minutes.</span>
+            <span className="accent-serif whitespace-nowrap">Get a ready deck</span> <span className="whitespace-nowrap">in minutes.</span>
           </h1>
           <p className="lede rise d2 mx-auto mt-5 max-w-[600px] text-[16.5px] sm:text-[19px]">
-            Research-backed slides with real sources, clean diagrams and your college's title slide. The preview is free; pay only for the decks you keep.
+            Research-backed slides with real sources, clean diagrams and your college's title slide. Free while DeckCraft is in beta.
           </p>
           <div className="rise d3 relative z-20 mx-auto mt-8 max-w-[680px]">
             <HeroComposer />
@@ -65,7 +65,7 @@ export default function Landing() {
               See samples
             </a>
           </div>
-          <p className="rise d4 mt-3 text-[13px] text-[var(--muted)]">Free preview. No card needed.</p>
+          <p className="rise d4 mt-3 text-[13px] text-[var(--muted)]">Free during beta. No card needed.</p>
         </div>
 
         <div className="rise d5 relative mx-auto mt-12 max-w-[1080px] sm:mt-16" aria-label="Slides made by DeckCraft">
@@ -180,8 +180,12 @@ export default function Landing() {
       <section id="pricing" className="scroll-mt-24 px-5 py-14 sm:py-24">
         <div className="mx-auto max-w-[1080px]">
           <SectionHead eyebrow="Pricing" title="Pay per deck." accent="No subscription.">
-            Every deck starts with a free watermarked preview. You pay only for the clean files.
+            Every deck starts with a free watermarked preview. After beta, you pay only for the clean files.
           </SectionHead>
+          <div data-reveal className="mx-auto -mt-4 mb-8 flex max-w-[620px] flex-col items-center gap-1.5 rounded-[var(--r-lg)] border border-[var(--accent)] bg-[var(--accent-soft)] px-5 py-4 text-center sm:-mt-6 sm:mb-10 sm:flex-row sm:justify-center sm:gap-3">
+            <span className="rounded-full bg-[var(--accent)] px-3 py-1 text-[12.5px] font-semibold uppercase tracking-[0.06em] text-white">Free during beta</span>
+            <span className="text-[15px] font-medium text-[var(--accent-ink)]">Every deck is free right now. The prices below apply later.</span>
+          </div>
           <div className="grid gap-4 md:grid-cols-3 md:gap-5">
             {[
               { name: "First deck", tag: "Intro price", amt: "₹9", unit: "", note: "Your first deck, fully unlocked.", feat: true },
@@ -215,7 +219,7 @@ export default function Landing() {
             ))}
           </div>
           <p data-reveal className="mt-3 text-center text-[13.5px] text-[var(--muted)]">
-            UPI, cards and wallets. The preview is always free.
+            After beta: UPI, cards and wallets. The preview stays free.
           </p>
         </div>
       </section>

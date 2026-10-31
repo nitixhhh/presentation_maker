@@ -62,9 +62,7 @@ export default function HeroComposer() {
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 px-3 pb-1.5 pt-2.5 text-[12.5px] font-medium text-[var(--muted)]">
-        <span>Free preview</span>
-        <span className="h-1 w-1 rounded-full bg-[var(--rule-2)]" />
-        <span>₹9 first deck</span>
+        <span>Free during beta</span>
         <span className="h-1 w-1 rounded-full bg-[var(--rule-2)]" />
         <span>PDF + PPTX</span>
       </div>
