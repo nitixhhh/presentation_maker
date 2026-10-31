@@ -64,6 +64,8 @@ export interface LlmResult {
 }
 
 interface Limits {
+  /** pacing: at least this many ms between two requests on one key+model (e.g. mistral-small ≤ 1 req/s) */
+  minIntervalMs?: number;
   rpm?: number;
   rpd?: number;
   tpm?: number;
@@ -377,6 +379,10 @@ function waitFor(provider: string, keyIdx: number, model: string, tokensTotal: n
     if (b.coolUntil > now) wait = Math.max(wait, b.coolUntil - now);
     if (l.rpd && b.day.length >= l.rpd) return Infinity;
     if (l.tpd && b.day.reduce((s, w) => s + w.tokens, 0) + tokens > l.tpd) return Infinity;
+    if (l.minIntervalMs && b.minute.length) {
+      const since = now - b.minute[b.minute.length - 1].t;
+      if (since < l.minIntervalMs) wait = Math.max(wait, l.minIntervalMs - since);
+    }
     if (l.rpm && b.minute.length >= l.rpm) wait = Math.max(wait, 60_000 - (now - b.minute[b.minute.length - l.rpm].t) + 100);
     if (l.tpm) {
       if (tokens > l.tpm) return Infinity; // this request alone is bigger than the per-minute budget

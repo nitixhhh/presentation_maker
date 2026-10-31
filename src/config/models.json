@@ -294,7 +294,6 @@
         "google:gemini-3.7-flash",
         "google:gemini-3.6-flash",
         "mistral:mistral-large-4",
-        "mistral:zai-glm-5-3",
         "sambanova:DeepSeek-V3.1",
         "ollama:deepseek-v4.1-flash",
         "openrouter:thinkingmachines/inkling:free",
@@ -311,7 +310,6 @@
         "google:gemini-3.5-flash",
         "google:gemini-3-flash-preview",
         "mistral:mistral-large-4",
-        "mistral:zai-glm-5-3",
         "sambanova:DeepSeek-V3.1",
         "sambanova:gpt-oss-120b",
         "ollama:glm-5.3-flash",
@@ -628,13 +626,9 @@
         "maxOutput": 24000,
         "tier": "strong"
       },
-      "mistral:zai-glm-5-3": {
-        "vision": false,
-        "ctx": 1000000,
-        "maxOutput": 24000,
-        "tier": "strong"
-      },
       "mistral:mistral-small-2603": {
+        "minIntervalMs": 1000,
+        "_minIntervalNote": "paced to <= 1 request/second on the free tier (2026-10-31)",
         "vision": true,
         "ctx": 256000,
         "maxOutput": 16000,

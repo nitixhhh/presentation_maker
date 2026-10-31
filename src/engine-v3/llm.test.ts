@@ -220,3 +220,16 @@ test("error text is logged without the key", () => {
   assert.ok(!out.includes("abcdefghijkl"));
   assert.ok(out.includes("[key]"));
 });
+
+test("mistral-small is paced to at most 1 request per second; zai-glm-5-3 is gone (403 on the free tier)", async () => {
+  setKeys("MISTRAL_API_KEY");
+  for (const role of llm.ROLES) for (const r of llm.routesFor(role)) assert.notEqual(r.model, "zai-glm-5-3", `${role} still routes zai-glm-5-3`);
+  assert.equal(llm.modelSpec("mistral", "mistral-small-2603").minIntervalMs, 1000);
+  const at: number[] = [];
+  mockFetch({ "api.mistral.ai": () => (at.push(Date.now()), okReply()) });
+  const routes = { brief: [{ provider: "mistral", model: "mistral-small-2603" }] };
+  await llm.llmContext.run({ routes }, () => llm.chat("brief", msgs, { stream: false }));
+  await llm.llmContext.run({ routes }, () => llm.chat("brief", msgs, { stream: false }));
+  assert.equal(at.length, 2);
+  assert.ok(at[1] - at[0] >= 950, `second call came ${at[1] - at[0]} ms after the first`);
+});
