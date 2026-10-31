@@ -29,7 +29,11 @@
         "rpm": 30,
         "rpd": 14400,
         "tokensPerDay": 500000
-      }
+      },
+      "firstByteMs": 30000,
+      "idleMs": 30000,
+      "timeoutMs": 90000,
+      "_note": "Free plan (no card): openai/gpt-oss-120b 30 RPM, 1K RPD, 8K TPM (input+output of one request), 200K TPD (console.groq.com/docs/rate-limits, 31 Oct 2026). 8K TPM means big design calls cannot run here; used for light roles."
     },
     "nvidia": {
       "name": "NVIDIA NIM (build.nvidia.com) — BENCHMARK ONLY",
@@ -46,7 +50,9 @@
       "note": "testing only (NVIDIA trial terms)",
       "concurrency": 2,
       "dailyReset": "rolling",
-      "_note": "NVIDIA API Trial Terms of Service (v. 19 Sep 2025) §1.4: without a paid subscription the API may be used 'only ... for internal testing and evaluation purposes, not in production'. So the engine NEVER routes production jobs here; these models appear only on /benchmark. NVIDIA no longer uses credits; per-model rate limits are not published (shown at the top right of build.nvidia.com; users report ~40 requests/min). Exception: ALLOW_NVIDIA_PRODUCTION=true (owner's own decision and risk) adds them to production routes via engineV3.optInRoutes.nvidia."
+      "_note": "NVIDIA API Trial Terms of Service (v. 19 Sep 2025) §1.4: without a paid subscription the API may be used 'only ... for internal testing and evaluation purposes, not in production'. So the engine NEVER routes production jobs here; these models appear only on /benchmark. NVIDIA no longer uses credits; per-model rate limits are not published (shown at the top right of build.nvidia.com; users report ~40 requests/min). Exception: ALLOW_NVIDIA_PRODUCTION=true (owner's own decision and risk) adds them to production routes via engineV3.optInRoutes.nvidia. 31 Oct 2026 probe: mistral-large-4-1t-a52b and glm-5.3-flash now think before answering and are very slow on the free queue (no first byte in 200 s on a design-sized prompt; glm ~50 s even for 'Say OK'), so they were removed from production routes; nemotron-3.5-super-vl needs chat_template_kwargs.enable_thinking=false or it returns only thinking.",
+      "firstByteMs": 60000,
+      "idleMs": 90000
     },
     "cloudflare": {
       "name": "Cloudflare Workers AI",
@@ -65,7 +71,9 @@
         "rpm": 20,
         "rpd": 2000,
         "neuronsPerDay": 10000
-      }
+      },
+      "firstByteMs": 45000,
+      "idleMs": 45000
     },
     "openrouter": {
       "name": "OpenRouter (Free Tier)",
@@ -84,7 +92,9 @@
         "rpm": 20,
         "rpd": 200,
         "tokensPerDay": 200000
-      }
+      },
+      "firstByteMs": 60000,
+      "idleMs": 60000
     },
     "ollama": {
       "name": "Ollama Cloud (pay per token)",
@@ -113,6 +123,37 @@
         "rpm": 30,
         "rpd": 10000,
         "tokensPerDay": 2000000
+      }
+    },
+    "mistral": {
+      "name": "Mistral La Plateforme (Free mode)",
+      "baseUrl": "https://api.mistral.ai/v1",
+      "apiKeyEnv": "MISTRAL_API_KEY",
+      "enabled": true,
+      "allowedForProduction": true,
+      "concurrency": 2,
+      "dailyReset": "rolling",
+      "firstByteMs": 45000,
+      "idleMs": 60000,
+      "_note": "Free mode: 'API access is enabled by default with no credit card required. Usage and rate limits apply.' (docs.mistral.ai, read 31 Oct 2026). Per-model limits are shown only on admin.mistral.ai Limits page (not public) — the router learns them from 429s. Free mode may use inputs/outputs for training unless the account opts out (Data & Account Controls). Only used when MISTRAL_API_KEY is set.",
+      "limits": {}
+    },
+    "sambanova": {
+      "name": "SambaNova Cloud (free tier)",
+      "baseUrl": "https://api.sambanova.ai/v1",
+      "apiKeyEnv": "SAMBANOVA_API_KEY",
+      "enabled": true,
+      "allowedForProduction": true,
+      "concurrency": 2,
+      "dailyReset": "rolling",
+      "firstByteMs": 45000,
+      "idleMs": 45000,
+      "timeoutMs": 180000,
+      "_note": "Free tier = no payment method linked. Per model: 20 RPM, 20 requests/day, 200,000 tokens/day (docs.sambanova.ai/docs/en/models/rate-limits, 31 Oct 2026). Small daily budget: a backup, not a main route. Only used when SAMBANOVA_API_KEY is set.",
+      "limits": {
+        "rpm": 20,
+        "rpd": 20,
+        "tokensPerDay": 200000
       }
     }
   },
@@ -215,28 +256,32 @@
     }
   },
   "engineV3": {
-    "_comment": "Engine v3 routes per role, best first ('provider:model'). Small fast models do brief/research/outline; the strongest free models do art direction, slide design and vision QA. A 429 or a used-up daily quota moves to the next route instantly. Override at runtime with ENGINE_V3_ROUTES (same shape as 'roles'). Use the /benchmark page to pick the best model per role on your own keys. Order (31 Oct 2026): free Gemini Flash first (best free designer on Design Arena votes), then Ollama Cloud's cheap paid models IF OLLAMA_API_KEY is set (OLLAMA_PRIORITY=last to use them only at the end), then OpenRouter free (Inkling > Nemotron 3.5 Super VL > Nemotron 3 Ultra on Design Arena), Gemma 4, Groq, Cloudflare. NVIDIA only with ALLOW_NVIDIA_PRODUCTION=true.",
+    "_comment": "Engine v3 routes per role, best first ('provider:model'). Quality tiers: art/design/vision are 'strong' roles — Gemini Flash first (main designer), then the strongest free no-card models (Mistral Large 4 / GLM-5.3 on Mistral Free mode, DeepSeek-V3.1 / gpt-oss-120b on SambaNova free), then NVIDIA (only with ALLOW_NVIDIA_PRODUCTION=true), OpenRouter free, Gemma 4, Groq, Cloudflare; a model marked tier 'fast' is never used there. brief/research/outline are 'light' roles — fast models first (Groq gpt-oss-120b, Mistral Small) so the Gemini quota is kept for design. Every provider is optional: no key = skipped. A 429 or a used-up daily quota moves to the next route at once; a provider failing 3x in a row is benched for 5 min. Override at runtime with ENGINE_V3_ROUTES (same shape as 'roles'). Checked 31 Oct 2026: Cerebras (needs a card) and GitHub Models (retired 30 Jul 2026) are not used.",
     "roles": {
       "brief": [
+        "groq:openai/gpt-oss-120b",
+        "mistral:mistral-small-2603",
         "google:gemini-3.5-flash-lite",
         "google:gemini-3.1-flash-lite",
-        "groq:openai/gpt-oss-120b",
+        "sambanova:Meta-Llama-3.3-70B-Instruct",
         "google:gemma-4-26b-a4b-it",
         "openrouter:google/gemma-4-26b-a4b-it:free",
         "cloudflare:@cf/openai/gpt-oss-120b"
       ],
       "research": [
+        "groq:openai/gpt-oss-120b",
+        "mistral:mistral-small-2603",
         "google:gemini-3.5-flash-lite",
         "google:gemini-3.1-flash-lite",
         "google:gemma-4-26b-a4b-it",
         "google:gemma-4-31b-it",
         "openrouter:nvidia/nemotron-3.5-lightning:free",
-        "groq:openai/gpt-oss-120b",
         "cloudflare:@cf/openai/gpt-oss-120b"
       ],
       "outline": [
-        "google:gemini-3.5-flash-lite",
+        "mistral:mistral-small-2603",
         "groq:openai/gpt-oss-120b",
+        "google:gemini-3.5-flash-lite",
         "google:gemini-3.1-flash-lite",
         "google:gemma-4-26b-a4b-it",
         "google:gemma-4-31b-it",
@@ -248,6 +293,9 @@
         "google:gemini-3.8-flash",
         "google:gemini-3.7-flash",
         "google:gemini-3.6-flash",
+        "mistral:mistral-large-4",
+        "mistral:zai-glm-5-3",
+        "sambanova:DeepSeek-V3.1",
         "ollama:deepseek-v4.1-flash",
         "openrouter:thinkingmachines/inkling:free",
         "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free",
@@ -262,6 +310,10 @@
         "google:gemini-3.6-flash",
         "google:gemini-3.5-flash",
         "google:gemini-3-flash-preview",
+        "mistral:mistral-large-4",
+        "mistral:zai-glm-5-3",
+        "sambanova:DeepSeek-V3.1",
+        "sambanova:gpt-oss-120b",
         "ollama:glm-5.3-flash",
         "ollama:deepseek-v4.1-flash",
         "openrouter:thinkingmachines/inkling:free",
@@ -279,6 +331,7 @@
         "google:gemini-3.6-flash",
         "google:gemini-3.5-flash",
         "google:gemini-3.5-flash-lite",
+        "mistral:mistral-large-4",
         "ollama:gemma4:31b",
         "openrouter:nvidia/nemotron-3.5-super-vl:free",
         "openrouter:thinkingmachines/inkling:free",
@@ -389,7 +442,8 @@
         "tpd": 200000,
         "ctx": 131072,
         "maxOutput": 4000,
-        "reasoning": true
+        "reasoning": true,
+        "tier": "strong"
       },
       "groq:openai/gpt-oss-20b": {
         "rpm": 30,
@@ -398,7 +452,8 @@
         "tpd": 200000,
         "ctx": 131072,
         "maxOutput": 4000,
-        "reasoning": true
+        "reasoning": true,
+        "tier": "fast"
       },
       "groq:qwen/qwen3.8-27b": {
         "rpm": 30,
@@ -454,7 +509,8 @@
         "rpm": 300,
         "ctx": 128000,
         "maxOutput": 8000,
-        "reasoning": true
+        "reasoning": true,
+        "tier": "fast"
       },
       "cloudflare:@cf/meta/llama-4-scout-17b-16e-instruct": {
         "rpm": 300,
@@ -484,7 +540,8 @@
         "rpm": 35,
         "ctx": 1000000,
         "maxOutput": 16000,
-        "vision": true
+        "vision": true,
+        "tier": "strong"
       },
       "nvidia:mistralai/mistral-large-4-1t-a52b": {
         "rpm": 35,
@@ -496,7 +553,12 @@
         "rpm": 35,
         "ctx": 1000000,
         "maxOutput": 16000,
-        "vision": true
+        "vision": true,
+        "extraBody": {
+          "chat_template_kwargs": {
+            "enable_thinking": false
+          }
+        }
       },
       "ollama:glm-5.3-flash": {
         "rpm": 60,
@@ -557,7 +619,52 @@
         "rpm": 35,
         "ctx": 128000,
         "maxOutput": 16000,
-        "vision": false
+        "vision": false,
+        "tier": "strong"
+      },
+      "mistral:mistral-large-4": {
+        "vision": true,
+        "ctx": 1000000,
+        "maxOutput": 24000,
+        "tier": "strong"
+      },
+      "mistral:zai-glm-5-3": {
+        "vision": false,
+        "ctx": 1000000,
+        "maxOutput": 24000,
+        "tier": "strong"
+      },
+      "mistral:mistral-small-2603": {
+        "vision": true,
+        "ctx": 256000,
+        "maxOutput": 16000,
+        "tier": "fast"
+      },
+      "sambanova:DeepSeek-V3.1": {
+        "rpm": 20,
+        "rpd": 20,
+        "tpd": 200000,
+        "ctx": 128000,
+        "maxOutput": 16000,
+        "vision": false,
+        "tier": "strong"
+      },
+      "sambanova:gpt-oss-120b": {
+        "rpm": 20,
+        "rpd": 20,
+        "tpd": 200000,
+        "ctx": 128000,
+        "maxOutput": 16000,
+        "reasoning": true,
+        "tier": "strong"
+      },
+      "sambanova:Meta-Llama-3.3-70B-Instruct": {
+        "rpm": 20,
+        "rpd": 20,
+        "tpd": 200000,
+        "ctx": 128000,
+        "maxOutput": 8000,
+        "tier": "fast"
       }
     },
     "imageGeneration": {
@@ -598,18 +705,15 @@
       ]
     },
     "optInRoutes": {
-      "_comment": "Routes added to production only when the named env var is 'true'. prepend = tried first, afterGemini = tried right after the last Gemini route (Gemini stays the main model), append = tried after the normal routes.",
+      "_comment": "Routes added to production only when the named env var is 'true'. prepend = tried first, afterGemini = tried right after the last Gemini route (or, with anchorProviders, after the last route of those providers — e.g. NVIDIA after Mistral/SambaNova, because NVIDIA's free queue is slow), append = tried after the normal routes.",
       "nvidia": {
         "env": "ALLOW_NVIDIA_PRODUCTION",
         "afterGemini": {
           "design": [
-            "nvidia:mistralai/mistral-large-4-1t-a52b",
             "nvidia:minimaxai/minimax-m3.1-flash",
-            "nvidia:nvidia/nemotron-3-ultra-550b-a55b",
-            "nvidia:z-ai/glm-5.3-flash"
+            "nvidia:nvidia/nemotron-3-ultra-550b-a55b"
           ],
           "art": [
-            "nvidia:mistralai/mistral-large-4-1t-a52b",
             "nvidia:minimaxai/minimax-m3.1-flash",
             "nvidia:nvidia/nemotron-3-ultra-550b-a55b"
           ],
@@ -620,19 +724,20 @@
         },
         "append": {
           "outline": [
-            "nvidia:minimaxai/minimax-m3.1-flash",
-            "nvidia:z-ai/glm-5.3-flash"
+            "nvidia:minimaxai/minimax-m3.1-flash"
           ],
           "research": [
-            "nvidia:minimaxai/minimax-m3.1-flash",
-            "nvidia:z-ai/glm-5.3-flash"
+            "nvidia:minimaxai/minimax-m3.1-flash"
           ],
           "brief": [
-            "nvidia:minimaxai/minimax-m3.1-flash",
-            "nvidia:z-ai/glm-5.3-flash"
+            "nvidia:minimaxai/minimax-m3.1-flash"
           ]
         },
-        "_tested": "31 Oct 2026 on Nitish's key: mistral-large-4, minimax-m3.1-flash, nemotron-3-ultra, nemotron-3.5-super-vl answer in ~1-2 s; glm-5.3-flash answers but slow (~29 s); kimi-k2.6, nemotron-3-super, nemotron-ultra-253b = 404 'Function not found for account'; deepseek-v4.1-flash and nemotron-3.5-lightning time out (60 s). Re-test before re-adding them."
+        "_tested": "31 Oct 2026 on Nitish's key: mistral-large-4, minimax-m3.1-flash, nemotron-3-ultra, nemotron-3.5-super-vl answer in ~1-2 s; glm-5.3-flash answers but slow (~29 s); kimi-k2.6, nemotron-3-super, nemotron-ultra-253b = 404 'Function not found for account'; deepseek-v4.1-flash and nemotron-3.5-lightning time out (60 s). Re-test before re-adding them. | 31 Oct 2026 (production-shaped probes, Nitish's key): mistral-large-4 no first byte in 200 s on a 6k-token design prompt and its replies are often all 'reasoning_content' (empty content); glm-5.3-flash ~50 s queue even for 'Say OK', content empty on design; both REMOVED. minimax-m3.1-flash OK (design 90 s, vision 14 s). nemotron-3.5-super-vl OK only with chat_template_kwargs.enable_thinking=false (set in engineV3.models).",
+        "anchorProviders": [
+          "mistral",
+          "sambanova"
+        ]
       }
     }
   }

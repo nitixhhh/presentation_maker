@@ -7,7 +7,13 @@
  *  - knows each free model's published limits (requests/min, requests/day, tokens/min, tokens/day —
  *    engineV3.models) and keeps live budgets per API key, so it does not send requests it knows
  *    will be refused;
- *  - rotates keys: GROQ_API_KEY, GROQ_API_KEY_2 … _9, or GROQ_API_KEYS="k1,k2" (same for every provider);
+ *  - ONE key per provider (GROQ_API_KEY, CEREBRAS_API_KEY, …); a provider whose key is not set is skipped.
+ *    (No multi-key rotation: one account per provider, as each provider's terms expect.)
+ *  - quality tiers: art/design/vision ("strong" roles) only ever use models marked tier "strong" (or untiered);
+ *    brief/research/outline ("light" roles) try fast models first so the Gemini quota is saved for design;
+ *  - a provider that keeps timing out / erroring is benched for a few minutes (circuit breaker), and a
+ *    request that gets no first byte (or stalls mid-stream) is abandoned early, so a dead provider costs
+ *    seconds instead of minutes;
  *  - on 429 reads Retry-After / Gemini retryDelay / "try again in 7m12s", cools that key+model down,
  *    and marks a model "used up for today" when the provider says the DAILY quota is gone (kept on disk
  *    across restarts);
@@ -30,6 +36,10 @@ import { DATA_ROOT } from "@/server/paths";
 
 export type Role = "brief" | "research" | "outline" | "art" | "design" | "vision";
 export const ROLES: Role[] = ["brief", "research", "outline", "art", "design", "vision"];
+/** roles where quality decides the deck: only "strong" models may serve them */
+export const STRONG_ROLES: Role[] = ["art", "design", "vision"];
+/** light roles: fast models first, Gemini quota saved for design */
+export const LIGHT_ROLES: Role[] = ["brief", "research", "outline"];
 
 export interface Route {
   provider: string;
@@ -70,6 +80,12 @@ interface ModelSpec extends Limits {
   reasoningEffort?: string;
   /** model rejects response_format json mode (e.g. Gemma on the Gemini API answers HTTP 500) */
   noJsonMode?: boolean;
+  /** "strong" = allowed for design/art/vision; "fast" = light roles only (brief/research/outline) */
+  tier?: "strong" | "fast";
+  /** extra provider-specific request fields (e.g. NVIDIA chat_template_kwargs to switch thinking off) */
+  extraBody?: Record<string, unknown>;
+  /** hard cap for one request to this model (ms); the smaller of this and the caller's timeout wins */
+  timeoutMs?: number;
 }
 
 interface ProviderCfg {
@@ -90,6 +106,12 @@ interface ProviderCfg {
   benchmarkOnly?: boolean;
   /** short label shown on the /benchmark page */
   note?: string;
+  /** hard cap for one request to this provider (ms) */
+  timeoutMs?: number;
+  /** abort when no response headers arrive within this many ms (streaming requests) */
+  firstByteMs?: number;
+  /** abort a stream that sends nothing for this many ms */
+  idleMs?: number;
 }
 
 const cfg = modelsConfig as any;
@@ -100,6 +122,10 @@ const ENV_BASE: Record<string, string> = {
   groq: "GROQ_BASE_URL",
   openrouter: "OPENROUTER_BASE_URL",
   cloudflare: "CLOUDFLARE_BASE_URL",
+  cerebras: "CEREBRAS_BASE_URL",
+  mistral: "MISTRAL_BASE_URL",
+  sambanova: "SAMBANOVA_BASE_URL",
+  github: "GITHUB_MODELS_BASE_URL",
 };
 
 // ── per-call context (job progress hooks, benchmark route overrides) ─────────────
@@ -130,15 +156,12 @@ function providerCfg(id: string): ProviderCfg | null {
   return (cfg.providers?.[id] as ProviderCfg) || null;
 }
 
-/** All API keys configured for a provider (rotation). */
+/** The provider's API key (exactly one per provider; absent env var = provider skipped). */
 export function keysFor(id: string): string[] {
   const p = providerCfg(id);
   if (!p || p.enabled === false) return [];
-  const env = p.apiKeyEnv;
-  const keys = [process.env[env], ...(process.env[`${env}S`] || "").split(","), ...[2, 3, 4, 5, 6, 7, 8, 9].map((i) => process.env[`${env}_${i}`])]
-    .map((k) => (k || "").trim())
-    .filter(Boolean);
-  return Array.from(new Set(keys));
+  const key = (process.env[p.apiKeyEnv] || "").trim();
+  return key ? [key] : [];
 }
 
 function baseUrlFor(id: string): string | null {
@@ -198,8 +221,10 @@ export function routesFor(role: Role, opts: { all?: boolean } = {}): Route[] {
       const mid = ((o.afterGemini?.[role] || []) as any[]).map(parseRoute).filter(Boolean) as Route[];
       const post = ((o.append?.[role] || []) as any[]).map(parseRoute).filter(Boolean) as Route[];
       // afterGemini: Gemini stays the main model; these go right after the last Gemini route (backup before the other fallbacks)
+      // anchorProviders: also go after those providers' routes (e.g. NVIDIA's slow free queue after Mistral/SambaNova)
+      const anchors: string[] = Array.isArray(o.anchorProviders) ? o.anchorProviders : [];
       let cut = -1;
-      routes.forEach((r, i) => { if (r.provider === "google" && /^gemini/i.test(r.model)) cut = i; });
+      routes.forEach((r, i) => { if ((r.provider === "google" && /^gemini/i.test(r.model)) || anchors.includes(r.provider)) cut = i; });
       routes = [...pre, ...routes.slice(0, cut + 1), ...mid, ...routes.slice(cut + 1), ...post];
     }
     // trial-only providers (NVIDIA) never serve production traffic unless their opt-in env is set
@@ -207,8 +232,16 @@ export function routesFor(role: Role, opts: { all?: boolean } = {}): Route[] {
     // pay-per-token providers can be pushed to the end of every chain (OLLAMA_PRIORITY=last)
     if (process.env.OLLAMA_PRIORITY === "last") routes = [...routes.filter((r) => r.provider !== "ollama"), ...routes.filter((r) => r.provider === "ollama")];
     routes = routes.filter((r, i, a) => a.findIndex((x) => x.provider === r.provider && x.model === r.model) === i);
+    // quality guard: design/art/vision never fall to a model marked "fast" (an explicit ENGINE_V3_ROUTES override is trusted)
+    if (!override) routes = applyTierPolicy(role, routes);
   }
   return opts.all ? routes : routes.filter((r) => providerReady(r.provider));
+}
+
+/** Drop "fast"-tier models from strong roles (design, art, vision). Light roles keep every route in config order. */
+export function applyTierPolicy(role: Role, routes: Route[]): Route[] {
+  if (!STRONG_ROLES.includes(role)) return routes;
+  return routes.filter((r) => modelSpec(r.provider, r.model).tier !== "fast");
 }
 
 function productionOptedIn(provider: string): boolean {
@@ -262,7 +295,8 @@ interface Bucket {
 declare global {
   var __v3Budgets: { buckets: Map<string, Bucket>; active: Map<string, number>; loaded: boolean; dirty: boolean; recent: CallStat[]; lastSuccessAt?: number } | undefined;
 }
-type BudgetState = { buckets: Map<string, Bucket>; active: Map<string, number>; loaded: boolean; dirty: boolean; recent: CallStat[]; lastSuccessAt?: number };
+type ProviderHealth = { fails: number; lastAt: number; r429: { model: string; t: number }[] };
+type BudgetState = { buckets: Map<string, Bucket>; active: Map<string, number>; loaded: boolean; dirty: boolean; recent: CallStat[]; lastSuccessAt?: number; health?: Map<string, ProviderHealth> };
 const G: BudgetState = globalThis.__v3Budgets || (globalThis.__v3Budgets = { buckets: new Map(), active: new Map(), loaded: false, dirty: false, recent: [] as CallStat[] });
 const QUOTA_FILE = path.join(DATA_ROOT, "llm-quota.json");
 
@@ -413,6 +447,61 @@ class HttpError extends Error {
   }
 }
 
+// ── provider health (circuit breaker) ──────────────────────────────────────────
+function health(provider: string): ProviderHealth {
+  if (!G.health) G.health = new Map();
+  let h = G.health.get(provider);
+  if (!h) G.health.set(provider, (h = { fails: 0, lastAt: 0, r429: [] }));
+  return h;
+}
+function breakerFails() {
+  return Math.max(1, Number(process.env.V3_BREAKER_FAILS || 3));
+}
+function breakerMs() {
+  return Math.max(0.1, Number(process.env.V3_BREAKER_MIN || 5)) * 60_000;
+}
+/** a success clears the provider's failure streak */
+function markHealthy(provider: string) {
+  const h = health(provider);
+  h.fails = 0;
+}
+/** soft failure (timeout, 5xx, empty reply, bad request): N in a row (within 10 min) benches the whole provider */
+function softFailure(provider: string, keyIdx: number, why: string) {
+  const now = Date.now();
+  const h = health(provider);
+  if (now - h.lastAt > 10 * 60_000) h.fails = 0;
+  h.fails++;
+  h.lastAt = now;
+  if (h.fails >= breakerFails()) {
+    const acct = bucket(`${keyId(provider, keyIdx)}|*`);
+    acct.coolUntil = Math.max(acct.coolUntil, now + breakerMs());
+    acct.reason = `provider failing (${h.fails} errors in a row, last: ${why.slice(0, 80)})`;
+    console.warn(`[v3/llm] ${provider}: ${h.fails} failures in a row — benched for ${Math.round(breakerMs() / 60000)} min`);
+    h.fails = 0;
+  }
+}
+/** 429 on two different models of one provider within a minute = an account-wide limit: cool the whole provider */
+function provider429(provider: string, keyIdx: number, model: string, delaySec: number | null) {
+  const now = Date.now();
+  const h = health(provider);
+  h.r429 = h.r429.filter((x) => now - x.t < 60_000);
+  h.r429.push({ model, t: now });
+  if (new Set(h.r429.map((x) => x.model)).size >= 2) {
+    const acct = bucket(`${keyId(provider, keyIdx)}|*`);
+    acct.coolUntil = Math.max(acct.coolUntil, now + Math.min(Math.max(delaySec ?? 30, 5), 600) * 1000);
+    acct.reason = "rate limited (account-wide)";
+  }
+}
+
+/** Remove anything that looks like an API key from text that may be logged or shown. */
+export function redactSecrets(text: string, ...secrets: (string | undefined)[]): string {
+  let t = String(text);
+  for (const s of secrets) if (s && s.length >= 8) t = t.split(s).join("[key]");
+  return t
+    .replace(/Bearer\s+[A-Za-z0-9._\-]{8,}/gi, "Bearer [key]")
+    .replace(/\b(nvapi-|gsk_|csk-|sk-or-v1-|sk-|ghp_|github_pat_|AIza)[A-Za-z0-9._\-]{8,}/g, "$1[key]");
+}
+
 /** Decide what a failure means for this key+model. Returns true if the same request may go elsewhere. */
 function penalize(provider: string, keyIdx: number, model: string, e: any) {
   const now = Date.now();
@@ -430,6 +519,7 @@ function penalize(provider: string, keyIdx: number, model: string, e: any) {
       (accountWide ? acct : b).reason = "daily quota used";
       saveBudgets();
     } else b.coolUntil = now + Math.min(Math.max(delay ?? 20, 2), 300) * 1000;
+    provider429(provider, keyIdx, model, delay);
     return;
   }
   if (status === 401 || status === 403) {
@@ -446,6 +536,7 @@ function penalize(provider: string, keyIdx: number, model: string, e: any) {
   }
   if (status === 413 || /context length|too large|maximum context|reduce the length/i.test(msg)) return; // too big for this model only
   b.coolUntil = now + 30_000; // 5xx, timeouts, empty replies
+  softFailure(provider, keyIdx, msg);
 }
 
 export function sleep(ms: number) {
@@ -490,7 +581,7 @@ export async function chat(role: Role, messages: Msg[], opts: CallOpts = {}): Pr
   if (hasImage) routes = routes.filter((r) => modelSpec(r.provider, r.model).vision || envVisionRoute(r));
   if (!routes.length) {
     throw new Error(
-      `Engine v3: no configured provider for role "${role}". Add at least one key to the server env (GOOGLE_AI_API_KEY, GROQ_API_KEY, OPENROUTER_API_KEY or CLOUDFLARE_API_TOKEN+CLOUDFLARE_ACCOUNT_ID).`
+      `Engine v3: no configured provider for role "${role}". Add at least one key to the server env (GOOGLE_AI_API_KEY, GROQ_API_KEY, MISTRAL_API_KEY, SAMBANOVA_API_KEY, OPENROUTER_API_KEY or CLOUDFLARE_API_TOKEN+CLOUDFLARE_ACCOUNT_ID).`
     );
   }
   const ctx = llmContext.getStore();
@@ -563,13 +654,16 @@ export async function chat(role: Role, messages: Msg[], opts: CallOpts = {}): Pr
     try {
       const res = await callOnce(r, key, messages, { ...opts, maxTokens: out });
       G.lastSuccessAt = Date.now();
+      markHealthy(r.provider);
       if (res.usage && !providerCfg(r.provider)?.tpmInputOnly) correctTokens(r.provider, k, r.model, est, res.usage);
       const stat: CallStat = { role, provider: r.provider, model: r.model, ms: Date.now() - t0, waitedMs: t0 - tStart, ok: true, tokensIn: inTokens, tokensOut: res.usage ? res.usage - inTokens : undefined, at: new Date().toISOString() };
       ctx?.stats?.push(stat);
       pushRecent(stat);
       return { text: res.text, provider: r.provider, model: r.model, ms: Date.now() - t0, waitedMs: t0 - tStart };
     } catch (e: any) {
-      const msg = String(e?.message || e);
+      const msg = redactSecrets(String(e?.message || e), key);
+      // status code + provider's error body (never the key) in the server log, so host logs show WHY a route fails
+      console.warn(`[v3/llm] ${role}${opts.label ? ` (${opts.label})` : ""} ${r.provider}/${r.model} failed after ${((Date.now() - t0) / 1000).toFixed(1)}s: ${msg.slice(0, 500)}`);
       errors.push(`${r.provider}/${r.model}: ${msg.slice(0, 220)}`);
       penalize(r.provider, k, r.model, e);
       if (!(e instanceof HttpError && e.status === 429)) triedThisRequest.add(`${kid}|${r.model}`);
@@ -580,6 +674,16 @@ export async function chat(role: Role, messages: Msg[], opts: CallOpts = {}): Pr
       G.active.set(kid, Math.max(0, (G.active.get(kid) || 1) - 1));
     }
   }
+}
+
+/** Tests only: forget every budget, cooldown and provider-health record (no disk read). */
+export function resetSchedulerForTests() {
+  G.buckets.clear();
+  G.active.clear();
+  G.health?.clear();
+  G.recent.length = 0;
+  G.loaded = true;
+  G.lastSuccessAt = undefined;
 }
 
 function pushRecent(s: CallStat) {
@@ -623,15 +727,40 @@ async function callOnce(route: Route, apiKey: string, messages: Msg[], opts: Cal
   if (spec.reasoningEffort) body.reasoning_effort = spec.reasoningEffort;
   else if (spec.reasoning) body.reasoning_effort = opts.reasoning || process.env.V3_REASONING_EFFORT || "low";
   if (opts.json && route.provider !== "cloudflare" && !modelSpec(route.provider, route.model).noJsonMode) body.response_format = { type: "json_object" };
+  if (spec.extraBody) Object.assign(body, spec.extraBody);
 
   const headers: Record<string, string> = { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
   if (route.provider === "openrouter") {
     headers["HTTP-Referer"] = process.env.PUBLIC_SITE_URL || "https://deckcraft.app";
     headers["X-Title"] = "DeckCraft AI";
   }
+  const pcfg = providerCfg(route.provider);
+  const totalMs = Math.min(opts.timeoutMs ?? 150_000, spec.timeoutMs ?? Infinity, pcfg?.timeoutMs ?? Infinity);
+  const firstByteMs = stream ? pcfg?.firstByteMs : undefined; // only where configured (Gemini may think before its first byte)
+  const idleMs = stream ? pcfg?.idleMs : undefined;
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 150_000);
-  const post = () => fetch(`${baseUrl}/chat/completions`, { method: "POST", headers, body: JSON.stringify(body), signal: ctrl.signal });
+  let abortReason = "";
+  const abort = (why: string) => {
+    if (!abortReason) abortReason = why;
+    ctrl.abort();
+  };
+  const timer = setTimeout(() => abort(`timeout: no complete reply within ${Math.round(totalMs / 1000)}s`), totalMs);
+  let fbTimer: NodeJS.Timeout | null = null;
+  let idleTimer: NodeJS.Timeout | null = null;
+  const armIdle = () => {
+    if (!idleMs) return;
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => abort(`timeout: stream stalled (nothing for ${Math.round(idleMs / 1000)}s)`), idleMs);
+  };
+  const post = async () => {
+    if (firstByteMs) fbTimer = setTimeout(() => abort(`timeout: no first byte within ${Math.round(firstByteMs / 1000)}s`), firstByteMs);
+    try {
+      return await fetch(`${baseUrl}/chat/completions`, { method: "POST", headers, body: JSON.stringify(body), signal: ctrl.signal });
+    } finally {
+      if (fbTimer) clearTimeout(fbTimer);
+      fbTimer = null;
+    }
+  };
   try {
     let res = await post();
     if (!res.ok && res.status >= 500 && body.response_format) {
@@ -657,12 +786,15 @@ async function callOnce(route: Route, apiKey: string, messages: Msg[], opts: Cal
       let text = "",
         finish = "",
         buf = "",
+        reasoningChars = 0,
         usage: number | undefined;
+      armIdle();
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
+        armIdle();
         buf += dec.decode(value, { stream: true });
         let nl: number;
         while ((nl = buf.indexOf("\n")) >= 0) {
@@ -676,6 +808,7 @@ async function callOnce(route: Route, apiKey: string, messages: Msg[], opts: Cal
             if (j.error) throw new HttpError(Number(j.error.code) || 500, `stream error: ${JSON.stringify(j.error).slice(0, 300)}`, null);
             const c = j.choices?.[0];
             if (c?.delta?.content) text += c.delta.content;
+            else if (c?.delta?.reasoning_content || c?.delta?.reasoning) reasoningChars += String(c.delta.reasoning_content || c.delta.reasoning).length;
             else if (typeof j.response === "string") text += j.response; // Cloudflare native stream shape
             if (c?.finish_reason) finish = c.finish_reason;
             if (j.usage?.total_tokens) usage = j.usage.total_tokens;
@@ -684,17 +817,24 @@ async function callOnce(route: Route, apiKey: string, messages: Msg[], opts: Cal
           }
         }
       }
-      if (!text.trim()) throw new Error(`empty completion (finish_reason=${finish || "unknown"})`);
+      if (!text.trim())
+        throw new Error(reasoningChars ? `empty completion: the model spent its whole budget thinking (finish_reason=${finish || "unknown"})` : `empty completion (finish_reason=${finish || "unknown"})`);
       return { text, usage };
     }
     const json: any = await res.json();
     const choice = json.choices?.[0];
     let text: any = choice?.message?.content ?? json.result?.response ?? "";
     if (Array.isArray(text)) text = text.map((p: any) => p.text || "").join("");
-    if (!text || !String(text).trim()) throw new Error(`empty completion (finish_reason=${choice?.finish_reason})`);
+    if (!text || !String(text).trim())
+      throw new Error(choice?.message?.reasoning_content || choice?.message?.reasoning ? `empty completion: the model spent its whole budget thinking (finish_reason=${choice?.finish_reason})` : `empty completion (finish_reason=${choice?.finish_reason})`);
     return { text: String(text), usage: json.usage?.total_tokens };
+  } catch (e) {
+    if (abortReason) throw new HttpError(0, abortReason, null);
+    throw e;
   } finally {
     clearTimeout(timer);
+    if (fbTimer) clearTimeout(fbTimer);
+    if (idleTimer) clearTimeout(idleTimer);
   }
 }
 
