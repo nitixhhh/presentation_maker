@@ -68,3 +68,33 @@ test("logo: hard guard script exists and is wired before measuring", async () =>
   const src = fs.readFileSync(path.join(__dirname, "qa/inspect.ts"), "utf8");
   assert.ok(src.indexOf("LOGO_GUARD_JS") < src.indexOf("let m: Measure = await page.evaluate(MEASURE_JS)"));
 });
+
+test("overflow: text past its panel is a layout problem the engine fixes; long URLs are wrapped before measuring", async () => {
+  const { LAYOUT_TYPES } = await import("./qa/inspect");
+  assert.ok(LAYOUT_TYPES.has("text-past-panel"));
+  const dom = await import("./render/domScripts");
+  assert.match(dom.MEASURE_JS, /type:'text-past-panel', severity:'high'/);
+  assert.match(dom.WRAP_JS, /overflow-wrap:anywhere/);
+  assert.doesNotMatch(dom.WRAP_JS, /break-all/); // ordinary words never break mid-word
+  const src = fs.readFileSync(path.join(__dirname, "qa/inspect.ts"), "utf8");
+  assert.ok(src.indexOf("WRAP_JS);") < src.indexOf("let m: Measure = await page.evaluate(MEASURE_JS)"));
+  assert.match(src, /"text-past-panel"\) && i\.id/);
+  // the regex the page script uses: URLs/DOIs/very long tokens yes, normal words no
+  const re = /(https?:\/\/[^\s<>"]{6,}|www\.[^\s<>"]{6,}|doi:\s?[^\s<>"]{6,}|\b10\.\d{4,9}\/[^\s<>"]{4,}|[^\s<>"]{30,})/g;
+  assert.ok(dom.WRAP_JS.includes(re.source));
+  const hits = (s: string) => (s.match(re) || []).filter((x) => x.length >= 20);
+  assert.deepEqual(hits("from https://en.wikipedia.org/wiki/Simulation_hypothesis today"), ["https://en.wikipedia.org/wiki/Simulation_hypothesis"]);
+  assert.deepEqual(hits("doi:10.1111/1467-9213.00309"), ["doi:10.1111/1467-9213.00309"]);
+  assert.deepEqual(hits("Electroencephalography and state-of-the-art computational neuroscience"), []);
+});
+
+test("QA: every slide (references too) gets a vision review on its first render; contrast autofix runs after the AI rounds", async () => {
+  const src = fs.readFileSync(path.join(__dirname, "pipeline.ts"), "utf8");
+  assert.match(src, /visionMode === "smart" && \(round === 0 \|\| high \+ med > 0\)/);
+  assert.doesNotMatch(src, /wantVision && !isRefs/);
+  assert.match(src, /fixContrast: true/);
+  // all existing passes are still there: AI revisions, fresh redesign, layout enforcement, references safety net
+  for (const s of ["reviseSlide(", "fresh redesign", "enforce: true", "references slide: used the exact reference list"]) assert.ok(src.includes(s), s);
+  const dom = await import("./render/domScripts");
+  assert.match(dom.CONTRAST_FIX_JS, /box-shadow/);
+});

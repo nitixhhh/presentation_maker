@@ -157,6 +157,24 @@ blocks.forEach(function(block, bi){
   var isRefLike = /^\s*\[\d+\]|https?:|doi|retrieved|wikipedia|credit|cc by|via wikimedia/i.test(block.innerText);
   if (minFs < 13 && !isRefLike) issues.push({type:'tiny-text', severity:'medium', detail:'Text ' + label + ' is only ' + minFs.toFixed(0) + 'px — too small for a classroom (min 16px for labels).', id:id});
   if (/\[(image|img|photo|diagram|chart|figure|placeholder)[^\]]*\]|lorem ipsum|placeholder|TODO/i.test(block.innerText)) issues.push({type:'placeholder', severity:'high', detail:'Placeholder text ' + label + '.', id:id});
+  // text that runs past the card/panel it sits in (the panel's overflow is visible, so nothing is "clipped", but the
+  // words spill onto the slide background — e.g. a long URL pushing a grid column out of a white panel)
+  (function(){
+    var p = block.parentElement, depth = 0;
+    while (p && p !== SLIDE && depth < 8){
+      var ps2 = cs(p);
+      var paints = alphaOf(ps2.backgroundColor) > 0.15 || ps2.backgroundImage !== 'none' || (parseFloat(ps2.borderLeftWidth) > 0 && parseFloat(ps2.borderRightWidth) > 0 && parseFloat(ps2.borderTopWidth) > 0);
+      if (paints){
+        var pr = p.getBoundingClientRect();
+        var P = {left: pr.left - SR.left, top: pr.top - SR.top, right: pr.right - SR.left, bottom: pr.bottom - SR.top};
+        if ((P.right - P.left) * (P.bottom - P.top) > 1280 * 720 * 0.9) return; // a full-slide background, not a panel
+        var out = Math.max(rect.right - P.right, P.left - rect.left, rect.bottom - P.bottom, P.top - rect.top);
+        if (out > 4) issues.push({type:'text-past-panel', severity:'high', id:id, detail:'Text ' + label + ' runs ' + Math.round(out) + 'px outside the panel/card it sits in (panel x' + Math.round(P.left) + ' y' + Math.round(P.top) + ' w' + Math.round(P.right - P.left) + ' h' + Math.round(P.bottom - P.top) + ') — make the panel bigger, the text shorter/smaller, or let long words/URLs wrap.'});
+        return;
+      }
+      p = p.parentElement; depth++;
+    }
+  })();
 });
 
 // overlaps between text blocks (ignore ancestor/descendant pairs)
@@ -335,3 +353,61 @@ pairs.forEach(function(pr){ var a = document.querySelector('[data-v3-text="'+pr[
   var top = parseFloat(getComputedStyle(cb).top); if (isNaN(top)) return;
   cb.style.top = (top + delta) + 'px'; done.push(pr[1] + '+' + Math.round(delta) + 'px'); });
 return done; })`;
+
+
+/**
+ * Long URLs / DOIs / unbreakable tokens: wrap them in a span that may break anywhere, so they wrap inside their column
+ * instead of pushing a grid/flex column (and its text) out of the panel. Ordinary words are left alone (a long word in
+ * a heading is reported as "wider than its box" and fixed by size instead of breaking mid-word).
+ */
+export const WRAP_JS = String.raw`(function(){
+var SLIDE = document.querySelector('section.slide'); if (!SLIDE) return [];
+var RE = /(https?:\/\/[^\s<>"]{6,}|www\.[^\s<>"]{6,}|doi:\s?[^\s<>"]{6,}|\b10\.\d{4,9}\/[^\s<>"]{4,}|[^\s<>"]{30,})/g;
+var done = [], nodes = [];
+var tw = document.createTreeWalker(SLIDE, NodeFilter.SHOW_TEXT, null), n;
+while ((n = tw.nextNode())){
+  var pe = n.parentElement; if (!pe || pe.closest('svg,style,script,.v3-wrap,[data-v3-engine]')) continue;
+  if (/\S{20,}/.test(n.textContent)) nodes.push(n);
+}
+nodes.forEach(function(n){
+  var t = n.textContent, last = 0, frag = document.createDocumentFragment(), hit = false, m;
+  RE.lastIndex = 0;
+  while ((m = RE.exec(t))){
+    if (m[0].length < 20) continue;
+    hit = true;
+    if (m.index > last) frag.appendChild(document.createTextNode(t.slice(last, m.index)));
+    var s = document.createElement('span'); s.className = 'v3-wrap'; s.setAttribute('style', 'overflow-wrap:anywhere;');
+    s.textContent = m[0]; frag.appendChild(s); last = m.index + m[0].length;
+    done.push('wrap "' + m[0].slice(0, 32) + (m[0].length > 32 ? '…' : '') + '"');
+  }
+  if (!hit) return;
+  if (last < t.length) frag.appendChild(document.createTextNode(t.slice(last)));
+  n.parentNode.replaceChild(frag, n);
+});
+return done;
+})()`;
+
+/**
+ * Low-contrast autofix (after the AI rounds): per text block either switch the text to the readable ink (white or
+ * near-black, whichever reads best on what is behind it) or, when the background is too busy for any ink, put a
+ * scrim plate behind the text (box-shadow spread, so the layout does not move).
+ */
+export const CONTRAST_FIX_JS = String.raw`(function(fixes){
+var out = [];
+fixes.forEach(function(f){ var el = document.querySelector('[data-v3-text="'+f.id+'"]'); if (!el) return;
+  if (f.mode === 'recolor'){
+    el.style.setProperty('color', f.ink, 'important'); el.style.setProperty('-webkit-text-fill-color', f.ink, 'important');
+    el.querySelectorAll('*').forEach(function(c){ if (!c.closest('svg')) { c.style.setProperty('color', f.ink, 'important'); c.style.setProperty('-webkit-text-fill-color', f.ink, 'important'); } });
+    out.push('contrast: text ' + f.id + ' → ' + f.ink);
+  } else {
+    el.style.setProperty('color', f.ink, 'important'); el.style.setProperty('-webkit-text-fill-color', f.ink, 'important');
+    el.querySelectorAll('*').forEach(function(c){ if (!c.closest('svg')) { c.style.setProperty('color', f.ink, 'important'); c.style.setProperty('-webkit-text-fill-color', f.ink, 'important'); } });
+    el.style.setProperty('background-color', f.plate, 'important');
+    el.style.setProperty('box-shadow', '0 0 0 10px ' + f.plate, 'important');
+    el.style.setProperty('border-radius', '4px', 'important');
+    el.style.setProperty('-webkit-box-decoration-break', 'clone'); el.style.setProperty('box-decoration-break', 'clone');
+    out.push('contrast: scrim behind text ' + f.id);
+  }
+});
+return out;
+})`;

@@ -2,7 +2,7 @@
 import sharp from "sharp";
 import { openSlide, closePage } from "../render/browser";
 import { slideDocument } from "../render/document";
-import { MEASURE_JS, HIDE_JS, UNHIDE_JS, SHRINK_JS, SERIALIZE_JS, NUDGE_JS } from "../render/domScripts";
+import { MEASURE_JS, HIDE_JS, UNHIDE_JS, SHRINK_JS, SERIALIZE_JS, NUDGE_JS, WRAP_JS, CONTRAST_FIX_JS } from "../render/domScripts";
 import { GEOMETRY_JS, GEOMETRY_FIX_JS } from "../render/geometry";
 import { contrast } from "../agents/artDirector";
 import { LOGO_GUARD_JS, LOGO_MAX } from "./logoGuard";
@@ -49,7 +49,7 @@ function inventedNumbers(texts: any[], allowed: string, n: number): string[] {
 }
 
 /** issue types that mean the layout is physically broken (overlap / cut off / covered) — code decides, never the AI */
-export const LAYOUT_TYPES = new Set(["text-clipped", "out-of-canvas", "text-overlap", "text-covered", "label-overlap", "line-over-text", "label-clipped"]);
+export const LAYOUT_TYPES = new Set(["text-clipped", "out-of-canvas", "text-past-panel", "text-overlap", "text-covered", "label-overlap", "line-over-text", "label-clipped"]);
 /** issues GEOMETRY_JS reports (also "small-label") */
 export const GEOMETRY_TYPES = new Set(["label-overlap", "line-over-text", "label-clipped", "text-covered", "small-label"]);
 
@@ -60,7 +60,7 @@ export async function inspectSlide(
   renderDir: string,
   role = "",
   allowedText = "",
-  opts: { enforce?: boolean } = {}
+  opts: { enforce?: boolean; fixContrast?: boolean } = {}
 ): Promise<Inspection> {
   const assetBase = "../assets/";
   const doc = slideDocument(deck.design, html, { assetBase, deck, n });
@@ -73,10 +73,13 @@ export async function inspectSlide(
       const lf: string[] = await page.evaluate(`(${LOGO_GUARD_JS})(${JSON.stringify({ allowed: logo.forSlides.includes(n), maxW: LOGO_MAX.w, maxH: LOGO_MAX.h })})`);
       autoFixes.push(...lf);
     }
+    // long URLs / DOIs / unbreakable tokens may break inside their column instead of pushing it out of its panel
+    const wrapped: string[] = await page.evaluate(WRAP_JS);
+    autoFixes.push(...wrapped);
     let m: Measure = await page.evaluate(MEASURE_JS);
     // deterministic auto-fit (max 3 passes)
     for (let pass = 0; pass < 3; pass++) {
-      const ids = m.issues.filter((i) => (i.type === "text-clipped" || i.type === "out-of-canvas") && i.id).map((i) => i.id!);
+      const ids = m.issues.filter((i) => (i.type === "text-clipped" || i.type === "out-of-canvas" || i.type === "text-past-panel") && i.id).map((i) => i.id!);
       const pairs = m.issues.filter((i) => i.type === "text-overlap" && i.id).map((i) => i.id!.split("|"));
       if (!ids.length && !pairs.length) break;
       const nudged: string[] = pairs.length ? await page.evaluate(`(${NUDGE_JS})(${JSON.stringify(pairs)})`) : [];
@@ -91,7 +94,7 @@ export async function inspectSlide(
       // last resort after the AI rounds: deterministic fixes, re-measured each pass until the code finds nothing
       for (let pass = 0; pass < 4; pass++) {
         const geo = g.issues.filter((i) => i.id && i.severity === "high" && i.type !== "small-label").map((i) => ({ type: i.type, id: i.id }));
-        const ids = m.issues.filter((i) => (i.type === "text-clipped" || i.type === "out-of-canvas") && i.id).map((i) => i.id!);
+        const ids = m.issues.filter((i) => (i.type === "text-clipped" || i.type === "out-of-canvas" || i.type === "text-past-panel") && i.id).map((i) => i.id!);
         const pairs = m.issues.filter((i) => i.type === "text-overlap" && i.id).map((i) => i.id!.split("|"));
         if (!geo.length && !ids.length && !pairs.length) break;
         const fixed: string[] = geo.length ? await page.evaluate(`(${GEOMETRY_FIX_JS})(${JSON.stringify(geo)})`) : [];
@@ -107,7 +110,7 @@ export async function inspectSlide(
     let fixedHtml = html;
     if (autoFixes.length) fixedHtml = unresolve(await page.evaluate(SERIALIZE_JS), assetBase, deck);
 
-    const screenshot = await page.screenshot({ type: "jpeg", quality: 80 });
+    let screenshot = await page.screenshot({ type: "jpeg", quality: 80 });
 
     // contrast: hide native text, look at the pixels underneath each text block
     let issues: QaIssue[] = m.issues.map(({ type, detail, severity }) => ({ type, detail, severity }));
@@ -125,16 +128,21 @@ export async function inspectSlide(
     const nativeTexts = m.texts.filter((t) => t.native && t.w > 4 && t.h > 4);
     // decorative numerals / watermarks (very short or faded text) are not reading text
     const readable = (t: any) => (t.opacity ?? 1) > 0.5 && t.lines.map((l: any[]) => l.map((r) => r.t).join("")).join(" ").trim().length > 3;
-    if (nativeTexts.length) {
-      await page.evaluate(`(${HIDE_JS})(${JSON.stringify({ texts: nativeTexts.map((t) => t.id), images: [] })})`);
+    const pct = (xs: number[], p: number) => (xs.length ? xs.slice().sort((a, b) => a - b)[Math.floor(xs.length * p)] : 99);
+    /** contrast of each readable text block with the pixels underneath it (native text hidden for the shot) */
+    const measureContrast = async (list: any[]) => {
+      if (!list.length) return [];
+      await page.evaluate(`(${HIDE_JS})(${JSON.stringify({ texts: list.map((t) => t.id), images: [] })})`);
       const bg = await page.screenshot({ type: "png" });
       await page.evaluate(UNHIDE_JS);
       const { data, info } = await sharp(bg).removeAlpha().raw().toBuffer({ resolveWithObject: true });
-      for (const t of nativeTexts.filter(readable)) {
+      const out: { t: any; avg: number; worst: number; need: number; white: number; dark: number; txt: string }[] = [];
+      for (const t of list.filter(readable)) {
         const x0 = Math.max(0, Math.floor(t.x)), y0 = Math.max(0, Math.floor(t.y));
         const x1 = Math.min(info.width, Math.ceil(t.x + t.w)), y1 = Math.min(info.height, Math.ceil(t.y + t.h));
         if (x1 - x0 < 2 || y1 - y0 < 2) continue;
-        let worst = 99, sum = 0, cnt = 0, lums: number[] = [];
+        let sum = 0, cnt = 0;
+        const lums: number[] = [], wh: number[] = [], dk: number[] = [];
         const step = Math.max(1, Math.floor(Math.sqrt(((x1 - x0) * (y1 - y0)) / 400)));
         for (let y = y0; y < y1; y += step)
           for (let x = x0; x < x1; x += step) {
@@ -142,19 +150,53 @@ export async function inspectSlide(
             const hex = `#${[data[i], data[i + 1], data[i + 2]].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
             const c = contrast(`#${t.color}`, hex);
             lums.push(c);
+            wh.push(contrast("#ffffff", hex));
+            dk.push(contrast("#111111", hex));
             sum += c;
             cnt++;
           }
-        lums.sort((a, b) => a - b);
-        worst = lums[Math.floor(lums.length * 0.15)] ?? 99; // 15th percentile — ignores tiny specks
-        const avg = sum / Math.max(1, cnt);
         const large = t.fontSize >= 30 || (t.fontSize >= 24 && t.lines?.[0]?.[0]?.s?.weight >= 700);
-        const need = large ? 3 : 4.5;
-        const txt = t.lines.map((l: any[]) => l.map((r) => r.t).join("")).join(" ").slice(0, 50);
-        if (avg < need) issues.push({ type: "low-contrast", severity: "high", detail: `Text "${txt}" has low contrast with what is behind it (≈${avg.toFixed(1)}:1, needs ${need}:1).` });
-        else if (worst < need * 0.8) issues.push({ type: "busy-background", severity: "medium", detail: `Text "${txt}" sits partly on a busy/low-contrast area (worst ≈${worst.toFixed(1)}:1) — add a scrim/panel or move it.` });
+        out.push({
+          t,
+          avg: sum / Math.max(1, cnt),
+          worst: pct(lums, 0.15), // 15th percentile — ignores tiny specks
+          need: large ? 3 : 4.5,
+          white: pct(wh, 0.15),
+          dark: pct(dk, 0.15),
+          txt: t.lines.map((l: any[]) => l.map((r) => r.t).join("")).join(" ").slice(0, 50),
+        });
+      }
+      return out;
+    };
+    const contrastIssues = (found: Awaited<ReturnType<typeof measureContrast>>): QaIssue[] =>
+      found.flatMap((f) =>
+        f.avg < f.need
+          ? [{ type: "low-contrast", severity: "high", detail: `Text "${f.txt}" has low contrast with what is behind it (≈${f.avg.toFixed(1)}:1, needs ${f.need}:1).` } as QaIssue]
+          : f.worst < f.need * 0.8
+          ? [{ type: "busy-background", severity: "medium", detail: `Text "${f.txt}" sits partly on a busy/low-contrast area (worst ≈${f.worst.toFixed(1)}:1) — add a scrim/panel or move it.` } as QaIssue]
+          : []
+      );
+    let found = await measureContrast(nativeTexts);
+    if (opts.fixContrast) {
+      // last resort after the AI rounds: readable ink (white / near-black) where one works, otherwise a scrim plate
+      const bad = found.filter((f) => f.avg < f.need || f.worst < f.need * 0.8);
+      if (bad.length) {
+        const fixes = bad.map((f) => {
+          const ink = f.white >= f.dark ? "#ffffff" : "#111111";
+          const best = Math.max(f.white, f.dark);
+          return best >= f.need ? { id: f.t.id, mode: "recolor", ink } : { id: f.t.id, mode: "plate", ink, plate: ink === "#ffffff" ? "rgba(10,12,18,0.72)" : "rgba(255,255,255,0.86)" };
+        });
+        const done: string[] = await page.evaluate(`(${CONTRAST_FIX_JS})(${JSON.stringify(fixes)})`);
+        if (done.length) {
+          autoFixes.push(...done);
+          fixedHtml = unresolve(await page.evaluate(SERIALIZE_JS), assetBase, deck);
+          const m2: Measure = await page.evaluate(MEASURE_JS);
+          found = await measureContrast(m2.texts.filter((t) => t.native && t.w > 4 && t.h > 4));
+          screenshot = await page.screenshot({ type: "jpeg", quality: 80 });
+        }
       }
     }
+    issues.push(...contrastIssues(found));
     return { html: fixedHtml, issues, autoFixes, screenshot };
   } finally {
     await closePage(page);

@@ -159,8 +159,10 @@ export async function generateDeckV3(req: V3Request, opts: PipelineOptions = {})
           if (isRefs) checkReferences(insp);
           const high = insp.issues.filter((x) => x.severity === "high").length;
           const med = insp.issues.filter((x) => x.severity === "medium").length;
-          const wantVision = visionMode === "always" || (visionMode === "smart" && (high + med > 0 || (os.role === "title" && round === 0)));
-          const vision = wantVision && !isRefs ? await visionReview(insp.screenshot, os, insp.issues, brief.title) : null;
+          // every slide (references included) gets at least one vision review on its first render; later rounds only
+          // when the code still measures a problem ("smart"), or always ("always")
+          const wantVision = visionMode === "always" || (visionMode === "smart" && (round === 0 || high + med > 0));
+          const vision = wantVision ? await visionReview(insp.screenshot, os, insp.issues, brief.title) : null;
           const score = vision?.score ?? (high ? 4 : med ? 6 : 7.5);
           const rank = score - 2 * high - 0.5 * med;
           const rec: Rec = { d: { ...d, html: insp.html }, insp, vision, rank };
@@ -200,14 +202,17 @@ export async function generateDeckV3(req: V3Request, opts: PipelineOptions = {})
         }
         // Layout guarantee: after the AI rounds, if the code still measures overlaps / lines over text / cut-off text,
         // the engine fixes them deterministically (shrink to a floor, move labels, backdrop/halo) and re-measures.
-        if (best && best.insp.issues.some((x) => LAYOUT_TYPES.has(x.type) && x.severity === "high")) {
-          const before = best.insp.issues.filter((x) => LAYOUT_TYPES.has(x.type) && x.severity === "high").length;
+        // Same for readability: text the AI left on a low-contrast / busy background gets readable ink or a scrim.
+        const CONTRAST = new Set(["low-contrast", "busy-background"]);
+        const mechanical = (xs: { type: string; severity: string }[]) => xs.filter((x) => (LAYOUT_TYPES.has(x.type) && x.severity === "high") || CONTRAST.has(x.type)).length;
+        if (best && mechanical(best.insp.issues) > 0) {
+          const before = mechanical(best.insp.issues);
           try {
-            const fixed = await inspectSlide(deck, os.n, best.d.html, renderDir, os.role, allowed, { enforce: true });
+            const fixed = await inspectSlide(deck, os.n, best.d.html, renderDir, os.role, allowed, { enforce: true, fixContrast: true });
             if (isRefs) checkReferences(fixed);
-            const after = fixed.issues.filter((x) => LAYOUT_TYPES.has(x.type) && x.severity === "high").length;
+            const after = mechanical(fixed.issues);
             if (after < before) best = { ...best, d: { ...best.d, html: fixed.html }, insp: fixed };
-            emit("Visual QA", 90, `QA ${os.n}`, `layout auto-fix: ${before} → ${Math.min(before, after)} layout problems${fixed.autoFixes.length ? ` (${fixed.autoFixes.slice(0, 4).join(", ")})` : ""}`);
+            emit("Visual QA", 90, `QA ${os.n}`, `layout/contrast auto-fix: ${before} → ${Math.min(before, after)} problems${fixed.autoFixes.length ? ` (${fixed.autoFixes.slice(0, 4).join(", ")})` : ""}`);
           } catch (e: any) {
             emit("Visual QA", 90, `QA ${os.n}`, `layout auto-fix unavailable: ${String(e?.message || e).slice(0, 100)}`);
           }
