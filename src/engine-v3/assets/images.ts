@@ -176,7 +176,11 @@ export async function generateImage(prompt: string, style?: string): Promise<Buf
         signal: ctrl.signal,
       });
       clearTimeout(t);
-      if (!res.ok) continue;
+      if (!res.ok) {
+        // say why in the host log (daily free allowance used up, token without Workers AI permission …)
+        console.warn(`[v3/images] AI image ${model} failed: HTTP ${res.status} ${(await res.text().catch(() => "")).slice(0, 200)}`);
+        continue;
+      }
       const ct = res.headers.get("content-type") || "";
       if (ct.includes("json")) {
         const j: any = await res.json();

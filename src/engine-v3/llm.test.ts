@@ -278,3 +278,21 @@ test("a Gemini quota 429 that names its model cools only that model, not all of 
   assert.equal(r.model, "flash-lite");
   assert.deepEqual(calls, ["flash-a", "flash-b", "flash-lite"]);
 });
+
+test("a provider that keeps answering 429 'high demand' is benched by the circuit breaker", async () => {
+  setKeys("SAMBANOVA_API_KEY", "GROQ_API_KEY");
+  let samba = 0;
+  mockFetch({
+    "api.sambanova.ai": () => {
+      samba++;
+      return new Response(JSON.stringify({ error: { message: "gpt-oss-120b-32k is currently experiencing high demand. Please try again later!" } }), { status: 429 });
+    },
+    "api.groq.com": () => okReply(),
+  });
+  const routes = { brief: [{ provider: "sambanova", model: "a" }, { provider: "sambanova", model: "b" }, { provider: "sambanova", model: "c" }, { provider: "groq", model: "x" }] };
+  for (let i = 0; i < 3; i++) await llm.llmContext.run({ routes }, () => llm.chat("brief", msgs, { stream: false }));
+  const before = samba;
+  const r = await llm.llmContext.run({ routes }, () => llm.chat("brief", msgs, { stream: false }));
+  assert.equal(r.provider, "groq");
+  assert.equal(samba, before, "benched provider is not asked again");
+});

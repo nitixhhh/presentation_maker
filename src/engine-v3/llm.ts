@@ -525,6 +525,10 @@ function penalize(provider: string, keyIdx: number, model: string, e: any) {
       (accountWide ? acct : b).reason = "daily quota used";
       saveBudgets();
     } else b.coolUntil = now + Math.min(Math.max(delay ?? 20, 2), 300) * 1000;
+    // "experiencing high demand / overloaded" is the provider out of capacity, not our quota: it counts toward
+    // the circuit breaker, so a provider that keeps saying it is benched for a few minutes instead of being
+    // re-asked every 20 s by every slide (SambaNova did this ~40 times in one deck).
+    if (!daily && /high demand|overloaded|over capacity|try again later/i.test(msg)) softFailure(provider, keyIdx, msg);
     // A quota error that names its model (Gemini: "Quota exceeded for metric … model: gemini-3.6-flash") is a
     // per-model limit: cool that model (Gemini aliases share one quota, so the named model too), never the
     // whole provider — benching all of Google for one model's per-minute limit once stalled a deck for 8 min.
