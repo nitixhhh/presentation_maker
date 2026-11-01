@@ -72,6 +72,10 @@ export function designerUserPrompt(deck: Pick<Deck, "brief" | "outline" | "asset
   const prev = deck.outline.slides[slide.n - 2];
   const next = deck.outline.slides[slide.n];
   const assets = deck.assets.filter((a) => a.forSlides.includes(slide.n));
+  // the uploaded logo is an identity mark, not a picture: only real photos / AI images count as the slide's visual
+  const photos = assets.filter((a) => a.origin !== "upload");
+  const logoHere = assets.some((a) => a.origin === "upload");
+  const deckHasLogo = deck.assets.some((a) => a.origin === "upload");
   const factSrc = new Map(deck.research.facts.map((f) => [f.id, f.sources]));
   const pointLines = slide.points
     .map((p) => {
@@ -83,7 +87,7 @@ export function designerUserPrompt(deck: Pick<Deck, "brief" | "outline" | "asset
   let roleBlock = "";
   if (slide.role === "title") {
     const fields = deck.brief.titleSlideFields;
-    roleBlock = `THIS IS THE TITLE SLIDE. Make it striking and memorable (hero photo treatment if an asset is given).
+    roleBlock = `THIS IS THE TITLE SLIDE. Make it striking and memorable (hero photo treatment if a photo asset is given; otherwise strong typography, a bold shape/gradient composition or an SVG illustration of the topic).
 Show: the title "${deck.brief.title}"${deck.brief.subtitle ? ` and subtitle "${deck.brief.subtitle}"` : ""}.
 ${fields.length ? `Also show these presenter details as a neat, readable block (label small/muted, value larger). Write each placeholder EXACTLY as given (e.g. ${token(0)}) where its value goes — the engine replaces it with the student's real text:\n${maskedFieldLines(fields)}` : "No presenter details were given — do not invent names."}`;
   } else if (slide.role === "references") {
@@ -103,9 +107,14 @@ Keep decoration minimal but on-brand (motif, title style).`;
       ? `Draw a clear diagram (inline SVG or positioned HTML boxes + SVG arrows): ${slide.visual.idea || slide.keyMessage}`
       : slide.visual.kind === "chart"
       ? `Draw a clean chart (inline SVG) using only numbers from the points: ${slide.visual.idea || ""}`
-      : assets.length
-      ? `Use the image(s) below creatively as the slide's visual anchor.`
+      : photos.length
+      ? `Use the photo(s) below creatively as the slide's visual anchor.`
       : `No photo for this slide — make it strong with typography, a diagram, an icon-like SVG illustration or a big-number composition.`;
+  const logoRule = logoHere
+    ? `\nLOGO: asset:logo is the institution logo — an identity mark, NOT a photo and NOT the visual anchor. Place it once, small (at most 180×120 px), in the title/presenter block, object-fit: contain, full opacity. Never as a background, watermark, hero, faded, cropped or large image.`
+    : deckHasLogo
+    ? `\nLOGO: the engine adds the institution logo small in the bottom-right corner of this slide (x ≥ ${1280 - 180}, y ≥ ${720 - 72}). Keep that corner free of text and do NOT place the logo yourself.`
+    : "";
 
   const direction = (deck as any).design?.directions?.find((d: any) => d.n === slide.n)?.idea;
   const labels = Array.from(new Set(slide.points.flatMap((p) => (p.factIds || []).flatMap((id) => factSrc.get(id) || []))))
@@ -126,7 +135,7 @@ ${pointLines || "(none)"}
 
 SOURCE LABELS you may use in a small footer: ${labels.join("; ") || "(none — no footer)"}
 
-VISUAL: ${visual}
+VISUAL: ${visual}${logoRule}
 ASSETS FOR THIS SLIDE:
 ${assets.map(assetLine).join("\n") || "(none)"}
 

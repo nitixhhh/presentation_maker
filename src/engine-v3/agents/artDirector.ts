@@ -38,7 +38,7 @@ export async function runArtDirector(brief: Brief, outline?: Outline, assets?: {
 Style hint from the user: ${brief.styleHint || "(none — your call)"}
 Imagery: ${brief.imagery}
 Font pairs (choose id): ${pairs.map((p) => `${p.id} = ${p.heading} / ${p.body}`).join("; ")}
-${outline ? `\nOUTLINE (write one direction per slide):\n${outline.slides.map((s) => `${s.n}. [${s.role}] ${s.title} — visual: ${s.visual.kind}${s.visual.idea ? ` (${s.visual.idea})` : ""}${assets?.some((a) => a.forSlides.includes(s.n)) ? ` — has photo: ${assets!.find((a) => a.forSlides.includes(s.n))!.description.slice(0, 80)}` : ""}; ${s.points.length} points`).join("\n")}` : ""}`,
+${outline ? `\nOUTLINE (write one direction per slide):\n${outline.slides.map((s) => `${s.n}. [${s.role}] ${s.title} — visual: ${s.visual.kind}${s.visual.idea ? ` (${s.visual.idea})` : ""}${assets?.some((a) => a.forSlides.includes(s.n)) ? ` — has photo: ${assets!.find((a) => a.forSlides.includes(s.n))!.description.slice(0, 80)}` : " — NO photo for this slide (do not plan a photo: use typography, a diagram, an SVG illustration or a big number)"}; ${s.points.length} points`).join("\n")}` : ""}`,
     },
   ], { temperature: 0.8, maxTokens: 5000, label: "art director" });
 

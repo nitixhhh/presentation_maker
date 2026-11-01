@@ -5,6 +5,8 @@ import { slideDocument } from "../render/document";
 import { MEASURE_JS, HIDE_JS, UNHIDE_JS, SHRINK_JS, SERIALIZE_JS, NUDGE_JS } from "../render/domScripts";
 import { GEOMETRY_JS, GEOMETRY_FIX_JS } from "../render/geometry";
 import { contrast } from "../agents/artDirector";
+import { LOGO_GUARD_JS, LOGO_MAX } from "./logoGuard";
+import { deckLogo } from "../assets/logo";
 import type { Deck, QaIssue } from "../types";
 
 export interface Measure {
@@ -65,6 +67,12 @@ export async function inspectSlide(
   const page = await openSlide(doc, renderDir, `qa-${String(n).padStart(2, "0")}`);
   const autoFixes: string[] = [];
   try {
+    // hard logo guard first: never a background / hero / large picture; only title + closing slides place it themselves
+    const logo = deckLogo(deck as { assets: any[] });
+    if (logo) {
+      const lf: string[] = await page.evaluate(`(${LOGO_GUARD_JS})(${JSON.stringify({ allowed: logo.forSlides.includes(n), maxW: LOGO_MAX.w, maxH: LOGO_MAX.h })})`);
+      autoFixes.push(...lf);
+    }
     let m: Measure = await page.evaluate(MEASURE_JS);
     // deterministic auto-fit (max 3 passes)
     for (let pass = 0; pass < 3; pass++) {

@@ -1,6 +1,7 @@
 /** Engine v3 — builds the standalone HTML document for a slide (preview, QA, PDF, PPTX all use it). */
 import type { Deck, DesignSystem } from "../types";
 import { COMPONENTS_CSS, COMPONENTS_JS } from "./components";
+import { deckLogo, logoCornerHtml, stripEngineLogo } from "../assets/logo";
 
 export function resolveAssets(html: string, assetBase: string, deck: Pick<Deck, "assets">): string {
   return html.replace(/asset:([a-z0-9_-]+)/gi, (m, id) => {
@@ -10,7 +11,10 @@ export function resolveAssets(html: string, assetBase: string, deck: Pick<Deck, 
 }
 
 export function slideDocument(design: DesignSystem, innerHtml: string, opts: { assetBase: string; deck: Pick<Deck, "assets">; n?: number; extraHead?: string }): string {
-  const body = resolveAssets(innerHtml, opts.assetBase, opts.deck);
+  let body = resolveAssets(stripEngineLogo(innerHtml), opts.assetBase, opts.deck);
+  // the institution logo: designed into the title/closing slide; every other slide gets the same small corner logo
+  const logo = opts.deck.assets ? deckLogo(opts.deck as { assets: any[] }) : undefined;
+  if (logo && opts.n != null && !logo.forSlides.includes(opts.n)) body += `\n${logoCornerHtml(`${opts.assetBase}${logo.file}`)}`;
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=1280">
 ${design.fontLink}
 <style>${design.css}${COMPONENTS_CSS}</style>${opts.extraHead || ""}

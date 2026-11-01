@@ -12,7 +12,7 @@ import { runArtDirector } from "./agents/artDirector";
 import { designSlide, reviseSlide, designerSystemPrompt, designerUserPrompt, type DesignOut } from "./agents/designer";
 import { pickRecipes } from "./design/pickRecipes";
 import { runImageDirector } from "./agents/imageDirector";
-import { addLogoAsset } from "./assets/logo";
+import { addLogoAsset, logoSlides } from "./assets/logo";
 import { sourceImages } from "./assets/images";
 import { inspectSlide, LAYOUT_TYPES, GEOMETRY_TYPES, type Inspection } from "./qa/inspect";
 import { visionReview, type VisionVerdict } from "./qa/vision";
@@ -83,10 +83,10 @@ export async function generateDeckV3(req: V3Request, opts: PipelineOptions = {})
   if (imagePlan) emit("Designing the look + finding images", 37, "ImageDirector", imagePlan.items.filter((x) => x.source !== "none").map((x) => `${x.n}: ${x.source === "real" ? `photo "${x.query}"` : "AI image"}`).join(" | ") || "no images needed");
   const assets = await sourceImages(outline.slides, dir, { mode: req.imageMode || "real-first", topic: brief.title, plan: imagePlan }, (m) => emit("Finding images", 40, "Images", m));
   if (req.logoId) {
-    const logo = await addLogoAsset(req.logoId, dir, outline.slides.map((s) => s.n));
+    const logo = await addLogoAsset(req.logoId, dir, logoSlides(outline.slides));
     if (logo) {
       assets.push(logo);
-      emit("Finding images", 44, "Images", "Institution logo added — the designer decides where it goes");
+      emit("Finding images", 44, "Images", `Institution logo added — on the title${logo.forSlides.length > 1 ? "/closing" : ""} slide, small in the corner on the others`);
     }
   }
   const design = await runArtDirector(brief, outline, assets.filter((a) => a.origin !== "upload"));
