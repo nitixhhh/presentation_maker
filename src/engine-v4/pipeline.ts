@@ -312,13 +312,18 @@ export async function generateDeckV4(req: V3Request, opts: V4Options = {}): Prom
         return w.length && w.filter((x) => plain.includes(x)).length >= Math.min(2, w.length);
       }).length;
       const thin = best.insp.issues.some((x) => x.type === "blank" || x.type === "sparse");
-      if (shown < Math.ceil(os.points.length / 2) || thin) {
+      const highNow = best.insp.issues.filter((x) => x.severity === "high").length;
+      // text still covered / overlapping after every pass: the calm layout wins only if it is strictly cleaner
+      const collided = best.insp.issues.some((x) => x.severity === "high" && /covered|overlap|past-panel|clipped|overflow/.test(x.type));
+      if (shown < Math.ceil(os.points.length / 2) || thin || collided) {
         try {
           const fb = fallbackSlideHtml(deck, os, citeMap);
           const fin = await finishBest(os, fb);
-          if (fin && !fin.insp.issues.some((x) => x.type === "blank" || x.type === "sparse") && fin.insp.issues.filter((x) => x.severity === "high").length <= best.insp.issues.filter((x) => x.severity === "high").length + 1) {
+          const fbHigh = fin ? fin.insp.issues.filter((x) => x.severity === "high").length : 99;
+          const okFb = fin && !fin.insp.issues.some((x) => x.type === "blank" || x.type === "sparse") && (shown < Math.ceil(os.points.length / 2) || thin ? fbHigh <= highNow + 1 : fbHigh < highNow);
+          if (fin && okFb) {
             best = { ...best, d: { ...best.d, html: fin.html, provider: "engine", model: "fallback" }, insp: fin.insp };
-            emit("Visual QA", 88, `QA ${os.n}`, `${thin ? "slide was mostly empty" : `only ${shown}/${os.points.length} points were on the slide`} — used the engine layout with every point`);
+            emit("Visual QA", 88, `QA ${os.n}`, `${collided && !thin && shown >= Math.ceil(os.points.length / 2) ? "text still overlapped" : thin ? "slide was mostly empty" : `only ${shown}/${os.points.length} points were on the slide`} — used the engine layout with every point`);
           }
         } catch {}
       }
