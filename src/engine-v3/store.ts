@@ -33,3 +33,9 @@ export function loadDeck(id: string): Deck | null {
   if (!fs.existsSync(p)) return null;
   return JSON.parse(fs.readFileSync(p, "utf8"));
 }
+
+/** A deck whose slides are not all designed yet (saved mid-generation): it has nothing to download yet. */
+export function deckIncomplete(deck: Pick<Deck, "slides" | "outline">): boolean {
+  const want = deck.outline?.slides?.length || 0;
+  return !deck.slides?.length || deck.slides.length < want;
+}

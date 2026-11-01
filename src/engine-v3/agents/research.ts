@@ -1,5 +1,6 @@
 /** Engine v3 — Research agent: gathers real sources and extracts cited facts (no invented facts). */
 import { chatJson } from "../llm";
+import { filterSources, topicWordsOf } from "../research/relevance";
 import { wikipedia as wikipediaRaw, openalex as openalexRaw, crossref as crossrefRaw, semanticScholar as semanticScholarRaw } from "../research/sources";
 import { cached, cacheGet, cacheSet, normTopic } from "../research/cache";
 
@@ -67,14 +68,17 @@ async function researchFresh(brief: Brief, log: (m: string) => void, topic?: str
   settled.unshift(core.filter((p) => relevant(p.title)));
   // de-duplicate by title
   const seen = new Set<string>();
-  const sources: Source[] = [];
+  const unique: Omit<Source, "id">[] = [];
   for (const s of settled.flat()) {
     const key = s.title.toLowerCase().replace(/[^a-z0-9]/g, "");
     if (seen.has(key)) continue;
     seen.add(key);
-    sources.push({ ...s, id: `S${sources.length + 1}` });
-    if (sources.length >= 10) break;
+    unique.push(s);
   }
+  // relevance filter: drop pages that only share a word with the topic and niche, rarely-cited papers
+  const { kept, dropped } = filterSources(unique, topicWordsOf(topicText));
+  if (dropped.length) log(`skipped ${dropped.length} off-topic or niche source(s): ${dropped.map((s) => s.title.slice(0, 60)).join(" | ")}`);
+  const sources: Source[] = kept.slice(0, 10).map((s, i) => ({ ...s, id: `S${i + 1}` }));
   log(`found ${sources.length} sources: ${sources.map((s) => `${s.id} ${s.kind}: ${s.title}`).join(" | ")}`);
   if (!sources.length) {
     return { sources: [], facts: [], keyTerms: [] };

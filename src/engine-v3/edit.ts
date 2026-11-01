@@ -5,6 +5,7 @@
 import path from "path";
 import { designerSystemPrompt, designerUserPrompt, parseDesign, reviseSlide, usableDesign, type DesignOut } from "./agents/designer";
 import { chat, type Msg } from "./llm";
+import { ensureFields, fillPlaceholders, maskText, token } from "./privacy";
 import { inspectSlide } from "./qa/inspect";
 import { deckDir, saveDeck } from "./store";
 import type { Deck } from "./types";
@@ -14,27 +15,31 @@ export async function editSlide(deck: Deck, n: number, instruction: string, emit
   const cur = deck.slides.find((s) => s.n === n);
   if (!os || !cur) throw new Error("slide not found");
   const citeMap = new Map(deck.references.map((r) => [r.sourceId, r.n]));
+  const fields = deck.brief.titleSlideFields || [];
+  const curHtml = maskText(cur.html, fields); // student details stay out of the AI prompt
   const messages: Msg[] = [
     { role: "system", content: designerSystemPrompt(deck.design, deck.brief) },
     { role: "user", content: designerUserPrompt(deck, os, citeMap) },
-    { role: "assistant", content: `<slide>\n${cur.html}\n</slide>\n<notes>${cur.notes || ""}</notes>` },
+    { role: "assistant", content: `<slide>\n${curHtml}\n</slide>\n<notes>${maskText(cur.notes || "", fields)}</notes>` },
     {
       role: "user",
-      content: `The student looked at this slide and asked for a change:\n"""${instruction.slice(0, 500)}"""\n\nRedo the slide so it does exactly what they asked, while staying in the deck's design system (palette, fonts, motif) and keeping facts accurate and citations correct. Do not invent numbers or facts that are not in the brief/research. If the request conflicts with accuracy, follow accuracy and do the closest honest version. Update the speaker notes if the content changed. Output the complete <slide>…</slide><notes>…</notes>.`,
+      content: `The student looked at this slide and asked for a change:\n"""${instruction.slice(0, 500)}"""\n\nRedo the slide so it does exactly what they asked, while staying in the deck's design system (palette, fonts, motif) and keeping facts accurate and citations correct. Do not invent numbers or facts that are not in the brief/research. If the request conflicts with accuracy, follow accuracy and do the closest honest version. Update the speaker notes if the content changed.${fields.length ? " Keep every {{P…}} placeholder exactly as written (the engine fills in the real details)." : ""} Output the complete <slide>…</slide><notes>…</notes>.`,
     },
   ];
   emit("Redesigning the slide", 20, `Designer is redoing slide ${n}`);
   const r = await chat("design", messages, { temperature: 0.6, maxTokens: 12000, timeoutMs: 240_000, label: `edit slide ${n}`, reasoning: (process.env.V3_DESIGN_REASONING as any) || "medium", validate: usableDesign });
   const parsed = parseDesign(r.text);
   if (parsed.html.length < 200) throw new Error("designer produced no usable HTML for the edit");
-  let d: DesignOut = { html: parsed.html, notes: parsed.notes || cur.notes || "", provider: r.provider, model: r.model, messages: [...messages, { role: "assistant", content: r.text }] };
+  const had = fields.map((_, i) => i).filter((i) => curHtml.includes(token(i)));
+  const html = fillPlaceholders(ensureFields(parsed.html, fields, had.filter((i) => !parsed.html.includes(token(i)))), fields);
+  let d: DesignOut = { html, notes: fillPlaceholders(parsed.notes || "", fields) || cur.notes || "", provider: r.provider, model: r.model, messages: [...messages, { role: "assistant", content: r.text }] };
   const renderDir = path.join(deckDir(deck.id), "render");
   let insp = await inspectSlide(deck, n, d.html, renderDir, os.role);
   for (let round = 0; round < 2; round++) {
     const serious = insp.issues.filter((x) => x.severity === "high");
     emit("Checking the new slide", 55 + round * 15, `round ${round + 1}: ${serious.length} serious issues`);
     if (!serious.length) break;
-    d = await reviseSlide({ ...d, html: insp.html }, insp.issues.map((x) => `- [${x.severity}] ${x.detail}`).join("\n"));
+    d = await reviseSlide({ ...d, html: insp.html }, insp.issues.map((x) => `- [${x.severity}] ${x.detail}`).join("\n"), fields);
     insp = await inspectSlide(deck, n, d.html, renderDir, os.role);
   }
   const idx = deck.slides.findIndex((s) => s.n === n);

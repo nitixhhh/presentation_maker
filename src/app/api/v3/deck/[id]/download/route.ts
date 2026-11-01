@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
-import { ensureDeckLocal } from "@/server/jobs/manager";
+import { deckBuilding, ensureDeckLocal, STILL_BUILDING_MESSAGE } from "@/server/jobs/manager";
+import { deckIncomplete, loadDeck } from "@/engine-v3/store";
 import { resolveOwner } from "@/server/auth";
 import { deckAccess } from "@/server/billing";
 import { deckToken } from "@/server/deckAuth";
@@ -13,6 +14,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { ownerKey } = await resolveOwner(req);
   const acc = await deckAccess(id, ownerKey);
   if (!acc?.owner) return Response.json({ error: "not found" }, { status: 404 });
+  // a deck that is still being made has no finished file yet: say so instead of serving an empty export
+  const deck = loadDeck(id);
+  if (deckBuilding(id) || (deck && deckIncomplete(deck))) return Response.json({ error: STILL_BUILDING_MESSAGE, building: true }, { status: 409 });
   if (!acc.unlocked) return Response.json({ error: "Unlock this deck to download it." }, { status: 402 });
   const t = deckToken(id, "full", 300);
   return Response.json({ url: `/api/v3/deck/${id}/export?format=${format}${format === "html" ? "&view=1" : ""}&t=${encodeURIComponent(t)}` });

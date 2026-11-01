@@ -6,6 +6,7 @@ import { chat, type Msg } from "../llm";
 import type { Asset, Brief, Deck, DesignSystem, OutlineSlide } from "../types";
 import type { Recipe } from "../design/recipes";
 import { recipesEnabled } from "../design/pickRecipes";
+import { ensureFields, fillPlaceholders, maskText, maskedFieldLines, missingPlaceholders, token, type Field } from "../privacy";
 
 export function designerSystemPrompt(ds: DesignSystem, brief: Brief): string {
   return `You are a world-class presentation designer (think Pentagram / Apple keynote / top TED decks) designing slides for a university class presentation. You design ONE slide at a time as HTML + CSS on a fixed 1280×720 px canvas. There are NO templates: you decide the composition that best communicates THIS slide's message. Make it look like a skilled human designer made it — intentional hierarchy, generous whitespace, real photography used creatively, crisp diagrams — never a generic "title + bullet list + box".
@@ -84,7 +85,7 @@ export function designerUserPrompt(deck: Pick<Deck, "brief" | "outline" | "asset
     const fields = deck.brief.titleSlideFields;
     roleBlock = `THIS IS THE TITLE SLIDE. Make it striking and memorable (hero photo treatment if an asset is given).
 Show: the title "${deck.brief.title}"${deck.brief.subtitle ? ` and subtitle "${deck.brief.subtitle}"` : ""}.
-${fields.length ? `Also show these presenter details exactly as written, as a neat, readable block (label small/muted, value larger):\n${fields.map((f) => `  ${f.label}: ${f.value}`).join("\n")}` : "No presenter details were given — do not invent names."}`;
+${fields.length ? `Also show these presenter details as a neat, readable block (label small/muted, value larger). Write each placeholder EXACTLY as given (e.g. ${token(0)}) where its value goes — the engine replaces it with the student's real text:\n${maskedFieldLines(fields)}` : "No presenter details were given — do not invent names."}`;
   } else if (slide.role === "references") {
     const credits = deck.assets.filter((a) => a.credit).map((a) => `${a.title.slice(0, 50)} — ${a.credit}`);
     roleBlock = `THIS IS THE REFERENCES SLIDE. List exactly these references in order, numbered as given (hanging indent, 14–17px, readable, two columns if more than 5). Do not change their text.
@@ -92,7 +93,7 @@ ${deck.references.map((r) => `[${r.n}] ${r.text}`).join("\n") || "(no references
 ${credits.length ? `Below them, a small "Image credits" block (12–13px, muted):\n${credits.join("\n")}` : ""}
 Keep decoration minimal but on-brand (motif, title style).`;
   } else if (slide.role === "closing") {
-    roleBlock = `THIS IS THE CLOSING SLIDE (Thank you / Questions). Elegant, confident, on-brand; echo the title slide composition (use the photo if one is given). Include one short line that recaps the deck's core idea, and the presenter name(s) if given: ${deck.brief.titleSlideFields.map((f) => f.value).slice(0, 2).join(" · ") || "(none)"}. No question-mark clip-art.`;
+    roleBlock = `THIS IS THE CLOSING SLIDE (Thank you / Questions). Elegant, confident, on-brand; echo the title slide composition (use the photo if one is given). Include one short line that recaps the deck's core idea, and the presenter name(s) if given: ${deck.brief.titleSlideFields.some((f) => f.label === "Presented by") ? `${token(deck.brief.titleSlideFields.findIndex((f) => f.label === "Presented by"))} (a placeholder the engine fills with the real text — write it exactly)` : "(none)"}. No question-mark clip-art.`;
   } else if (slide.role === "agenda") {
     roleBlock = `THIS IS AN AGENDA / OUTLINE SLIDE: show the sections as a designed sequence (numbered, timeline or path), not a plain bullet list.`;
   }
@@ -197,8 +198,10 @@ export async function designSlide(
   citeMap: Map<string, number>,
   spread = 0,
   inspiration: Recipe[] = [],
-  extraInstruction = ""
+  extraInstruction = "",
+  pass: "draft" | "revision" = "draft"
 ): Promise<DesignOut> {
+  const fields: Field[] = deck.brief.titleSlideFields || [];
   const messages: Msg[] = [
     { role: "system", content: designerSystemPrompt(deck.design, deck.brief) },
     { role: "user", content: designerUserPrompt(deck, slide, citeMap, inspiration) + (extraInstruction ? `\n\n${extraInstruction}` : "") },
@@ -209,7 +212,7 @@ export async function designSlide(
   for (let attempt = 0; attempt < 2; attempt++) {
     let r;
     try {
-      r = await chat("design", messages, { temperature: 0.85, maxTokens, spread, timeoutMs: 300_000, label: `slide ${slide.n}`, reasoning, validate: usableDesign });
+      r = await chat("design", messages, { temperature: 0.85, maxTokens, spread, timeoutMs: 300_000, label: `slide ${slide.n}`, reasoning, validate: usableDesign, pass });
     } catch (e: any) {
       // a reasoning model that spent the whole budget thinking: try once more with more room and less thinking
       if (attempt === 0 && /finish_reason=length/.test(String(e?.message))) {
@@ -222,30 +225,36 @@ export async function designSlide(
     const { html, notes } = parseDesign(r.text);
     if (html.length < 200) reasoning = "low"; // cut-off reply: think less on the retry
     if (html.length > 200) {
-      return { html, notes: notes || slide.notes || "", provider: r.provider, model: r.model, messages: [...messages, { role: "assistant", content: r.text }] };
+      const withFields = slide.role === "title" ? ensureFields(html, fields, missingPlaceholders(html, fields)) : html;
+      return { html: fillPlaceholders(withFields, fields), notes: fillPlaceholders(notes || slide.notes || "", fields), provider: r.provider, model: r.model, messages: [...messages, { role: "assistant", content: r.text }] };
     }
   }
   throw new Error(`designer produced no usable HTML for slide ${slide.n}`);
 }
 
-export async function reviseSlide(prev: DesignOut, feedback: string): Promise<DesignOut> {
+export async function reviseSlide(prev: DesignOut, feedback: string, fields: Field[] = []): Promise<DesignOut> {
+  // the slide goes back to an AI: student details become placeholders again
+  const prevHtml = maskText(prev.html, fields);
   const messages: Msg[] = [
     ...prev.messages.slice(0, 2),
-    { role: "assistant", content: `<slide>\n${prev.html}\n</slide>\n<notes>${prev.notes}</notes>` },
+    { role: "assistant", content: `<slide>\n${prevHtml}\n</slide>\n<notes>${maskText(prev.notes, fields)}</notes>` },
     {
       role: "user",
-      content: `The engine rendered your slide in Chromium and found these problems (positions are slide pixels: x from the left edge, y from the top, w×h):\n${feedback}\n\nFix every problem while keeping the design idea (you may rethink the composition if it is the cause). Remember the size limits and keep everything inside the 1280×720 canvas. Output the complete corrected <slide>…</slide><notes>…</notes> (keep the speaker notes as they were).`,
+      content: `The engine rendered your slide in Chromium and found these problems (positions are slide pixels: x from the left edge, y from the top, w×h):\n${maskText(feedback, fields)}\n\nFix every problem while keeping the design idea (you may rethink the composition if it is the cause). Remember the size limits and keep everything inside the 1280×720 canvas. Output the complete corrected <slide>…</slide><notes>…</notes> (keep the speaker notes as they were${fields.length ? `; keep every {{P…}} placeholder exactly as written` : ""}).`,
     },
   ];
   let r;
   try {
-    r = await chat("design", messages, { temperature: 0.5, maxTokens: 12000, timeoutMs: 240_000, label: "revision", reasoning: (process.env.V3_DESIGN_REASONING as any) || "medium", validate: usableDesign });
+    r = await chat("design", messages, { temperature: 0.5, maxTokens: 12000, timeoutMs: 240_000, label: "revision", reasoning: (process.env.V3_DESIGN_REASONING as any) || "medium", validate: usableDesign, pass: "revision" });
   } catch (e: any) {
     if (!/finish_reason=length/.test(String(e?.message))) throw e;
-    r = await chat("design", messages, { temperature: 0.5, maxTokens: 24000, timeoutMs: 300_000, label: "revision", reasoning: "low", validate: usableDesign });
+    r = await chat("design", messages, { temperature: 0.5, maxTokens: 24000, timeoutMs: 300_000, label: "revision", reasoning: "low", validate: usableDesign, pass: "revision" });
   }
   const { html, notes } = parseDesign(r.text);
   if (html.length < 200) return prev;
+  // details the slide carried before must still be there (the designer may have dropped a placeholder)
+  const had = fields.map((_, i) => i).filter((i) => prevHtml.includes(token(i)));
+  const filled = fillPlaceholders(ensureFields(html, fields, had.filter((i) => !html.includes(token(i)))), fields);
   // a layout revision does not change what the student says: keep the first draft's speaker notes
-  return { html, notes: prev.notes || notes, provider: r.provider, model: r.model, messages: [...messages, { role: "assistant", content: r.text }] };
+  return { html: filled, notes: prev.notes || fillPlaceholders(notes, fields), provider: r.provider, model: r.model, messages: [...messages, { role: "assistant", content: r.text }] };
 }

@@ -34,12 +34,12 @@ import { AsyncLocalStorage } from "async_hooks";
 import modelsConfig from "@/config/models.json";
 import { DATA_ROOT } from "@/server/paths";
 
-export type Role = "brief" | "research" | "outline" | "art" | "design" | "vision";
-export const ROLES: Role[] = ["brief", "research", "outline", "art", "design", "vision"];
+export type Role = "brief" | "research" | "outline" | "plan" | "art" | "design" | "vision";
+export const ROLES: Role[] = ["brief", "research", "outline", "plan", "art", "design", "vision"];
 /** roles where quality decides the deck: only "strong" models may serve them */
 export const STRONG_ROLES: Role[] = ["art", "design", "vision"];
 /** light roles: fast models first, Gemini quota saved for design */
-export const LIGHT_ROLES: Role[] = ["brief", "research", "outline"];
+export const LIGHT_ROLES: Role[] = ["brief", "research", "outline", "plan"];
 
 export interface Route {
   provider: string;
@@ -126,6 +126,7 @@ const ENV_BASE: Record<string, string> = {
   cloudflare: "CLOUDFLARE_BASE_URL",
   cerebras: "CEREBRAS_BASE_URL",
   mistral: "MISTRAL_BASE_URL",
+  zai: "ZAI_BASE_URL",
   sambanova: "SAMBANOVA_BASE_URL",
   github: "GITHUB_MODELS_BASE_URL",
 };
@@ -219,15 +220,7 @@ export function routesFor(role: Role, opts: { all?: boolean } = {}): Route[] {
     const optIn = (cfg.engineV3?.optInRoutes || {}) as Record<string, any>;
     for (const [prov, o] of Object.entries(optIn)) {
       if (prov.startsWith("_") || !o?.env || process.env[o.env] !== "true") continue;
-      const pre = ((o.prepend?.[role] || []) as any[]).map(parseRoute).filter(Boolean) as Route[];
-      const mid = ((o.afterGemini?.[role] || []) as any[]).map(parseRoute).filter(Boolean) as Route[];
-      const post = ((o.append?.[role] || []) as any[]).map(parseRoute).filter(Boolean) as Route[];
-      // afterGemini: Gemini stays the main model; these go right after the last Gemini route (backup before the other fallbacks)
-      // anchorProviders: also go after those providers' routes (e.g. NVIDIA's slow free queue after Mistral/SambaNova)
-      const anchors: string[] = Array.isArray(o.anchorProviders) ? o.anchorProviders : [];
-      let cut = -1;
-      routes.forEach((r, i) => { if ((r.provider === "google" && /^gemini/i.test(r.model)) || anchors.includes(r.provider)) cut = i; });
-      routes = [...pre, ...routes.slice(0, cut + 1), ...mid, ...routes.slice(cut + 1), ...post];
+      routes = placeOptIn(routes, role, o);
     }
     // trial-only providers (NVIDIA) never serve production traffic unless their opt-in env is set
     routes = routes.filter((r) => !isBenchmarkOnly(r.provider) || productionOptedIn(r.provider));
@@ -238,6 +231,43 @@ export function routesFor(role: Role, opts: { all?: boolean } = {}): Route[] {
     if (!override) routes = applyTierPolicy(role, routes);
   }
   return opts.all ? routes : routes.filter((r) => providerReady(r.provider));
+}
+
+const isGemini = (r: Route) => r.provider === "google" && /^gemini/i.test(r.model);
+
+/**
+ * Insert one opt-in provider's routes into a role's chain:
+ *  prepend      → tried first
+ *  afterGemini  → right after the LAST Gemini route (first backup, e.g. Kimi K2.6 when Gemini's quota is used)
+ *  afterAnchors → after the last Gemini route AND the last route of `anchorProviders` (slow free queues go
+ *                 behind Mistral / SambaNova)
+ *  append       → after everything
+ */
+export function placeOptIn(routes: Route[], role: string, o: any): Route[] {
+  const list = (x: any) => ((x?.[role] || []) as any[]).map(parseRoute).filter(Boolean) as Route[];
+  const pre = list(o.prepend), midG = list(o.afterGemini), midA = list(o.afterAnchors), post = list(o.append);
+  // a one-setting switch that makes this provider the MAIN model for some roles (e.g. DESIGN_PRIMARY=nvidia-kimi)
+  const prim = o.primary;
+  if (prim?.env && String(process.env[prim.env] || "").trim().toLowerCase() === String(prim.value).toLowerCase()) pre.unshift(...list(prim.prepend));
+  // anchors: provider ids ("mistral") or exact routes ("sambanova:DeepSeek-V3.1")
+  const anchors: string[] = Array.isArray(o.anchorRoutes) ? o.anchorRoutes : Array.isArray(o.anchorProviders) ? o.anchorProviders : [];
+  let cutG = -1, cutA = -1;
+  routes.forEach((r, i) => {
+    if (isGemini(r)) cutG = i;
+    if (isGemini(r) || anchors.includes(r.provider) || anchors.includes(`${r.provider}:${r.model}`)) cutA = i;
+  });
+  if (cutA < cutG) cutA = cutG;
+  return [...pre, ...routes.slice(0, cutG + 1), ...midG, ...routes.slice(cutG + 1, cutA + 1), ...midA, ...routes.slice(cutA + 1), ...post];
+}
+
+/**
+ * Gemini aliases share their target's quota (ai.google.dev/gemini-api/docs/deprecations: "gemini-3.7-flash" is
+ * served by gemini-3.8-flash, "gemini-3.5-flash" by gemini-3.6-flash). The scheduler counts an alias and its
+ * target as ONE model (models.json → engineV3.aliases), so a used-up target also stops calls to its alias.
+ */
+export function quotaModel(provider: string, model: string): string {
+  const a = cfg.engineV3?.aliases?.[`${provider}:${model}`];
+  return typeof a === "string" && a ? a : model;
 }
 
 /** Drop "fast"-tier models from strong roles (design, art, vision). Light roles keep every route in config order. */
@@ -370,7 +400,7 @@ function waitFor(provider: string, keyIdx: number, model: string, tokensTotal: n
   // Gemini counts input tokens per minute; Groq counts input + requested output.
   const tokens = p?.tpmInputOnly ? tokensIn : tokensTotal;
   const checks: { b: Bucket; l: Limits }[] = [
-    { b: bucket(`${keyId(provider, keyIdx)}|${model}`), l: spec },
+    { b: bucket(`${keyId(provider, keyIdx)}|${quotaModel(provider, model)}`), l: spec },
     { b: bucket(`${keyId(provider, keyIdx)}|*`), l: accountLimits(provider) },
   ];
   let wait = 0;
@@ -406,7 +436,7 @@ function waitFor(provider: string, keyIdx: number, model: string, tokensTotal: n
 
 function record(provider: string, keyIdx: number, model: string, tokens: number) {
   const now = Date.now();
-  for (const k of [`${keyId(provider, keyIdx)}|${model}`, `${keyId(provider, keyIdx)}|*`]) {
+  for (const k of [`${keyId(provider, keyIdx)}|${quotaModel(provider, model)}`, `${keyId(provider, keyIdx)}|*`]) {
     const b = bucket(k);
     b.minute.push({ t: now, tokens });
     b.day.push({ t: now, tokens });
@@ -415,7 +445,7 @@ function record(provider: string, keyIdx: number, model: string, tokens: number)
 }
 
 function correctTokens(provider: string, keyIdx: number, model: string, estimated: number, actual: number) {
-  for (const k of [`${keyId(provider, keyIdx)}|${model}`, `${keyId(provider, keyIdx)}|*`]) {
+  for (const k of [`${keyId(provider, keyIdx)}|${quotaModel(provider, model)}`, `${keyId(provider, keyIdx)}|*`]) {
     const b = bucket(k);
     const w = [...b.minute].reverse().find((x) => x.tokens === estimated);
     if (w) w.tokens = actual;
@@ -513,7 +543,7 @@ function penalize(provider: string, keyIdx: number, model: string, e: any) {
   const now = Date.now();
   const status: number = e instanceof HttpError ? e.status : 0;
   const msg = String(e?.message || e);
-  const b = bucket(`${keyId(provider, keyIdx)}|${model}`);
+  const b = bucket(`${keyId(provider, keyIdx)}|${quotaModel(provider, model)}`);
   const acct = bucket(`${keyId(provider, keyIdx)}|*`);
   if (status === 429 || /rate.?limit|quota|exhausted|too many requests/i.test(msg)) {
     const daily = /per.?day|PerDay|daily|RPD|TPD|requests per day|tokens per day|free-models-per-day|4006|neurons/i.test(msg);
@@ -534,7 +564,7 @@ function penalize(provider: string, keyIdx: number, model: string, e: any) {
     // whole provider — benching all of Google for one model's per-minute limit once stalled a deck for 8 min.
     const named = msg.match(/\bmodel:\s*([A-Za-z0-9._\-/]+)/);
     if (named) {
-      const nb = bucket(`${keyId(provider, keyIdx)}|${named[1]}`);
+      const nb = bucket(`${keyId(provider, keyIdx)}|${quotaModel(provider, named[1])}`);
       if (daily && (delay == null || delay > 600)) nb.exhaustedUntil = Math.max(nb.exhaustedUntil || 0, b.exhaustedUntil || 0);
       else nb.coolUntil = Math.max(nb.coolUntil || 0, b.coolUntil || 0);
       return;
@@ -592,6 +622,56 @@ export interface CallOpts {
   reasoning?: "low" | "medium" | "high";
   /** stream tokens (default on; V3_STREAM=off disables) */
   stream?: boolean;
+  /**
+   * "revision" = a polish/fix pass on a slide that already has a first draft. When Gemini's daily quota runs
+   * low, revisions start at the strong backups (Kimi, Mistral Large 4, DeepSeek, GLM) so the remaining Gemini
+   * calls go to first drafts. Nothing is skipped: the same calls run, only the model order changes.
+   */
+  pass?: "draft" | "revision";
+}
+
+/** Gemini Flash (not Lite) requests still available today across the distinct models in this chain. */
+export function geminiQuotaLeft(routes: Route[]): number {
+  const now = Date.now();
+  const seen = new Set<string>();
+  let left = 0;
+  for (const r of routes) {
+    if (!isGemini(r) || /lite/i.test(r.model)) continue;
+    const qm = quotaModel(r.provider, r.model);
+    if (seen.has(qm)) continue;
+    seen.add(qm);
+    const keys = keysFor(r.provider);
+    const rpd = modelSpec(r.provider, qm).rpd ?? modelSpec(r.provider, r.model).rpd ?? 20;
+    keys.forEach((_, k) => {
+      const b = bucket(`${keyId(r.provider, k)}|${qm}`);
+      const a = bucket(`${keyId(r.provider, k)}|*`);
+      if (b.exhaustedUntil > now || a.exhaustedUntil > now) return;
+      left += Math.max(0, rpd - b.day.length);
+    });
+  }
+  return left;
+}
+
+/**
+ * Model order for a revision pass. V3_REVISION_ROUTE: "auto" (default) = Gemini first while more than
+ * V3_GEMINI_DRAFT_RESERVE (default 30) Gemini Flash calls are left today, otherwise the strong backups first;
+ * "backup-first" = always backups first; "gemini-first" = never reorder. Gemini stays in the chain either way.
+ */
+export function revisionRoutes(routes: Route[], mode = (process.env.V3_REVISION_ROUTE || "auto").toLowerCase()): Route[] {
+  if (mode === "gemini-first" || mode === "off") return routes;
+  if (mode !== "backup-first") {
+    const reserve = Number(process.env.V3_GEMINI_DRAFT_RESERVE ?? 30);
+    if (geminiQuotaLeft(routes) > reserve) return routes;
+  }
+  const backups = ((cfg.engineV3?.revisionBackups || []) as any[]).map(parseRoute).filter(Boolean) as Route[];
+  const same = (a: Route, b: Route) => a.provider === b.provider && a.model === b.model;
+  const first = backups.map((b) => routes.find((r) => same(r, b))).filter(Boolean) as Route[];
+  if (!first.length) return routes;
+  const firstGemini = routes.findIndex(isGemini);
+  const rest = routes.filter((r) => !first.some((f) => same(f, r)));
+  // backups go where the first Gemini route was; Gemini follows them, everything weaker stays behind
+  const at = firstGemini < 0 ? 0 : rest.findIndex(isGemini);
+  return at < 0 ? [...first, ...rest] : [...rest.slice(0, at), ...first, ...rest.slice(at)];
 }
 
 function estimateTokens(messages: Msg[]): number {
@@ -604,7 +684,7 @@ function estimateTokens(messages: Msg[]): number {
   return Math.ceil(chars / 3.3) + images * 1300 + 20 * messages.length;
 }
 
-const ROLE_WAIT_MS: Record<Role, number> = { brief: 2000, research: 4000, outline: 6000, art: 15000, design: 20000, vision: 8000 };
+const ROLE_WAIT_MS: Record<Role, number> = { brief: 2000, research: 4000, outline: 6000, plan: 4000, art: 15000, design: 20000, vision: 8000 };
 
 /**
  * Call the best available route for a role. Never throws because of rate limits unless no route at
@@ -613,6 +693,7 @@ const ROLE_WAIT_MS: Record<Role, number> = { brief: 2000, research: 4000, outlin
 export async function chat(role: Role, messages: Msg[], opts: CallOpts = {}): Promise<LlmResult> {
   const hasImage = messages.some((m) => Array.isArray(m.content) && m.content.some((p) => p.type === "image_url"));
   let routes = routesFor(role);
+  if (opts.pass === "revision" && (role === "design" || role === "art")) routes = revisionRoutes(routes);
   if (hasImage) routes = routes.filter((r) => modelSpec(r.provider, r.model).vision || envVisionRoute(r));
   if (!routes.length) {
     throw new Error(
@@ -743,7 +824,7 @@ export function schedulerState() {
       const keys = keysFor(r.provider);
       const spec = modelSpec(r.provider, r.model);
       const per = keys.map((_, k) => {
-        const b = bucket(`${keyId(r.provider, k)}|${r.model}`);
+        const b = bucket(`${keyId(r.provider, k)}|${quotaModel(r.provider, r.model)}`);
         const a = bucket(`${keyId(r.provider, k)}|*`);
         return { key: k + 1, usedToday: b.day.length, usedThisMinute: b.minute.length, exhausted: Math.max(b.exhaustedUntil, a.exhaustedUntil) > now ? b.reason || a.reason : null };
       });

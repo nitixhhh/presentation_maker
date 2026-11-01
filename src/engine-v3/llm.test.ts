@@ -13,6 +13,7 @@ const PROVIDER_ENVS = [
   "CEREBRAS_API_KEY", "GOOGLE_AI_API_KEY", "GROQ_API_KEY", "GROQ_API_KEY_2", "GROQ_API_KEYS", "MISTRAL_API_KEY", "SAMBANOVA_API_KEY",
   "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "GITHUB_MODELS_TOKEN", "OPENROUTER_API_KEY", "NVIDIA_NIM_API_KEY", "OLLAMA_API_KEY",
   "CUSTOM_LLM_API_KEY", "CUSTOM_LLM_BASE_URL", "ALLOW_NVIDIA_PRODUCTION", "ENGINE_V3_ROUTES", "OLLAMA_PRIORITY",
+  "ZAI_API_KEY", "DESIGN_PRIMARY", "V3_REVISION_ROUTE", "V3_GEMINI_DRAFT_RESERVE",
 ];
 
 type Llm = typeof import("./llm");
@@ -69,11 +70,9 @@ test("absent providers are skipped: only providers with a key appear in any role
   process.env.CEREBRAS_API_KEY = "x".repeat(20);
   process.env.GITHUB_MODELS_TOKEN = "x".repeat(20);
   for (const role of llm.ROLES) assert.ok(!llm.routesFor(role).some((r) => r.provider === "cerebras" || r.provider === "github"));
-  // Cloudflare needs both the token and the account id
-  setKeys("CLOUDFLARE_API_TOKEN");
-  assert.ok(!llm.routesFor("brief").some((r) => r.provider === "cloudflare"));
-  setKeys("CLOUDFLARE_ACCOUNT_ID");
-  assert.ok(llm.routesFor("brief").some((r) => r.provider === "cloudflare"));
+  // Cloudflare's free neurons are kept for AI images: no text role routes there (1 Nov 2026)
+  setKeys("CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID");
+  for (const role of llm.ROLES) assert.ok(!llm.routesFor(role).some((r) => r.provider === "cloudflare"), `${role} must not use cloudflare`);
 });
 
 test("exactly one key per provider (no rotation)", () => {
@@ -93,21 +92,29 @@ test("tier routing: design/art/vision never use fast-tier models and Gemini stay
   assert.equal(llm.routesFor("design")[0].provider, "google");
   assert.equal(llm.routesFor("art")[0].provider, "google");
   // light roles: a fast provider before Gemini (saves Gemini quota for design)
-  for (const role of llm.LIGHT_ROLES) {
+  for (const role of ["brief", "research", "outline"] as const) {
     const rs = llm.routesFor(role);
     const firstGoogle = rs.findIndex((r) => r.provider === "google");
     assert.ok(firstGoogle > 0, `${role}: something before Gemini`);
   }
+  // light roles + planner + vision never spend the Gemini FLASH (design) quota
+  for (const role of ["brief", "research", "outline", "plan", "vision"] as const)
+    assert.ok(!llm.routesFor(role).some((r) => r.provider === "google" && /^gemini/.test(r.model) && !/lite/.test(r.model)), `${role} uses Gemini Flash`);
   // applyTierPolicy drops a model explicitly marked fast from a strong role
   const fast = { provider: "mistral", model: "mistral-small-2603" };
   assert.equal(llm.modelSpec(fast.provider, fast.model).tier, "fast");
   assert.equal(llm.applyTierPolicy("design", [fast]).length, 0);
   assert.equal(llm.applyTierPolicy("vision", [fast]).length, 0);
   assert.equal(llm.applyTierPolicy("brief", [fast]).length, 1);
-  // NVIDIA (slow free queue) comes after Mistral/SambaNova but before the weaker fallbacks
-  const d = llm.routesFor("design").map((r) => r.provider);
-  assert.ok(d.lastIndexOf("mistral") < d.indexOf("nvidia") && d.lastIndexOf("sambanova") < d.indexOf("nvidia"));
-  assert.ok(d.indexOf("nvidia") < d.indexOf("openrouter"));
+  // Kimi K2.6 is the first backup right after the Gemini Flash models; the slower NVIDIA models stay after Mistral/SambaNova
+  const dr = llm.routesFor("design");
+  const d = dr.map((r) => r.provider);
+  const lastGemini = dr.map((r) => r.provider === "google" && /^gemini/.test(r.model)).lastIndexOf(true);
+  assert.equal(dr[lastGemini + 1].model, "moonshotai/kimi-k2.6");
+  const minimax = dr.findIndex((r) => r.model === "minimaxai/minimax-m3.1-flash");
+  const at = (m: string) => dr.findIndex((r) => r.model === m);
+  assert.ok(at("mistral-large-4") < minimax && at("DeepSeek-V3.1") < minimax);
+  assert.ok(minimax < d.indexOf("openrouter"));
 });
 
 test("NVIDIA dead models are gone from production routes", () => {

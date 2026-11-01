@@ -55,6 +55,8 @@ export interface Source {
   doi?: string;
   text: string; // extract / abstract used for grounding
   accessed: string; // ISO date
+  /** times cited (scholarly sources, when the index says) — used to skip niche papers */
+  citations?: number;
 }
 
 export interface Fact {
@@ -116,7 +118,7 @@ export interface Asset {
   width: number;
   height: number;
   avgColor: string;
-  origin: "wikimedia" | "openverse" | "generated" | "wikipedia" | "upload";
+  origin: "wikimedia" | "openverse" | "nasa" | "pexels" | "pixabay" | "generated" | "wikipedia" | "upload";
   title: string;
   description: string;
   credit?: string; // "Photo: Jane Doe, CC BY-SA 4.0, via Wikimedia Commons"

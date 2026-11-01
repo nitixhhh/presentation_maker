@@ -1,10 +1,10 @@
 import fs from "fs";
 import { NextRequest } from "next/server";
-import { loadDeck } from "@/engine-v3/store";
+import { deckIncomplete, loadDeck } from "@/engine-v3/store";
 import { exportPdf } from "@/engine-v3/export/pdf";
 import { exportPptx } from "@/engine-v3/export/pptx";
 import { deckViewerHtml } from "@/engine-v3/render/document";
-import { ensureDeckLocal, exportPath } from "@/server/jobs/manager";
+import { deckBuilding, ensureDeckLocal, exportPath, STILL_BUILDING_MESSAGE } from "@/server/jobs/manager";
 import { tokenScope } from "@/server/deckAuth";
 import { paymentsEnabled } from "@/server/payments";
 import { exportNotesPdf } from "@/engine-v3/export/notes";
@@ -23,6 +23,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return new Response("bad id", { status: 400 });
   }
   if (!deck) return new Response("not found", { status: 404 });
+  if (deckBuilding(id) || deckIncomplete(deck)) return Response.json({ error: STILL_BUILDING_MESSAGE, building: true }, { status: 409 });
   const scope = tokenScope(req, id);
   if (scope !== "full" && (paymentsEnabled() || deck.ownerKey)) return new Response("This download link has expired or the deck is locked. Go back to the deck and tap download again.", { status: 403 });
   const name = deck.brief.title.replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "").slice(0, 60) || "presentation";

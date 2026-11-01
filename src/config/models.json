@@ -138,6 +138,20 @@
       "_note": "Free mode: 'API access is enabled by default with no credit card required. Usage and rate limits apply.' (docs.mistral.ai, read 31 Oct 2026). Per-model limits are shown only on admin.mistral.ai Limits page (not public) — the router learns them from 429s. Free mode may use inputs/outputs for training unless the account opts out (Data & Account Controls). Only used when MISTRAL_API_KEY is set.",
       "limits": {}
     },
+    "zai": {
+      "name": "Z.ai (Zhipu) — free Flash models",
+      "baseUrl": "https://api.z.ai/api/paas/v4",
+      "apiKeyEnv": "ZAI_API_KEY",
+      "enabled": true,
+      "allowedForProduction": true,
+      "concurrency": 1,
+      "dailyReset": "rolling",
+      "firstByteMs": 60000,
+      "idleMs": 60000,
+      "timeoutMs": 240000,
+      "limits": {},
+      "_note": "glm-4.7-flash (text, 200K ctx) and glm-4.6v-flash (vision) are listed 'Free' on docs.z.ai/guides/overview/pricing (read 1 Nov 2026); JSON mode via response_format json_object (docs.z.ai/guides/capabilities/struct-output). Free-tier rate limits are only shown after login (z.ai/manage-apikey/rate-limits); ~1 concurrent request reported (unverified) -> concurrency 1; the scheduler learns the rest from 429s. Only used when ZAI_API_KEY is set (one account, no card)."
+    },
     "sambanova": {
       "name": "SambaNova Cloud (free tier)",
       "baseUrl": "https://api.sambanova.ai/v1",
@@ -256,87 +270,79 @@
     }
   },
   "engineV3": {
-    "_comment": "Engine v3 routes per role, best first ('provider:model'). Quality tiers: art/design/vision are 'strong' roles — Gemini Flash first (main designer), then the strongest free no-card models (Mistral Large 4 / GLM-5.3 on Mistral Free mode, DeepSeek-V3.1 / gpt-oss-120b on SambaNova free), then NVIDIA (only with ALLOW_NVIDIA_PRODUCTION=true), OpenRouter free, Gemma 4, Groq, Cloudflare; a model marked tier 'fast' is never used there. brief/research/outline are 'light' roles — fast models first (Groq gpt-oss-120b, Mistral Small) so the Gemini quota is kept for design. Every provider is optional: no key = skipped. A 429 or a used-up daily quota moves to the next route at once; a provider failing 3x in a row is benched for 5 min. Override at runtime with ENGINE_V3_ROUTES (same shape as 'roles'). Checked 31 Oct 2026: Cerebras (needs a card) and GitHub Models (retired 30 Jul 2026) are not used.",
+    "_comment": "Engine v3 routes per role, best first ('provider:model'). 1 Nov 2026 route fix (free_tier_deepdive_2026-11-01): design/art = the three real Gemini Flash models first (aliases 3.7->3.8 and 3.5->3.6 removed: same quota, extra 429s; engineV3.aliases makes the quota counter treat them as one model), then Mistral Large 4, DeepSeek-V3.1, GLM-4.7-Flash (Z.ai), OpenRouter free, Gemma 4, gpt-oss-120b. No pay-per-token (Ollama) routes and no Cloudflare text routes (its 10k neurons/day are kept for AI images). vision (QA reviewer + photo editor) = Flash-Lite / Gemma 4 / GLM-4.6V-Flash first so the 20/day Gemini Flash quota goes to slide design. plan (image director) = Flash-Lite / Gemma. Light roles (brief/research/outline) = Groq gpt-oss-120b, Gemini 3.5 Flash-Lite, Gemma-4-26B, GLM-4.7-Flash, Mistral Small. NVIDIA (incl. Kimi K2.6) only with ALLOW_NVIDIA_PRODUCTION=true (optInRoutes). Every provider is optional: no key = skipped. A 429 or a used-up daily quota moves to the next route at once; a provider failing 3x in a row is benched for 5 min. Override at runtime with ENGINE_V3_ROUTES (same shape as 'roles').",
     "roles": {
       "brief": [
         "groq:openai/gpt-oss-120b",
-        "mistral:mistral-small-2603",
         "google:gemini-3.5-flash-lite",
-        "google:gemini-3.1-flash-lite",
-        "sambanova:Meta-Llama-3.3-70B-Instruct",
         "google:gemma-4-26b-a4b-it",
-        "openrouter:google/gemma-4-26b-a4b-it:free",
-        "cloudflare:@cf/openai/gpt-oss-120b"
+        "zai:glm-4.7-flash",
+        "mistral:mistral-small-2603",
+        "google:gemini-3.1-flash-lite",
+        "google:gemma-4-31b-it"
       ],
       "research": [
         "groq:openai/gpt-oss-120b",
-        "mistral:mistral-small-2603",
         "google:gemini-3.5-flash-lite",
-        "google:gemini-3.1-flash-lite",
         "google:gemma-4-26b-a4b-it",
-        "google:gemma-4-31b-it",
-        "openrouter:nvidia/nemotron-3.5-lightning:free",
-        "cloudflare:@cf/openai/gpt-oss-120b"
+        "zai:glm-4.7-flash",
+        "mistral:mistral-small-2603",
+        "google:gemini-3.1-flash-lite",
+        "google:gemma-4-31b-it"
       ],
       "outline": [
-        "mistral:mistral-small-2603",
         "groq:openai/gpt-oss-120b",
         "google:gemini-3.5-flash-lite",
-        "google:gemini-3.1-flash-lite",
+        "mistral:mistral-small-2603",
         "google:gemma-4-26b-a4b-it",
-        "google:gemma-4-31b-it",
-        "openrouter:google/gemma-4-31b-it:free",
-        "ollama:glm-5.3-flash",
-        "cloudflare:@cf/openai/gpt-oss-120b"
+        "zai:glm-4.7-flash",
+        "google:gemini-3.1-flash-lite",
+        "google:gemma-4-31b-it"
       ],
       "art": [
         "google:gemini-3.8-flash",
-        "google:gemini-3.7-flash",
-        "google:gemini-3.6-flash",
         "mistral:mistral-large-4",
+        "google:gemini-3.6-flash",
+        "google:gemini-3-flash-preview",
         "sambanova:DeepSeek-V3.1",
-        "ollama:deepseek-v4.1-flash",
+        "zai:glm-4.7-flash",
         "openrouter:thinkingmachines/inkling:free",
-        "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free",
         "google:gemma-4-26b-a4b-it",
         "google:gemma-4-31b-it",
-        "groq:openai/gpt-oss-120b",
-        "cloudflare:@cf/openai/gpt-oss-120b"
+        "groq:openai/gpt-oss-120b"
       ],
       "design": [
         "google:gemini-3.8-flash",
-        "google:gemini-3.7-flash",
         "google:gemini-3.6-flash",
-        "google:gemini-3.5-flash",
         "google:gemini-3-flash-preview",
         "mistral:mistral-large-4",
         "sambanova:DeepSeek-V3.1",
-        "sambanova:gpt-oss-120b",
-        "ollama:glm-5.3-flash",
-        "ollama:deepseek-v4.1-flash",
-        "openrouter:thinkingmachines/inkling:free",
+        "zai:glm-4.7-flash",
         "openrouter:nvidia/nemotron-3.5-super-vl:free",
-        "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free",
+        "openrouter:thinkingmachines/inkling:free",
         "google:gemma-4-26b-a4b-it",
-        "openrouter:google/gemma-4-26b-a4b-it:free",
         "google:gemma-4-31b-it",
-        "openrouter:google/gemma-4-31b-it:free",
-        "groq:openai/gpt-oss-120b",
-        "groq:qwen/qwen3.8-27b",
-        "cloudflare:@cf/openai/gpt-oss-120b"
+        "sambanova:gpt-oss-120b",
+        "groq:openai/gpt-oss-120b"
       ],
       "vision": [
-        "google:gemini-3.6-flash",
-        "google:gemini-3.5-flash",
         "google:gemini-3.5-flash-lite",
-        "mistral:mistral-large-4",
-        "ollama:gemma4:31b",
-        "openrouter:nvidia/nemotron-3.5-super-vl:free",
-        "openrouter:thinkingmachines/inkling:free",
+        "google:gemini-3.1-flash-lite",
         "google:gemma-4-26b-a4b-it",
+        "zai:glm-4.6v-flash",
+        "openrouter:nvidia/nemotron-3.5-super-vl:free",
+        "mistral:mistral-large-4",
         "google:gemma-4-31b-it",
-        "groq:qwen/qwen3.8-27b",
-        "cloudflare:@cf/meta/llama-4-scout-17b-16e-instruct"
+        "groq:qwen/qwen3.8-27b"
+      ],
+      "plan": [
+        "google:gemini-3.5-flash-lite",
+        "google:gemma-4-26b-a4b-it",
+        "google:gemini-3.1-flash-lite",
+        "zai:glm-4.7-flash",
+        "mistral:mistral-small-2603",
+        "groq:openai/gpt-oss-120b",
+        "google:gemma-4-31b-it"
       ]
     },
     "models": {
@@ -520,7 +526,15 @@
         "rpm": 35,
         "ctx": 256000,
         "maxOutput": 16000,
-        "vision": true
+        "vision": true,
+        "tier": "strong",
+        "timeoutMs": 300000,
+        "extraBody": {
+          "chat_template_kwargs": {
+            "thinking": false
+          }
+        },
+        "_note": "Kimi K2.6 on NVIDIA's free trial API (testing phase, owner's decision 1 Nov 2026). Thinking off via chat_template_kwargs so it answers instead of reasoning for minutes. 1 Nov 2026: listed on /v1/models but chat calls answer 404 'Function ... Not found for account' on the current key (same as 31 Oct) — the router marks it unavailable for 24 h after one 404 and moves on."
       },
       "nvidia:deepseek-ai/deepseek-v4.1-flash": {
         "rpm": 35,
@@ -659,6 +673,27 @@
         "ctx": 128000,
         "maxOutput": 8000,
         "tier": "fast"
+      },
+      "zai:glm-4.7-flash": {
+        "ctx": 200000,
+        "maxOutput": 16000,
+        "tier": "strong",
+        "extraBody": {
+          "thinking": {
+            "type": "disabled"
+          }
+        },
+        "_note": "thinking switched off for speed (Z.ai 'thinking' parameter); unverified on the free tier"
+      },
+      "zai:glm-4.6v-flash": {
+        "ctx": 128000,
+        "maxOutput": 8000,
+        "vision": true,
+        "extraBody": {
+          "thinking": {
+            "type": "disabled"
+          }
+        }
       }
     },
     "imageGeneration": {
@@ -699,21 +734,15 @@
       ]
     },
     "optInRoutes": {
-      "_comment": "Routes added to production only when the named env var is 'true'. prepend = tried first, afterGemini = tried right after the last Gemini route (or, with anchorProviders, after the last route of those providers — e.g. NVIDIA after Mistral/SambaNova, because NVIDIA's free queue is slow), append = tried after the normal routes.",
+      "_comment": "Routes added to production only when the named env var is 'true'. prepend = tried first; afterGemini = right after the last Gemini route; afterAnchors = after the last Gemini route and the last route of anchorProviders (e.g. NVIDIA's slow free queue after Mistral/SambaNova); append = after the normal routes.",
       "nvidia": {
         "env": "ALLOW_NVIDIA_PRODUCTION",
         "afterGemini": {
           "design": [
-            "nvidia:minimaxai/minimax-m3.1-flash",
-            "nvidia:nvidia/nemotron-3-ultra-550b-a55b"
+            "nvidia:moonshotai/kimi-k2.6"
           ],
           "art": [
-            "nvidia:minimaxai/minimax-m3.1-flash",
-            "nvidia:nvidia/nemotron-3-ultra-550b-a55b"
-          ],
-          "vision": [
-            "nvidia:nvidia/nemotron-3.5-super-vl-120b-a12b",
-            "nvidia:minimaxai/minimax-m3.1-flash"
+            "nvidia:moonshotai/kimi-k2.6"
           ]
         },
         "append": {
@@ -731,8 +760,57 @@
         "anchorProviders": [
           "mistral",
           "sambanova"
-        ]
+        ],
+        "afterAnchors": {
+          "design": [
+            "nvidia:minimaxai/minimax-m3.1-flash",
+            "nvidia:nvidia/nemotron-3-ultra-550b-a55b"
+          ],
+          "art": [
+            "nvidia:minimaxai/minimax-m3.1-flash",
+            "nvidia:nvidia/nemotron-3-ultra-550b-a55b"
+          ],
+          "vision": [
+            "nvidia:moonshotai/kimi-k2.6",
+            "nvidia:nvidia/nemotron-3.5-super-vl-120b-a12b",
+            "nvidia:minimaxai/minimax-m3.1-flash"
+          ]
+        },
+        "_comment2": "1 Nov 2026 (owner, testing phase): Kimi K2.6 is the first backup right after the Gemini Flash models for design and art (afterGemini) and does revision passes when Gemini runs low (engineV3.revisionBackups); the slower NVIDIA models stay behind Mistral/SambaNova (afterAnchors). Vision: Kimi is a late backup (vision QA runs on Flash-Lite/Gemma first).",
+        "primary": {
+          "_comment": "DESIGN_PRIMARY=nvidia-kimi (with ALLOW_NVIDIA_PRODUCTION=true) makes Kimi K2.6 the main designer for design + art (first in the chain, so revisions too); Gemini Flash follows as the backup. DESIGN_PRIMARY=gemini (or unset) = Gemini first again.",
+          "env": "DESIGN_PRIMARY",
+          "value": "nvidia-kimi",
+          "prepend": {
+            "design": [
+              "nvidia:moonshotai/kimi-k2.6"
+            ],
+            "art": [
+              "nvidia:moonshotai/kimi-k2.6"
+            ]
+          }
+        },
+        "anchorRoutes": [
+          "mistral:mistral-large-4",
+          "sambanova:DeepSeek-V3.1",
+          "zai:glm-4.7-flash"
+        ],
+        "_anchorNote": "afterAnchors routes go after the last of these routes (the strong free backups), before OpenRouter/Gemma/gpt-oss."
       }
-    }
+    },
+    "aliases": {
+      "_comment": "Alias -> the model that actually serves it (same quota). ai.google.dev/gemini-api/docs/deprecations, read 1 Nov 2026; gemini-3-flash-preview = gemini-3-flash per Google's 429 replies.",
+      "google:gemini-3.7-flash": "gemini-3.8-flash",
+      "google:gemini-3.5-flash": "gemini-3.6-flash",
+      "google:gemini-3-flash-preview": "gemini-3-flash"
+    },
+    "revisionBackups": [
+      "nvidia:moonshotai/kimi-k2.6",
+      "mistral:mistral-large-4",
+      "sambanova:DeepSeek-V3.1",
+      "zai:glm-4.7-flash",
+      "nvidia:minimaxai/minimax-m3.1-flash"
+    ],
+    "_revisionComment": "Revision/polish passes (designer.reviseSlide, pass 'revision'): while more than V3_GEMINI_DRAFT_RESERVE (default 30) Gemini Flash calls are left today they use the normal design chain; below that they start at revisionBackups (Kimi K2.6 when ALLOW_NVIDIA_PRODUCTION=true, then Mistral Large 4, DeepSeek-V3.1, GLM-4.7-Flash, MiniMax) and Gemini follows them, so the last Gemini calls go to first drafts. Same number of design calls and polish passes; only the model order changes. V3_REVISION_ROUTE=gemini-first turns this off, =backup-first always uses backups first."
   }
 }

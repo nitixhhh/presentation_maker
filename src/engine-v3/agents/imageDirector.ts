@@ -45,7 +45,7 @@ export async function runImageDirector(brief: Brief, slides: OutlineSlide[], sty
     .map((s) => `${s.n}. [${s.role}] ${s.title} — ${s.keyMessage || ""} | story agent suggested: ${s.visual.kind}${s.visual.query ? ` "${s.visual.query}"` : ""}${s.visual.prompt ? ` / "${s.visual.prompt}"` : ""}`)
     .join("\n");
   try {
-    const { data } = await chatJson<ImagePlan & { items: any[] }>("art", [
+    const { data } = await chatJson<ImagePlan & { items: any[] }>("plan", [
       { role: "system", content: SYSTEM },
       {
         role: "user",

@@ -94,6 +94,7 @@ export async function openalex(query: string, limit = 4): Promise<Omit<Source, "
       venue: w.primary_location?.source?.display_name || w.host_venue?.display_name || undefined,
       text: abs.slice(0, 2500),
       accessed: today(),
+      citations: typeof w.cited_by_count === "number" ? w.cited_by_count : undefined,
     });
     if (out.length >= limit) break;
   }
@@ -124,6 +125,7 @@ export async function crossref(query: string, limit = 3): Promise<Omit<Source, "
       venue: it["container-title"]?.[0],
       text: abs.slice(0, 2500),
       accessed: today(),
+      citations: typeof it["is-referenced-by-count"] === "number" ? it["is-referenced-by-count"] : undefined,
     });
     if (out.length >= limit) break;
   }

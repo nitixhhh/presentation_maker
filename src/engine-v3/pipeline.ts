@@ -175,7 +175,7 @@ export async function generateDeckV3(req: V3Request, opts: PipelineOptions = {})
             if (!redesigned && high > 0) {
               redesigned = true;
               try {
-                d = await designSlide(deck, os, citeMap, i + 1, pickRecipes(os, assets, usedRecipes, 2), "IMPORTANT: an earlier design of this slide kept breaking (text cut off or overlapping). Choose a simpler, more robust composition with fewer elements and more space, still distinctive.");
+                d = await designSlide(deck, os, citeMap, i + 1, pickRecipes(os, assets, usedRecipes, 2), "IMPORTANT: an earlier design of this slide kept breaking (text cut off or overlapping). Choose a simpler, more robust composition with fewer elements and more space, still distinctive.", "revision");
                 const insp2 = await inspectSlide(deck, os.n, d.html, renderDir, os.role, allowed);
                 if (isRefs) checkReferences(insp2);
                 const h2 = insp2.issues.filter((x) => x.severity === "high").length;
@@ -191,7 +191,7 @@ export async function generateDeckV3(req: V3Request, opts: PipelineOptions = {})
           }
           const feedback = [...insp.issues.map((x) => `- [${x.severity}] ${x.detail}`), ...(vision?.issues || []).map((x) => `- ${x}`)].join("\n");
           try {
-            d = await reviseSlide({ ...d, html: insp.html }, feedback);
+            d = await reviseSlide({ ...d, html: insp.html }, feedback, brief.titleSlideFields);
             revisions++;
           } catch (e: any) {
             emit("Visual QA", 60, `QA ${os.n}`, `revision unavailable: ${String(e.message).slice(0, 100)}`);

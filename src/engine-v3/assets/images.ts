@@ -1,6 +1,8 @@
 /**
  * Engine v3 — Images like a designer would source them.
- *  1. Real photos: Wikimedia Commons (licence + author kept) and Openverse (CC).
+ *  1. Real photos: Wikimedia Commons + Wikipedia article lead images (licence + author kept), Openverse
+ *     (CC licences that allow commercial use), NASA Image Library (public domain, no key), and Pexels /
+ *     Pixabay when a free key is set (PEXELS_API_KEY / PIXABAY_API_KEY — no card needed; skipped otherwise).
  *  2. A vision model picks relevant candidates from one contact sheet (Commons search is noisy).
  *  3. Cloudflare Workers AI Flux for conceptual images when no real photo fits.
  * Every image is stored as a real JPEG on disk (never SVG) with size + average colour,
@@ -24,7 +26,7 @@ interface Candidate {
   description: string;
   credit: string;
   sourceUrl: string;
-  origin: "wikimedia" | "openverse";
+  origin: "wikimedia" | "openverse" | "nasa" | "pexels" | "pixabay";
 }
 
 async function getJson(url: string, timeoutMs = 12000): Promise<any | null> {
@@ -78,9 +80,118 @@ export async function searchCommons(query: string, limit = 6): Promise<Candidate
   return out.filter((c, i) => i < limit);
 }
 
+/** Commons file pages → candidates (shared by Commons search and Wikipedia lead images). */
+async function commonsFiles(titles: string[]): Promise<Candidate[]> {
+  if (!titles.length) return [];
+  const url = `https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&titles=${encodeURIComponent(titles.map((t) => (t.startsWith("File:") ? t : `File:${t}`)).join("|"))}&prop=imageinfo&iiprop=url|size|mime|extmetadata&iiurlwidth=1280`;
+  const j = await getJson(url);
+  const out: Candidate[] = [];
+  for (const p of Object.values(j?.query?.pages || {}) as any[]) {
+    const ii = p.imageinfo?.[0];
+    if (!ii || !/jpeg|png/.test(ii.mime) || ii.width < 640 || ii.height < 400) continue;
+    const ar = ii.width / ii.height;
+    if (ar > 3 || ar < 0.33) continue;
+    const md = ii.extmetadata || {};
+    const title = String(p.title || "").replace(/^File:/, "").replace(/\.[a-z]+$/i, "");
+    if (/logo|icon|flag of|coat of arms|signature|svg|screenshot/i.test(title)) continue;
+    out.push({
+      url: ii.thumburl || ii.url,
+      width: ii.thumbwidth || ii.width,
+      height: ii.thumbheight || ii.height,
+      title,
+      description: strip(md.ImageDescription?.value || title).slice(0, 200),
+      credit: `${strip(md.Artist?.value || "Unknown author").slice(0, 80)}, ${strip(md.LicenseShortName?.value || "see source")}, via Wikimedia Commons`,
+      sourceUrl: ii.descriptionurl || `https://commons.wikimedia.org/wiki/${encodeURIComponent(p.title)}`,
+      origin: "wikimedia",
+    });
+  }
+  return out;
+}
+
+/**
+ * Wikipedia article lead images: the photo an encyclopedia chose for the article is usually the clearest,
+ * most relevant real photo of the subject (Commons keyword search is noisy). Licence/author come from Commons.
+ */
+export async function searchWikipediaLead(query: string, limit = 3): Promise<Candidate[]> {
+  const j = await getJson(`https://en.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrlimit=${limit + 2}&prop=pageimages&piprop=name`);
+  const pages = (Object.values(j?.query?.pages || {}) as any[]).sort((a, b) => (a.index || 0) - (b.index || 0));
+  const names = pages.map((p) => p.pageimage).filter((n: any) => typeof n === "string" && !/\.(svg|gif)$/i.test(n));
+  return (await commonsFiles(names.slice(0, limit))).slice(0, limit);
+}
+
+/** NASA Image and Video Library: public-domain photos (space, Earth, aviation, science), no key needed. */
+export async function searchNasa(query: string, limit = 2): Promise<Candidate[]> {
+  const j = await getJson(`https://images-api.nasa.gov/search?q=${encodeURIComponent(query)}&media_type=image&page_size=${limit * 3}`, 8000);
+  const out: Candidate[] = [];
+  for (const it of j?.collection?.items || []) {
+    const d = it.data?.[0];
+    const link = (it.links || []).find((l: any) => l.rel === "preview" || l.render === "image");
+    if (!d || !link?.href) continue;
+    // ~orig is the full photo; the API's own size variants follow the same pattern
+    const url = String(link.href).replace(/~thumb\.jpg$/i, "~medium.jpg").replace(/^http:/, "https:");
+    out.push({
+      url,
+      width: 1280,
+      height: 853,
+      title: String(d.title || query).slice(0, 100),
+      description: strip(d.description || d.title || query).slice(0, 200),
+      credit: `${d.photographer || d.secondary_creator || d.center || "NASA"}, public domain, via NASA Image Library`.replace(/\s+/g, " "),
+      sourceUrl: `https://images.nasa.gov/details/${encodeURIComponent(d.nasa_id || "")}`,
+      origin: "nasa",
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/** Pexels (free key from pexels.com/api, no card). Skipped when PEXELS_API_KEY is not set. */
+export async function searchPexels(query: string, limit = 3): Promise<Candidate[]> {
+  const key = process.env.PEXELS_API_KEY;
+  if (!key) return [];
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 10000);
+  try {
+    const r = await fetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=${limit}&orientation=landscape`, { headers: { Authorization: key, "User-Agent": UA }, signal: ctrl.signal });
+    const j: any = r.ok ? await r.json() : null;
+    return (j?.photos || []).slice(0, limit).map((p: any) => ({
+      url: p.src?.large2x || p.src?.large || p.src?.original,
+      width: 1880,
+      height: Math.round((1880 * (p.height || 2)) / (p.width || 3)),
+      title: String(p.alt || query).slice(0, 100),
+      description: String(p.alt || query).slice(0, 200),
+      credit: `Photo by ${p.photographer || "unknown"} on Pexels (Pexels licence)`,
+      sourceUrl: p.url,
+      origin: "pexels" as const,
+    })).filter((c: Candidate) => c.url);
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/** Pixabay (free key from pixabay.com/api/docs, no card). Skipped when PIXABAY_API_KEY is not set. */
+export async function searchPixabay(query: string, limit = 3): Promise<Candidate[]> {
+  const key = process.env.PIXABAY_API_KEY;
+  if (!key) return [];
+  const j = await getJson(`https://pixabay.com/api/?key=${encodeURIComponent(key)}&q=${encodeURIComponent(query.slice(0, 100))}&image_type=photo&orientation=horizontal&safesearch=true&per_page=${Math.max(3, limit)}`, 10000);
+  return (j?.hits || []).slice(0, limit).map((h: any) => ({
+    url: h.largeImageURL || h.webformatURL,
+    width: h.imageWidth || 1280,
+    height: h.imageHeight || 853,
+    title: String(h.tags || query).slice(0, 100),
+    description: String(h.tags || query).slice(0, 200),
+    credit: `Image by ${h.user || "unknown"} on Pixabay (Pixabay licence)`,
+    sourceUrl: h.pageURL,
+    origin: "pixabay" as const,
+  })).filter((c: Candidate) => c.url);
+}
+
 export async function searchOpenverse(query: string, limit = 4): Promise<Candidate[]> {
+  // licences that allow commercial use (decks are sold); short timeout: the API is often slow from servers
   const j = await getJson(
-    `https://api.openverse.org/v1/images/?q=${encodeURIComponent(query)}&page_size=${limit * 2}&license_type=all&mature=false&size=large`
+    `https://api.openverse.org/v1/images/?q=${encodeURIComponent(query)}&page_size=${limit * 2}&license_type=commercial&mature=false&size=large`,
+    8000
   );
   const out: Candidate[] = [];
   for (const r of j?.results || []) {
@@ -231,6 +342,11 @@ async function contactSheet(groups: { slideN: number; subject: string; cands: { 
     .toBuffer();
 }
 
+function dedupe(c: Candidate[]): Candidate[] {
+  const seen = new Set<string>();
+  return c.filter((x) => (seen.has(x.url) ? false : (seen.add(x.url), true)));
+}
+
 function esc(s: string) {
   return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
 }
@@ -272,12 +388,24 @@ export async function sourceImages(
   const searched = await Promise.all(
     wants.map(async (w) => {
       if (w.source === "ai") return { w, cands: [] as Candidate[] };
-      const [c, o] = await Promise.all([searchCommons(w.query, 5), searchOpenverse(w.query, 3)]);
-      let cands = [...c, ...o];
-      if (cands.length < 2) {
-        // broaden: drop the last word
-        const shorter = w.query.split(/\s+/).slice(0, 2).join(" ");
-        if (shorter !== w.query) cands = [...cands, ...(await searchCommons(shorter, 4))];
+      const [lead, c, o, nasa, px, pb] = await Promise.all([
+        searchWikipediaLead(w.query, 2),
+        searchCommons(w.query, 5),
+        searchOpenverse(w.query, 3),
+        searchNasa(w.query, 2),
+        searchPexels(w.query, 2),
+        searchPixabay(w.query, 2),
+      ]);
+      let cands = dedupe([...lead, ...px, ...pb, ...c, ...o, ...nasa]);
+      if (cands.length < 3) {
+        // broaden: shorter queries (first two words, last two words) and the deck topic itself
+        const words = w.query.split(/\s+/);
+        const variants = Array.from(new Set([words.slice(0, 2).join(" "), words.slice(-2).join(" "), opts.topic])).filter((q) => q && q !== w.query);
+        for (const q of variants) {
+          if (cands.length >= 4) break;
+          const more = await Promise.all([searchCommons(q, 4), searchWikipediaLead(q, 2)]);
+          cands = dedupe([...cands, ...more.flat()]);
+        }
       }
       return { w, cands: cands.slice(0, 6) };
     })

@@ -305,6 +305,14 @@ function friendlyError(e: any): string {
   return "Something went wrong while making this deck. Please try again — it usually works on the next attempt.";
 }
 
+/** A deck is still being made (or re-made by an edit) when a queued/running job on this server points at it. */
+export function deckBuilding(deckId: string): boolean {
+  for (const j of S.jobs.values()) if (j.deckId === deckId && (j.status === "running" || j.status === "queued")) return true;
+  return false;
+}
+
+export const STILL_BUILDING_MESSAGE = "This deck is still being built — the download opens as soon as it is finished.";
+
 export function exportPath(deckId: string, format: "pdf" | "pptx" | "notes") {
   if (format === "notes") return path.join(deckDir(deckId), "exports", "notes.pdf");
   return path.join(deckDir(deckId), "exports", `deck.${format}`);
