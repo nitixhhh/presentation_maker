@@ -303,6 +303,26 @@ export async function generateDeckV4(req: V3Request, opts: V4Options = {}): Prom
         } else emit("Visual QA", 88, `QA ${os.n}`, `finish pass skipped (${ha} vs ${hb} serious issues)`);
       }
     }
+    // a content slide that lost most of its points (an empty or half-built design): the engine's calm layout with every
+    // point, finished like any slide, replaces it when it is not worse
+    if (best && !["title", "closing", "references", "section", "quote"].includes(os.role) && os.points.length >= 2) {
+      const plain = best.d.html.replace(/<style[\s\S]*?<\/style>/g, " ").replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").toLowerCase();
+      const shown = os.points.filter((pt) => {
+        const w = pt.text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter((x) => x.length > 2).slice(0, 3);
+        return w.length && w.filter((x) => plain.includes(x)).length >= Math.min(2, w.length);
+      }).length;
+      const thin = best.insp.issues.some((x) => x.type === "blank" || x.type === "sparse");
+      if (shown < Math.ceil(os.points.length / 2) || thin) {
+        try {
+          const fb = fallbackSlideHtml(deck, os, citeMap);
+          const fin = await finishBest(os, fb);
+          if (fin && !fin.insp.issues.some((x) => x.type === "blank" || x.type === "sparse") && fin.insp.issues.filter((x) => x.severity === "high").length <= best.insp.issues.filter((x) => x.severity === "high").length + 1) {
+            best = { ...best, d: { ...best.d, html: fin.html, provider: "engine", model: "fallback" }, insp: fin.insp };
+            emit("Visual QA", 88, `QA ${os.n}`, `${thin ? "slide was mostly empty" : `only ${shown}/${os.points.length} points were on the slide`} — used the engine layout with every point`);
+          }
+        } catch {}
+      }
+    }
     const b = best!;
     await writePreview(id, os.n, b.insp.screenshot);
     return {

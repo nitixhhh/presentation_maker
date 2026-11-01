@@ -15,7 +15,7 @@ import type { Deck } from "../engine-v3/types";
 const SKIP_TEXT = String.raw`/^\s*\[\d+([,–-]\s*\d+)*\]\s*$|(^|\s)(source|sources|credit|credits|photo|image|via|cc[ -]by|cc0|public domain|wikimedia|wikipedia|nasa|openverse|retrieved|©)\b|https?:|doi\.org|^\s*\d+\s*\/\s*\d+\s*$/i`;
 
 /** removes lone decorative numerals; caps step numbers; also kills numeral ::before/::after decorations */
-export const DECOR_JS = String.raw`(function(){
+export const DECOR_JS = String.raw`(function(role){
 var S = document.querySelector('section.slide'); var out = []; var cands = [];
 var NUM = /^(no\.?\s*|#)?0?\d{1,2}[.)\/]?$/i;
 S.querySelectorAll('*').forEach(function(el){
@@ -47,13 +47,34 @@ S.querySelectorAll('svg, .ic, [data-icon], [data-ic-x]').forEach(function(g){
   var hit = tx.some(function(t){ if (host.contains(t.el) || t.el.contains(host)) return false; var ox = Math.min(hr.right, t.r.right) - Math.max(hr.left, t.r.left), oy = Math.min(hr.bottom, t.r.bottom) - Math.max(hr.top, t.r.top); return ox > 4 && oy > 4 && ox * oy >= 0.12 * Math.min(hr.width * hr.height, t.r.width * t.r.height); });
   if (hit){ out.push('removed a graphic lying on text (' + Math.round(hr.width) + '×' + Math.round(hr.height) + ')'); host.remove(); }
 });
+// painted shapes without text drawn ON TOP of text (bars, blocks), and big empty placeholder panels: removed
+S.querySelectorAll('div,span,figure,section,aside').forEach(function(el){
+  if (!el.isConnected || el.closest('svg') || el.closest('figure.v3-diagram') || el.closest('[class*="logo"]')) return;
+  if ((el.innerText || '').trim() || el.querySelector('img,svg,[data-icon],[data-ic-x],canvas,video')) return;
+  var cs = getComputedStyle(el); if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity) < 0.2) return;
+  var painted = (cs.backgroundColor && !/rgba?\(0, 0, 0, 0\)|transparent/.test(cs.backgroundColor)) || cs.backgroundImage !== 'none';
+  if (!painted) return;
+  var r = el.getBoundingClientRect(); var a = r.width * r.height; if (a < 400 || a > 1280 * 720 * 0.6) return;
+  var under = tx.filter(function(t){ var tt = (t.el.innerText || '').trim(); if (parseFloat(getComputedStyle(t.el).fontSize) <= 18 || /^[\d\s\/.#]+$/.test(tt)) return false; var ox = Math.min(r.right, t.r.right) - Math.max(r.left, t.r.left), oy = Math.min(r.bottom, t.r.bottom) - Math.max(r.top, t.r.top); return ox > 3 && oy > 3 && ox * oy >= 0.5 * t.r.width * t.r.height; });
+  if (!under.length){
+    // nothing sits on it: a big empty box (an image slot that never got its image) is removed; small accents stay
+    var overGfx = Array.prototype.some.call(S.querySelectorAll('img,svg,[data-icon],[data-ic-x]'), function(g){ if (g.closest('svg') && g.tagName.toLowerCase() !== 'svg') return false; var q = g.getBoundingClientRect(); return Math.min(r.right, q.right) - Math.max(r.left, q.left) > 8 && Math.min(r.bottom, q.bottom) - Math.max(r.top, q.top) > 8; });
+    var band = r.height >= 690 || r.width >= 1200;
+    if (a > 1280 * 720 * 0.08 && !overGfx && !band && role !== 'title' && role !== 'closing') { out.push('removed an empty placeholder panel (' + Math.round(r.width) + '×' + Math.round(r.height) + ')'); el.remove(); }
+    return;
+  }
+  // drawn above the text? (elementFromPoint at the overlap)
+  var covering = under.some(function(t){ var x0 = Math.max(r.left, t.r.left), x1 = Math.min(r.right, t.r.right), y0 = Math.max(r.top, t.r.top), y1 = Math.min(r.bottom, t.r.bottom); var hits = 0;
+    for (var k = 1; k <= 3; k++){ var e = document.elementFromPoint(x0 + (x1 - x0) * k / 4, (y0 + y1) / 2); if (e && (e === el || el.contains(e))) hits++; } return hits >= 2; });
+  if (covering && (r.width < 40 || r.height < 40 || a < 1280 * 720 * 0.05)) { out.push('removed a shape drawn over text (' + Math.round(r.width) + '×' + Math.round(r.height) + ')'); el.remove(); }
+});
 var killed = 0;
 [S].concat(Array.prototype.slice.call(S.querySelectorAll('*'))).forEach(function(el){ ['::before','::after'].forEach(function(p){ var s = getComputedStyle(el, p); var c = s.content || '';
   if (c === 'none' || c === 'normal') return; if (parseFloat(s.fontSize) < 56) return;
   if (/^"(no\.?\s*|#)?0?\d{1,2}[.)\/]?"$/i.test(c) || /attr\(data-n\)|counter\(/.test(c)){ el.classList.add(p === '::before' ? 'v4-nodeco-b' : 'v4-nodeco-a'); killed++; } }); });
 if (killed){ var st = document.createElement('style'); st.setAttribute('data-v4','nodeco'); st.textContent = '.v4-nodeco-b::before{content:none !important}.v4-nodeco-a::after{content:none !important}'; S.appendChild(st); out.push('removed ' + killed + ' decorative numeral(s) drawn by CSS'); }
 return out;
-})()`;
+})`;
 
 /** type floor: body (≥ 6 words) 20px, everything readable 18px */
 export const FONT_FLOOR_JS = String.raw`(function(role){
@@ -120,9 +141,11 @@ best.style.setProperty('max-height', 'none', 'important');
 best.style.setProperty('min-height', target + 'px', 'important');
 if (cs.display.indexOf('grid') >= 0){ best.style.setProperty('grid-auto-rows', '1fr', 'important'); best.style.setProperty('align-content', 'stretch', 'important'); best.style.setProperty('align-items', 'stretch', 'important'); }
 else if (cs.display.indexOf('flex') >= 0){ if (cs.flexDirection.indexOf('column') === 0) best.style.setProperty('justify-content', 'space-evenly', 'important'); else best.style.setProperty('align-items', 'stretch', 'important'); }
+// connectors / arrows / dots between the cards keep their size and sit centred (never stretched into bars)
+Array.prototype.forEach.call(best.children, function(k){ if ((k.innerText || '').trim()) return; var kr = k.getBoundingClientRect(); k.style.setProperty('align-self', 'center', 'important'); k.style.setProperty('justify-self', 'center', 'important'); if (kr.height > 0) k.style.setProperty('height', kr.height + 'px', 'important'); if (kr.width > 0) k.style.setProperty('width', kr.width + 'px', 'important'); });
 out.push('content block ' + Math.round(r.height) + '→' + Math.round(target) + 'px tall');
 // cards: content centred vertically so the extra height reads as design, not as a gap
-Array.prototype.forEach.call(best.children, function(k){ if (!paints(k)) return; var kc = getComputedStyle(k);
+Array.prototype.forEach.call(best.children, function(k){ if (!paints(k) || !(k.innerText || '').trim()) return; var kc = getComputedStyle(k);
   k.style.setProperty('height', 'auto', 'important'); k.style.setProperty('max-height', 'none', 'important');
   if (kc.display === 'flex' && kc.flexDirection.indexOf('column') === 0) k.style.setProperty('justify-content', 'center', 'important');
   else if (kc.display === 'block'){ k.style.setProperty('display', 'flex', 'important'); k.style.setProperty('flex-direction', 'column', 'important'); k.style.setProperty('justify-content', 'center', 'important'); k.style.setProperty('align-items', kc.textAlign === 'center' ? 'center' : 'flex-start', 'important'); }
@@ -175,7 +198,7 @@ export async function finishSlideV4(deck: Pick<Deck, "assets" | "design"> & { en
   let cur = base;
   const fixes: string[] = [];
   // 1. decorative numerals: always removed (removing never creates an overflow)
-  const d = await run(deck, n, cur.html, renderDir, (p) => p.evaluate(DECOR_JS));
+  const d = await run(deck, n, cur.html, renderDir, (p) => p.evaluate(`(${DECOR_JS})(${JSON.stringify(role)})`));
   if (d.fixes.length) {
     cur = d;
     fixes.push(...d.fixes);
