@@ -106,12 +106,12 @@ test("tier routing: design/art/vision never use fast-tier models and Gemini stay
   assert.equal(llm.applyTierPolicy("design", [fast]).length, 0);
   assert.equal(llm.applyTierPolicy("vision", [fast]).length, 0);
   assert.equal(llm.applyTierPolicy("brief", [fast]).length, 1);
-  // Kimi K2.6 is the first backup right after the Gemini Flash models; the slower NVIDIA models stay after Mistral/SambaNova
+  // Nemotron 3.5 Super VL is the first backup right after the Gemini Flash models; the slower NVIDIA models stay after Mistral/SambaNova
   const dr = llm.routesFor("design");
   const d = dr.map((r) => r.provider);
   const lastGemini = dr.map((r) => r.provider === "google" && /^gemini/.test(r.model)).lastIndexOf(true);
-  assert.equal(dr[lastGemini + 1].model, "moonshotai/kimi-k2.6");
-  const minimax = dr.findIndex((r) => r.model === "minimaxai/minimax-m3.1-flash");
+  assert.equal(dr[lastGemini + 1].model, "nvidia/nemotron-3.5-super-vl-120b-a12b");
+  const minimax = dr.findIndex((r) => r.model === "nvidia/nemotron-3-ultra-550b-a55b");
   const at = (m: string) => dr.findIndex((r) => r.model === m);
   assert.ok(at("mistral-large-4") < minimax && at("DeepSeek-V3.1") < minimax);
   assert.ok(minimax < d.indexOf("openrouter"));

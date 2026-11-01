@@ -85,25 +85,38 @@ test("a daily 429 on the target model also stops its alias", async () => {
   assert.deepEqual(calls, ["gemini-3.8-flash", "mistral-small-2603"], "the alias 3.7 is not called once 3.8's day is used");
 });
 
-test("DESIGN_PRIMARY=nvidia-kimi makes Kimi the main designer; unset = Gemini first, Kimi first backup", () => {
+test("DESIGN_PRIMARY=nvidia makes the NVIDIA models the main designers (Nemotron Super VL, Ultra, Glimmer), Gemini right after; no Kimi", () => {
   setKeys(...ALL);
   process.env.ALLOW_NVIDIA_PRODUCTION = "true";
+  delete process.env.DESIGN_PRIMARY;
+  delete process.env.NVIDIA_DESIGN_MODELS;
   let d = ids(llm.routesFor("design"));
   assert.ok(isFlash(d[0]));
-  assert.equal(d[3], "nvidia:moonshotai/kimi-k2.6", "right after the 3 Gemini Flash models");
-  process.env.DESIGN_PRIMARY = "nvidia-kimi";
-  for (const role of ["design", "art"] as const) {
-    d = ids(llm.routesFor(role));
-    assert.equal(d[0], "nvidia:moonshotai/kimi-k2.6");
-    assert.ok(isFlash(d[1]), `${role}: Gemini right after Kimi`);
-    assert.equal(d.filter((x) => x === "nvidia:moonshotai/kimi-k2.6").length, 1);
+  assert.equal(d[3], "nvidia:nvidia/nemotron-3.5-super-vl-120b-a12b", "right after the 3 Gemini Flash models");
+  for (const v of ["nvidia", "nvidia-kimi", "NVIDIA"]) {
+    process.env.DESIGN_PRIMARY = v;
+    for (const role of ["design", "art"] as const) {
+      d = ids(llm.routesFor(role));
+      assert.deepEqual(d.slice(0, 3), ["nvidia:nvidia/nemotron-3.5-super-vl-120b-a12b", "nvidia:nvidia/nemotron-3-ultra-550b-a55b", "nvidia:meta/muse-glimmer-30b"], `${role} (${v})`);
+      assert.ok(isFlash(d[3]), `${role}: Gemini right after the NVIDIA models`);
+      assert.equal(d.filter((x) => x === "nvidia:nvidia/nemotron-3.5-super-vl-120b-a12b").length, 1, "no duplicate route");
+    }
   }
+  for (const role of ["design", "art", "vision", "brief"] as const) assert.ok(!ids(llm.routesFor(role)).some((x) => /kimi/.test(x)), `${role}: Kimi is gone (404 for this account)`);
+  // the order can be changed with one env var
+  process.env.NVIDIA_DESIGN_MODELS = "nvidia/nemotron-3-ultra-550b-a55b, nvidia:meta/muse-glimmer-30b";
+  d = ids(llm.routesFor("design"));
+  assert.deepEqual(d.slice(0, 2), ["nvidia:nvidia/nemotron-3-ultra-550b-a55b", "nvidia:meta/muse-glimmer-30b"]);
+  assert.ok(isFlash(d[2]));
+  assert.ok(!ids(llm.routesFor("vision")).slice(0, 1).includes("nvidia:nvidia/nemotron-3-ultra-550b-a55b"), "the design list does not leak into vision");
+  delete process.env.NVIDIA_DESIGN_MODELS;
   process.env.DESIGN_PRIMARY = "gemini";
   assert.ok(isFlash(ids(llm.routesFor("design"))[0]));
   // without the NVIDIA opt-in the switch does nothing (trial terms)
-  process.env.DESIGN_PRIMARY = "nvidia-kimi";
+  process.env.DESIGN_PRIMARY = "nvidia";
   delete process.env.ALLOW_NVIDIA_PRODUCTION;
   assert.ok(!llm.routesFor("design").some((r) => r.provider === "nvidia"));
+  delete process.env.DESIGN_PRIMARY;
 });
 
 test("revisions: Gemini first while quota is plentiful, strong backups first when it runs low — same chain, nothing dropped", () => {
@@ -115,7 +128,7 @@ test("revisions: Gemini first while quota is plentiful, strong backups first whe
   assert.deepEqual(llm.revisionRoutes(chain), chain, "plenty left: unchanged");
   process.env.V3_GEMINI_DRAFT_RESERVE = "100";
   const low = ids(llm.revisionRoutes(chain));
-  assert.deepEqual(low.slice(0, 4), ["nvidia:moonshotai/kimi-k2.6", "mistral:mistral-large-4", "sambanova:DeepSeek-V3.1", "zai:glm-4.7-flash"]);
+  assert.deepEqual(low.slice(0, 4), ["nvidia:nvidia/nemotron-3.5-super-vl-120b-a12b", "mistral:mistral-large-4", "sambanova:DeepSeek-V3.1", "zai:glm-4.7-flash"]);
   assert.ok(isFlash(low[5]), "Gemini follows the backups");
   assert.deepEqual([...low].sort(), [...ids(chain)].sort(), "same routes, only the order changes");
   assert.deepEqual(llm.revisionRoutes(chain, "gemini-first"), chain);

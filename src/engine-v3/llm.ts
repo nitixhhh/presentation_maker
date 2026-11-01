@@ -233,6 +233,29 @@ export function routesFor(role: Role, opts: { all?: boolean } = {}): Route[] {
   return opts.all ? routes : routes.filter((r) => providerReady(r.provider));
 }
 
+/** DESIGN_PRIMARY switch: `value` may be one word or a list (e.g. ["nvidia", "nvidia-kimi"]). */
+function primaryOn(prim: any): boolean {
+  if (!prim?.env) return false;
+  const v = String(process.env[prim.env] || "").trim().toLowerCase();
+  const vals = (Array.isArray(prim.value) ? prim.value : [prim.value]).map((x: any) => String(x).toLowerCase());
+  return !!v && vals.includes(v);
+}
+
+/** The routes the switch puts first for a role: env `listEnv` (comma-separated model ids, e.g. NVIDIA_DESIGN_MODELS) overrides `prepend`. */
+export function primaryRoutes(prim: any, role: string): Route[] {
+  const fromCfg = ((prim?.prepend?.[role] || []) as any[]).map(parseRoute).filter(Boolean) as Route[];
+  const raw = prim?.listEnv ? String(process.env[prim.listEnv] || "").trim() : "";
+  if (!raw || !fromCfg.length) return fromCfg; // roles without a prepend list are left alone
+  const prov = prim.listProvider || fromCfg[0].provider;
+  const fromEnv = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => parseRoute(s.includes(":") ? s : `${prov}:${s}`))
+    .filter(Boolean) as Route[];
+  return fromEnv.length ? fromEnv : fromCfg;
+}
+
 const isGemini = (r: Route) => r.provider === "google" && /^gemini/i.test(r.model);
 
 /**
@@ -248,7 +271,7 @@ export function placeOptIn(routes: Route[], role: string, o: any): Route[] {
   const pre = list(o.prepend), midG = list(o.afterGemini), midA = list(o.afterAnchors), post = list(o.append);
   // a one-setting switch that makes this provider the MAIN model for some roles (e.g. DESIGN_PRIMARY=nvidia-kimi)
   const prim = o.primary;
-  if (prim?.env && String(process.env[prim.env] || "").trim().toLowerCase() === String(prim.value).toLowerCase()) pre.unshift(...list(prim.prepend));
+  if (primaryOn(prim)) pre.unshift(...primaryRoutes(prim, role));
   // anchors: provider ids ("mistral") or exact routes ("sambanova:DeepSeek-V3.1")
   const anchors: string[] = Array.isArray(o.anchorRoutes) ? o.anchorRoutes : Array.isArray(o.anchorProviders) ? o.anchorProviders : [];
   let cutG = -1, cutA = -1;
