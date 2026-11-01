@@ -561,8 +561,9 @@ async function visionPick(got: { c: Candidate; buf: Buffer }[], query: string, s
     const picks: string[] = (Array.isArray(data?.pick) ? data.pick : []).map((x: any) => String(x).trim().toUpperCase().charAt(0));
     const out = picks.map((l) => got[l.charCodeAt(0) - 65]).filter(Boolean);
     return Array.from(new Set(out));
-  } catch {
-    return got;
+  } catch (e) {
+    console.warn("[v4] photo pick failed — no photo rather than an unchecked one", String((e as any)?.message || e).slice(0, 120));
+    return [];
   }
 }
 
@@ -590,8 +591,13 @@ export function pruneHistory(messages: Msg[]): Msg[] {
           } catch {
             return { ...tc, function: { ...tc.function, arguments: JSON.stringify({ html: "(earlier draft omitted)" }) } };
           }
-          if (typeof args.html === "string") args.html = "(earlier draft omitted)";
-          return { ...tc, function: { ...tc.function, arguments: JSON.stringify(args).slice(0, 700) } };
+          // shorten every long string field but keep the arguments valid JSON (the API validates them)
+          for (const k of Object.keys(args || {})) {
+            if (k === "html" && typeof args[k] === "string") args[k] = "(earlier draft omitted)";
+            else if (typeof args[k] === "string" && args[k].length > 300) args[k] = args[k].slice(0, 300) + "…";
+            else if (args[k] && typeof args[k] === "object" && JSON.stringify(args[k]).length > 600) args[k] = "(omitted)";
+          }
+          return { ...tc, function: { ...tc.function, arguments: JSON.stringify(args) } };
         }),
       } as Msg;
     }

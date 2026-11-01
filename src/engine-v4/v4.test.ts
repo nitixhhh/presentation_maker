@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readSkill, resolveSkill, layoutIds, listSkills } from "./skills";
 import { expandIcons, collapseIcons, iconsInHtml } from "./iconRender";
 import { makeDiagram } from "./diagrams";
-import { cleanAgentHtml } from "./designerAgent";
+import { cleanAgentHtml, pruneHistory } from "./designerAgent";
 import { outlineFromBrief } from "./planner";
 import { engineFor, isOwner } from "../server/engineChoice";
 
@@ -88,4 +88,22 @@ test("engine choice: v3 default, only the owner may pick", () => {
   assert.equal(isOwner({ id: "8fdf054a-dc0d-4ed3-8a31-d77cf7ba4cf8" }), true);
   assert.equal(isOwner({ id: "00000000-dc0d-4ed3-8a31-d77cf7ba4cf8" }), false);
   process.env = old;
+});
+
+test("pruned agent history keeps every tool-call argument valid JSON", () => {
+  const big = "<div>" + "x".repeat(5000) + "</div>";
+  const msgs: any[] = [
+    { role: "system", content: "s" },
+    { role: "user", content: "u" },
+    { role: "assistant", content: null, tool_calls: [{ id: "a", type: "function", function: { name: "check_slide", arguments: JSON.stringify({ html: big }) } }, { id: "b", type: "function", function: { name: "make_diagram", arguments: JSON.stringify({ kind: "flow", items: Array.from({ length: 60 }, (_, i) => ({ title: "step " + i, desc: "d".repeat(40) })) }) } }] },
+    { role: "tool", tool_call_id: "a", content: "r".repeat(5000) },
+    { role: "assistant", content: null, tool_calls: [{ id: "c", type: "function", function: { name: "check_slide", arguments: JSON.stringify({ html: big }) } }] },
+    { role: "tool", tool_call_id: "c", content: "ok" },
+    { role: "assistant", content: null, tool_calls: [{ id: "d", type: "function", function: { name: "submit_slide", arguments: JSON.stringify({ html: big }) } }] },
+  ];
+  const out = pruneHistory(msgs as any);
+  for (const m of out as any[]) for (const tc of m.tool_calls || []) assert.doesNotThrow(() => JSON.parse(tc.function.arguments));
+  assert.match((out[2] as any).tool_calls[0].function.arguments, /omitted/);
+  assert.ok(String((out[3] as any).content).length < 1400);
+  assert.equal((out[4] as any).tool_calls[0].function.arguments.length > 4000, true); // last two assistant turns stay whole
 });
