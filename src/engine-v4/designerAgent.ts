@@ -151,7 +151,10 @@ How to work (call independent tools together in one turn):
 
 Hard rules:
 - HTML = one <style> block (every selector starts with .slide) + the markup that goes inside <section class="slide">. No <script>, no external URLs, no emoji as icons, no position:fixed.
-- Icons: <i class="ic" data-icon="ICON_ID"></i> (ids from search_icons), sized with CSS width/height, coloured with CSS color. Place every icon you searched for, or drop that idea.
+- Icons: <i class="ic" data-icon="ICON_ID"></i> (ids from search_icons), sized with CSS width/height, coloured with CSS color. Each point gets its OWN icon that depicts that point (never the same icon twice in a list). Place every icon you searched for, or drop that idea.
+- Fill the canvas: the content block spans roughly x 80–1200, y 190–660. No half-empty columns — enlarge type, add the visual, or widen cards. Layouts are flex/grid with height:auto, never fixed heights that the text can overflow.
+- Photos: show them clearly; a dark scrim only directly behind text that sits on the photo, never over a whole photo with no text on it. Big decorative numbers never overlap photos or text.
+- Title slide: a hero visual (photo from search_photos/assets, or a large icon/diagram composition) plus a neatly aligned presenter block from the placeholders.
 - Content: only the text in your brief (you may tighten wording). Never invent numbers, dates, names, emails, URLs or sources. Keep citation markers as <sup>[2]</sup>. Write placeholders like {{P1}} exactly.
 - Sizes: title 44–64px, body 24–30px, labels ≥ 18px, at most ~55 words of body text; text ≥ 56px from the edges; every word inside a text element (h1–h4, p, li, span, strong, small, figcaption, td).
 - Colours: only the deck variables var(--bg) var(--surface) var(--ink) var(--muted) var(--primary) var(--accent) var(--accent2) (tints with color-mix are fine); text must contrast with what is behind it. Fonts: var(--font-heading), var(--font-body).
@@ -283,6 +286,7 @@ export async function runDesignerAgent(ctx: AgentCtx): Promise<AgentResult> {
     { role: "user", content: designerUserPrompt(deck, os, ctx.citeMap, []).replace(/\nVISUAL: [^\n]*/, `\nVISUAL: ${visualLine(ctx.brief, deck.assets.filter((a) => a.forSlides.includes(os.n) && a.origin !== "upload"), imagesOn)}`) },
   ];
   const searched = new Map<string, string[]>(); // query → icon ids returned
+  const skillsRead = new Set<string>();
   let requests = 0, checks = 0, submits = 0, visionCalls = 0;
   let provider = "", model = "";
   let best: { html: string; high: number; insp: Inspection; vision: AgentResult["lastVision"] } | null = null;
@@ -310,9 +314,31 @@ export async function runDesignerAgent(ctx: AgentCtx): Promise<AgentResult> {
     const issues = insp.issues.slice();
     const exp = expandIcons(html);
     if (exp.missing.length) issues.push({ type: "icon-unknown", severity: "medium", detail: `No icon matches: ${exp.missing.join(", ")} — use ids from search_icons.` });
+    const counts = new Map<string, number>();
+    for (const id of iconsInHtml(html)) counts.set(id, (counts.get(id) || 0) + 1);
+    const repeated = [...counts].filter(([, c]) => c > 1).map(([id]) => id.split(":").pop());
+    if (repeated.length && counts.size < iconsInHtml(html).length) issues.push({ type: "icon-repeated", severity: "medium", detail: `The same icon is used for different points (${repeated.join(", ")}). Give each point its own icon that depicts it (search_icons).` });
     const unused = unusedIcons(html);
     if (unused.length) issues.push({ type: "icons-unused", severity: "medium", detail: `You searched icons for ${unused.map((q) => `"${q}"`).join(", ")} but placed none of them. Place them (<i class="ic" data-icon="ID">) next to their text, or drop the idea.` });
     if (os.role !== "title" && os.role !== "references" && os.role !== "closing" && !/data-icon|v3-diagram|v4-mermaid|<img|<svg|background-image/i.test(html)) issues.push({ type: "no-visual", severity: "medium", detail: "The slide has no visual (icon, diagram, chart or photo) — add one that explains the content." });
+    // small type the DOM check can miss (short labels, card captions): read the slide's own CSS
+    if (os.role !== "references") {
+      const small: string[] = [];
+      for (const m of html.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        const sel = m[1].trim(), fs = /font-size\s*:\s*(\d+(?:\.\d+)?)px/.exec(m[2]);
+        if (!fs || /@|foot|source|cite|credit|ref|kicker|sup|eyebrow|caption-src|page|num/i.test(sel)) continue;
+        if (Number(fs[1]) < 18) small.push(`${sel.replace(/\s+/g, " ").slice(-40)} ${fs[1]}px`);
+      }
+      for (const m of html.matchAll(/<(p|span|div|li|h\d)[^>]*style="[^"]*font-size:\s*(\d+(?:\.\d+)?)px/g)) if (Number(m[2]) < 18) small.push(`inline ${m[2]}px`);
+      if (small.length) issues.push({ type: "small-type", severity: small.some((s) => Number(/(\d+(?:\.\d+)?)px$/.exec(s)?.[1]) < 16) ? "high" : "medium", detail: `Text set below 18px: ${small.slice(0, 4).join("; ")}. Card text and labels need ≥18px (sentences 22–28px) — make room by cutting words, not by shrinking type.` });
+    }
+    if (os.role === "title" && !/<img|background-image|v3-diagram|v4-mermaid/i.test(html) && (html.match(/data-icon=/g) || []).length < 3)
+      issues.push({ type: "title-no-visual", severity: "medium", detail: "The title slide has no hero visual — add a photo (search_photos) or a large icon/diagram composition so half the slide is not empty." });
+    {
+      const sentences = html.replace(/<style[\s\S]*?<\/style>/g, " ").replace(/<[^>]+>/g, "\n").split(/\n|(?<=[.!?])\s+/).map((x) => x.replace(/\s+/g, " ").trim().toLowerCase()).filter((x) => x.split(" ").length >= 5);
+      const dup = sentences.find((x, k) => sentences.indexOf(x) !== k);
+      if (dup) issues.push({ type: "repeated-text", severity: "high", detail: `The same sentence appears twice ("${dup.slice(0, 60)}") — keep it once.` });
+    }
     const high = issues.filter((i) => i.severity === "high").length;
     let vision: AgentResult["lastVision"] = null;
     if (withVision && high === 0 && visionCalls < 2) {
@@ -331,10 +357,19 @@ export async function runDesignerAgent(ctx: AgentCtx): Promise<AgentResult> {
   function reportIssues(rec: { insp: Inspection; vision: AgentResult["lastVision"] }) {
     const iss = rec.insp.issues.filter((i) => i.severity !== "low").slice(0, 10).map((i) => ({ type: i.type, severity: i.severity, detail: mask(i.detail).slice(0, 240) }));
     const high = iss.filter((i) => i.severity === "high").length;
+    const types = new Set(iss.map((i) => i.type));
+    const hints: string[] = [];
+    if (["out-of-canvas", "text-clipped", "overflow", "text-past-panel", "text-overflow"].some((t) => types.has(t)))
+      hints.push("Content is taller/wider than its box. Fix the box, not the font: remove fixed heights on grids/cards (height:auto, align-content:start), give the grid more room (content area is y 190–660), reduce padding, gaps and icon-badge size, or cut words. Never set body text below 20px.");
+    if (types.has("too-much-text")) hints.push("Cut the text: short phrases, at most ~40 words on the slide; the details go in the speaker notes.");
+    if (types.has("small-body") || types.has("small-label") || types.has("tiny-text") || types.has("small-type")) hints.push("Make room for bigger text by cutting words or using fewer, wider columns — labels ≥18px, sentences 22–28px.");
+    if (types.has("sparse")) hints.push("Grow the content: wider cards or a larger visual so the content block spans ~1120×440px.");
+    if (types.has("text-overlap") || types.has("text-covered")) hints.push("Put the parts in one flex/grid container instead of separate absolute boxes so nothing can overlap.");
     return {
       ready: high === 0 && !(rec.vision && rec.vision.score < 6),
       high_issues: high,
       issues: iss,
+      ...(hints.length ? { how_to_fix: hints } : {}),
       auto_fixed: rec.insp.autoFixes.slice(0, 6),
       visual_review: rec.vision ? { score: rec.vision.score, issues: rec.vision.issues.map(mask) } : undefined,
     };
@@ -347,8 +382,12 @@ export async function runDesignerAgent(ctx: AgentCtx): Promise<AgentResult> {
     ctx.status(statusFor({ name, args }));
     try {
       switch (name) {
-        case "read_skill":
-          return readSkill(String(args.name || args.path || "INDEX.md"));
+        case "read_skill": {
+          const nm = String(args.name || args.path || "INDEX.md");
+          skillsRead.add(nm.toLowerCase());
+          if (skillsRead.size > 6) return "You have read enough guides for one slide. Design the slide now: write the HTML and call check_slide.";
+          return readSkill(nm);
+        }
         case "search_icons": {
           const out = handleIconTool(name, args);
           try {
@@ -359,7 +398,7 @@ export async function runDesignerAgent(ctx: AgentCtx): Promise<AgentResult> {
         case "get_icon":
           return handleIconTool(name, args);
         case "search_photos":
-          return JSON.stringify(await searchPhotos(deck, os.n, String(args.query || os.title), String(args.orientation || "any")));
+          return JSON.stringify(await searchPhotos(deck, os.n, String(args.query || os.title), String(args.orientation || "any"), os.title));
         case "make_diagram": {
           const r = await makeDiagram(args, deck.design);
           if (!r.markup) return JSON.stringify({ error: r.warnings.join("; ") || "could not draw this diagram" });
@@ -379,7 +418,18 @@ export async function runDesignerAgent(ctx: AgentCtx): Promise<AgentResult> {
           const html = cleanAgentHtml(String(args.html));
           const lc0 = lastChecked as { src: string; html: string; insp: Inspection; vision: AgentResult["lastVision"] } | null;
           const rec = lc0 && lc0.src === html ? lc0 : await check(html, false);
-          const high = rec.insp.issues.filter((i) => i.severity === "high");
+          let high = rec.insp.issues.filter((i) => i.severity === "high");
+          // overflow-type problems: let the engine's auto-fit try once before sending the agent back
+          if (high.length && high.every((i) => FITTABLE.has(i.type))) {
+            try {
+              const fx = await inspectSlide(deck, os.n, fill(html), ctx.renderDir, os.role, ctx.allowedText, { enforce: true, fixContrast: true });
+              if (!fx.issues.some((i) => i.severity === "high")) {
+                submitted = { html: collapseIcons(mask(fx.html)), notes: mask(String(args.notes || os.notes || "")), note: "auto-fitted on submit" };
+                lastChecked = { src: html, html: submitted.html, insp: fx, vision: rec.vision };
+                return JSON.stringify({ accepted: true, auto_fitted: true });
+              }
+            } catch {}
+          }
           if (high.length && submits < 3) return JSON.stringify({ accepted: false, reason: "the slide still has high-severity problems — fix them and submit again", ...reportIssues(rec) });
           submitted = { html: rec.html, notes: mask(String(args.notes || os.notes || "")), note: args.note ? String(args.note).slice(0, 200) : high.length ? `submitted with ${high.length} open issue(s)` : undefined };
           return JSON.stringify({ accepted: true });
@@ -398,7 +448,7 @@ export async function runDesignerAgent(ctx: AgentCtx): Promise<AgentResult> {
     if (turn === maxTurns - 1) messages.push({ role: "user", content: "Last turn: call submit_slide with your best HTML and notes now." });
     let r;
     try {
-      r = await chat("agent", messages, { tools, temperature: 0.5, maxTokens: deck.brief.language === "Hindi" ? 16000 : 12000, timeoutMs: 240_000, label: `v4 slide ${os.n} turn ${turn + 1}` });
+      r = await chat("agent", checks > 0 ? pruneHistory(messages) : messages, { tools, temperature: 0.5, maxTokens: deck.brief.language === "Hindi" ? 16000 : 12000, timeoutMs: 240_000, label: `v4 slide ${os.n} turn ${turn + 1}` });
     } catch (e: any) {
       console.warn(`[v4] slide ${os.n}: agent call failed — ${String(e?.message || e).slice(0, 200)}`);
       break;
@@ -462,7 +512,7 @@ async function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T
   return Promise.race([p.catch(() => fallback), new Promise<T>((r) => setTimeout(() => r(fallback), ms))]);
 }
 
-export async function searchPhotos(deck: Deck, n: number, query: string, orientation: string) {
+export async function searchPhotos(deck: Deck, n: number, query: string, orientation: string, slideTitle = "") {
   if (deck.request.imageMode === "none") return { error: "images are switched off for this deck — use icons, a diagram or typography" };
   const q = query.replace(/[^\p{L}\p{N}\s-]/gu, " ").replace(/\s+/g, " ").trim().slice(0, 80);
   if (q.length < 3) return { error: "query too short" };
@@ -474,10 +524,18 @@ export async function searchPhotos(deck: Deck, n: number, query: string, orienta
   if (orientation === "portrait") cands.sort((a, b) => a.width / a.height - b.width / b.height);
   const dir = assetDir(deck.id);
   const out: any[] = [];
-  for (const c of cands.slice(0, 5)) {
+  // download a few candidates, then let the vision model drop charts, text-heavy scans and off-topic pictures
+  const got: { c: Candidate; buf: Buffer }[] = [];
+  await Promise.all(
+    cands.slice(0, 5).map(async (c) => {
+      const buf = await download(c.url, 15000);
+      if (buf) got.push({ c, buf });
+    })
+  );
+  got.sort((a, b) => cands.indexOf(a.c) - cands.indexOf(b.c));
+  const picked = got.length ? await visionPick(got, q, slideTitle) : got;
+  for (const { c, buf } of picked) {
     if (out.length >= 2) break;
-    const buf = await download(c.url, 15000);
-    if (!buf) continue;
     const id = `p${n}_${deck.assets.length + 1}`;
     const s = await store(buf, dir, id);
     if (!s) continue;
@@ -488,4 +546,56 @@ export async function searchPhotos(deck: Deck, n: number, query: string, orienta
   }
   if (!out.length) return { results: [], note: "no usable photo found — use icons, a diagram or a big-number composition instead (do not search more than twice)" };
   return { results: out, note: "Use as <img src=\"asset:ID\" style=\"object-fit:cover\"> or background-image:url(asset:ID). Credits go to the References slide automatically." };
+}
+
+/** one vision call: which candidates are clean photos of the subject (no charts / text / screenshots)? */
+async function visionPick(got: { c: Candidate; buf: Buffer }[], query: string, slideTitle = ""): Promise<{ c: Candidate; buf: Buffer }[]> {
+  try {
+    const sharp = (await import("sharp")).default;
+    const tw = 360, th = 240;
+    const tiles = await Promise.all(got.map(async (g, i) => ({ input: await sharp(g.buf).resize(tw, th, { fit: "cover" }).jpeg({ quality: 70 }).toBuffer(), left: i * (tw + 10), top: 30 })));
+    const W = got.length * (tw + 10);
+    const labels = got.map((_, i) => `<text x="${i * (tw + 10) + 6}" y="22" font-size="20" font-family="sans-serif" font-weight="bold">${String.fromCharCode(65 + i)}</text>`).join("");
+    const sheet = await sharp({ create: { width: W, height: th + 40, channels: 3, background: "#ffffff" } }).composite([...tiles, { input: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${th + 40}">${labels}</svg>`), left: 0, top: 0 }]).jpeg({ quality: 75 }).toBuffer();
+    const { data } = await chatJson<any>("agent", [{ role: "user", content: [{ type: "text", text: `Candidate pictures A–${String.fromCharCode(64 + got.length)} for the presentation slide "${slideTitle || query}" (photo search: "${query}"). Pick the ones that are clean, good-looking photos (or clear renderings) that clearly show the slide's subject. Reject commercial product / brand / logo shots, charts, graphs, diagrams, maps with text, screenshots, scanned documents, pictures with large text or watermarks, and anything off-topic. Best first. Reply ONLY JSON: {"pick":["B","A"]} (empty list if none fit).` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${sheet.toString("base64")}` } }] }], { temperature: 0, maxTokens: 300, timeoutMs: 90_000, label: "v4 photo pick" });
+    const picks: string[] = (Array.isArray(data?.pick) ? data.pick : []).map((x: any) => String(x).trim().toUpperCase().charAt(0));
+    const out = picks.map((l) => got[l.charCodeAt(0) - 65]).filter(Boolean);
+    return Array.from(new Set(out));
+  } catch {
+    return got;
+  }
+}
+
+/**
+ * Keeps the agent's context small once it has a draft: older HTML drafts in tool-call arguments and long tool results
+ * (skill texts, earlier checks) are shortened. The last two assistant turns and everything after them stay whole.
+ * Smaller prompts = faster turns on the free models (a deck re-sends the conversation ~100 times).
+ */
+const FITTABLE = new Set(["out-of-canvas", "text-clipped", "text-past-panel", "text-overlap", "small-body", "tiny-text", "line-over-text"]);
+
+export function pruneHistory(messages: Msg[]): Msg[] {
+  const asst = messages.map((m, i) => (m.role === "assistant" ? i : -1)).filter((i) => i >= 0);
+  const keepFrom = asst.length >= 2 ? asst[asst.length - 2] : 0;
+  return messages.map((m, i) => {
+    if (i >= keepFrom || i < 2) return m;
+    if (m.role === "assistant" && (m as any).tool_calls?.length) {
+      return {
+        ...m,
+        tool_calls: (m as any).tool_calls.map((tc: ToolCall) => {
+          const a = tc.function.arguments || "";
+          if (a.length < 700) return tc;
+          let args: any;
+          try {
+            args = JSON.parse(a);
+          } catch {
+            return { ...tc, function: { ...tc.function, arguments: JSON.stringify({ html: "(earlier draft omitted)" }) } };
+          }
+          if (typeof args.html === "string") args.html = "(earlier draft omitted)";
+          return { ...tc, function: { ...tc.function, arguments: JSON.stringify(args).slice(0, 700) } };
+        }),
+      } as Msg;
+    }
+    if (m.role === "tool" && typeof m.content === "string" && m.content.length > 1400) return { ...m, content: m.content.slice(0, 1200) + " …[trimmed — call the tool again if you need the rest]" };
+    return m;
+  });
 }

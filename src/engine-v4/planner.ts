@@ -65,7 +65,9 @@ function systemPrompt(n: number): string {
 Steps: 1) read_skill("planner.md") (and "academic.md" for a class/university deck). 2) Call assign_slide for EVERY slide 1..${n} — several per turn. 3) finish_plan.
 Rules:
 - EXACTLY ${n} slides, numbered 1..${n}. Slide 1 = role "title". Slide ${n} = role "references" (the engine fills it with the real sources; leave points empty)${n >= 8 ? `, or make slide ${n - 1} "references" and slide ${n} "closing"` : ""}.
-- One idea per slide; titles ≤ 10 words; 2–4 points ≤ 15 words each, only from the RESEARCHED FACTS (attach fact_ids). Never invent numbers, dates, names or sources.
+- One idea per slide; titles ≤ 10 words. Content slides carry 3–5 points of 8–16 words, each with SUBSTANCE from the RESEARCHED FACTS: a name, year, number, mechanism, example or consequence (attach fact_ids). "Few civilizations reach posthuman stage" is too thin; "Bostrom (2003): almost all civilizations may go extinct before reaching a posthuman stage" is right. Never invent numbers, dates, names or sources.
+- Timeline / process slides: 4–6 dated events or steps. Agenda: one short item per section. Closing slide: 2–3 distinct take-aways (never repeat a sentence), no new claims.
+- Every content slide needs a real visual: a photo only when a concrete, on-topic subject exists (never product, brand or logo shots); otherwise a diagram, chart, big number or icon set. The title slide needs a hero visual (photo_query of the subject, or an icon/diagram composition).
 - Vary layouts: never the same layout on neighbouring slides, no layout more than twice. Mix photo, diagram/chart, icon cards and big-number slides. A chart only with ≥ 3 real numbers from the facts.
 - Photos only for concrete physical subjects; icons are real SVG icons (give 2–5 concepts).
 - Write all slide text in the deck language; photo_query/ai_prompt/icons stay in English.

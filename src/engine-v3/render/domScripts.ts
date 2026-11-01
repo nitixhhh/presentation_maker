@@ -275,6 +275,21 @@ texts.forEach(function(t){
   var txt = el.innerText.trim();
   if (t.words >= 7 && t.fontSize < 20 && !/^\s*\[\d+\]|https?:|doi|retrieved|wikipedia|credit|cc by|via wikimedia/i.test(txt)) issues.push({type:'small-body', severity: t.fontSize < 17 ? 'high' : 'medium', detail:'Body text "' + txt.slice(0,40) + '" is ' + Math.round(t.fontSize) + 'px — use 22–28px for sentences so the back row can read it.'});
 });
+// word-per-line wrapping (a column squeezed so narrow that each line holds one or two words)
+texts.forEach(function(t){
+  var el = document.querySelector('[data-v3-text="'+t.id+'"]'); if (!el || t.words < 6) return;
+  var lh = parseFloat(getComputedStyle(el).lineHeight); if (!(lh > 0)) lh = t.fontSize * 1.25;
+  var lines = Math.round(t.h / lh);
+  if (lines >= 3 && t.words / lines < 2.5) issues.push({type:'narrow-text', severity:'high', detail:'Text "' + el.innerText.trim().slice(0,40) + '" wraps to ' + lines + ' lines of 1–2 words (its box is only ' + Math.round(t.w) + 'px wide) — give the column more width or use fewer columns.'});
+});
+// big decorative numbers / words must not sit on photos or other text
+(function(){
+  var imgs = images.map(function(i){return i;});
+  SLIDE.querySelectorAll('*').forEach(function(el){ if (el.children.length) return; var cs = getComputedStyle(el); if (parseFloat(cs.fontSize) < 90 || !el.textContent.trim()) return;
+    var r = el.getBoundingClientRect(); var x = r.left-SR.left, y = r.top-SR.top;
+    imgs.forEach(function(i){ var ox = Math.min(x+r.width, i.x+i.w) - Math.max(x, i.x), oy = Math.min(y+r.height, i.y+i.h) - Math.max(y, i.y);
+      if (ox > 20 && oy > 20 && ox*oy > 0.25*r.width*r.height) issues.push({type:'decor-overlap', severity:'medium', detail:'The big "' + el.textContent.trim().slice(0,12) + '" sits on top of a picture — move it off the photo or drop it.'}); }); });
+})();
 // how much of the canvas carries content
 (function(){
   var g = 32, cells = {}, total = (1280/g)*(720/g);
@@ -282,6 +297,13 @@ texts.forEach(function(t){
   texts.forEach(function(t){ mark(t.x,t.y,t.w,t.h); });
   images.forEach(function(i){ mark(i.x,i.y,i.w,i.h); });
   SLIDE.querySelectorAll('svg').forEach(function(sv){ if (sv.parentElement && sv.parentElement.closest('svg')) return; var r = sv.getBoundingClientRect(); if (r.width*r.height < 1280*720*0.8) mark(r.left-SR.left, r.top-SR.top, r.width, r.height); });
+  // filled panels / cards / diagram nodes count as content too (a card is designed space, not an empty area)
+  SLIDE.querySelectorAll('*').forEach(function(el){ if (el.closest('svg')) return; var r = el.getBoundingClientRect(); var a = r.width*r.height; if (a < 1280*720*0.01 || a > 1280*720*0.8) return;
+    var cs = getComputedStyle(el); if (cs.visibility === 'hidden' || parseFloat(cs.opacity) < 0.2) return;
+    var bg = cs.backgroundColor || ''; var m = bg.match(/rgba?\(([^)]+)\)/); var sl = bg.match(/\/\s*([\d.]+)\s*\)$/);
+    var alpha = m ? (m[1].split(',')[3] !== undefined ? parseFloat(m[1].split(',')[3]) : 1) : sl ? parseFloat(sl[1]) : (!bg || bg === 'transparent' ? 0 : 1);
+    var bordered = parseFloat(cs.borderTopWidth) >= 1 && parseFloat(cs.borderLeftWidth) >= 1 && cs.borderTopStyle !== 'none';
+    if (alpha > 0.06 || cs.backgroundImage !== 'none' || bordered) mark(r.left-SR.left, r.top-SR.top, r.width, r.height); });
   var cov = Object.keys(cells).length / total;
   if (cov < 0.03) issues.push({type:'blank', severity:'high', detail:'The slide renders (almost) empty — the markup is broken or the content is hidden. Output a complete, visible slide.'});
   else if (cov < 0.28) issues.push({type:'sparse', severity:'medium', detail:'Only about ' + Math.round(cov*100) + '% of the slide carries content — large areas look unfinished. Make the visual larger, enlarge type, or rebalance the composition.'});

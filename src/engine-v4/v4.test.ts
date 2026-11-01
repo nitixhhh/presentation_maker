@@ -84,5 +84,8 @@ test("engine choice: v3 default, only the owner may pick", () => {
   assert.equal(engineFor(null, undefined), "v4");
   assert.equal(engineFor({ email: "second@x.io" }, "v3"), "v3");
   assert.equal(engineFor({ email: "x@y.z" }, "v3"), "v4");
+  process.env.OWNER_USER_IDS = "8fdf054a-dc0d-4ed3-8a31-d77cf7ba4cf8";
+  assert.equal(isOwner({ id: "8fdf054a-dc0d-4ed3-8a31-d77cf7ba4cf8" }), true);
+  assert.equal(isOwner({ id: "00000000-dc0d-4ed3-8a31-d77cf7ba4cf8" }), false);
   process.env = old;
 });

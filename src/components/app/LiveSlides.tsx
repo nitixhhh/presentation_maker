@@ -8,12 +8,13 @@ export default function LiveSlides({ live }: { live: LiveDeck }) {
   const slides = live.slides;
   const shown = slides.filter((s) => s.image).length;
   const [pick, setPick] = useState<number | null>(null);
-  // follow the work: the newest ready slide, else the first one being built — until the user taps a slide
+  // follow the work: the newest ready slide (or the first one being made) — until the user taps a slide
   const auto = useMemo(() => {
     const building = slides.find((s) => s.state === "building");
     const lastReady = [...slides].reverse().find((s) => s.image);
-    return (pick == null ? (building && (!lastReady || building.n === (lastReady?.n ?? 0) + 1) ? building : lastReady || building || slides[0]) : slides.find((s) => s.n === pick)) || slides[0];
+    return (pick == null ? lastReady || building || slides[0] : slides.find((s) => s.n === pick)) || slides[0];
   }, [slides, pick]);
+  const making = slides.filter((s) => s.state === "building" && s.n !== auto.n).slice(0, 2);
   if (!slides.length) return null;
   return (
     <section className="rise d2 space-y-3" aria-label="Your slides as they are made">
@@ -24,6 +25,9 @@ export default function LiveSlides({ live }: { live: LiveDeck }) {
         </span>
       </div>
       <Big slide={auto} />
+      {making.map((s) => (
+        <NowMaking key={s.n} slide={s} />
+      ))}
       <div className="-mx-4 flex snap-x gap-2.5 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
         {slides.map((s) => (
           <button
@@ -75,18 +79,40 @@ function Big({ slide }: { slide: LiveSlide }) {
   return <Building slide={slide} />;
 }
 
-const WAITING = ["Waiting for a free designer", "Another slide is being made first", "This slide is next in line"];
+/** one line under the big preview: what the agent is doing on a slide that is still being made */
+function NowMaking({ slide }: { slide: LiveSlide }) {
+  const text = useRotating(slide);
+  return (
+    <div className="flex items-center gap-3 rounded-[var(--r-md)] border border-[var(--rule)] bg-[rgba(255,253,248,.8)] px-4 py-3">
+      <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--accent)]" />
+      <span className="min-w-0">
+        <span className="block truncate text-[12px] font-medium text-[var(--muted)]">
+          Making slide {slide.n} · {slide.title}
+        </span>
+        <span key={text} className="block truncate text-[14.5px] font-medium text-[var(--ink)] [animation:liveFade_2.3s_ease-in-out]">
+          {text}
+        </span>
+      </span>
+    </div>
+  );
+}
 
-function Building({ slide }: { slide: LiveSlide }) {
-  const msgs = slide.state === "waiting" ? WAITING : slide.statuses.length ? slide.statuses : ["Reading the slide brief"];
+function useRotating(slide: LiveSlide) {
   const [i, setI] = useState(0);
   useEffect(() => {
     const t = setInterval(() => setI((x) => x + 1), 2300);
     return () => clearInterval(t);
   }, []);
+  const msgs = slide.state === "waiting" ? WAITING : slide.statuses.length ? slide.statuses : ["Reading the slide brief"];
   // the newest real step first, then the agent's earlier steps in turn
   const ordered = slide.state === "waiting" ? msgs : [msgs[msgs.length - 1], ...msgs.slice(0, -1).reverse()];
-  const text = ordered[i % ordered.length].replace(/…$/, "");
+  return ordered[i % ordered.length].replace(/…$/, "");
+}
+
+const WAITING = ["Waiting for a free designer", "Another slide is being made first", "This slide is next in line"];
+
+function Building({ slide }: { slide: LiveSlide }) {
+  const text = useRotating(slide);
   return (
     <div className="relative aspect-video w-full overflow-hidden rounded-[var(--r-lg)] border border-[var(--rule)] bg-[rgba(255,253,248,.9)]">
       <div className="live-shimmer absolute inset-0 opacity-70" />
@@ -107,7 +133,7 @@ function Building({ slide }: { slide: LiveSlide }) {
           <span className="block text-[12px] font-medium text-[var(--muted)]">
             Slide {slide.n} · {slide.title}
           </span>
-          <span key={`${slide.n}-${i}`} className="block truncate text-[15px] font-medium text-[var(--ink)] [animation:liveFade_2.3s_ease-in-out]">
+          <span key={`${slide.n}-${text}`} className="block truncate text-[15px] font-medium text-[var(--ink)] [animation:liveFade_2.3s_ease-in-out]">
             {text}
           </span>
         </span>

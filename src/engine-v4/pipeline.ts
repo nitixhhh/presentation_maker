@@ -14,6 +14,7 @@ import { runResearch } from "../engine-v3/agents/research";
 import { runArtDirector } from "../engine-v3/agents/artDirector";
 import { designSlide, designerSystemPrompt, reviseSlide, type DesignOut } from "../engine-v3/agents/designer";
 import { runImageDirector } from "../engine-v3/agents/imageDirector";
+import { deepenResearch } from "./deepen";
 import { addLogoAsset, logoSlides } from "../engine-v3/assets/logo";
 import { sourceImages } from "../engine-v3/assets/images";
 import { inspectSlide, LAYOUT_TYPES, GEOMETRY_TYPES, type Inspection } from "../engine-v3/qa/inspect";
@@ -24,7 +25,7 @@ import { fallbackSlideHtml } from "../engine-v3/agents/fallbackSlide";
 import { assetDir, deckDir, newDeckId, saveDeck } from "../engine-v3/store";
 import { availableProviders, chatJson, llmContext, usageSummary, usageLine, sleep } from "../engine-v3/llm";
 import { maskText } from "../engine-v3/privacy";
-import type { Deck, OutlineSlide, ProgressFn, SlideDesign, V3Request } from "../engine-v3/types";
+import type { Asset, Deck, OutlineSlide, ProgressFn, SlideDesign, V3Request } from "../engine-v3/types";
 import { runPlanner } from "./planner";
 import { runDesignerAgent, type AgentResult, type SlideBrief } from "./designerAgent";
 import { collapseIcons } from "./iconRender";
@@ -88,7 +89,7 @@ export async function generateDeckV4(req: V3Request, opts: V4Options = {}): Prom
 
   tt = Date.now();
   emit("Researching real sources", 10, "Research", `Searching Wikipedia + OpenAlex for: ${brief.researchQueries.join("; ")}`);
-  const research = await runResearch(brief, (m) => emit("Researching real sources", 14, "Research", m), req.topic);
+  const research = await deepenResearch(brief, await runResearch(brief, (m) => emit("Researching real sources", 14, "Research", m), req.topic), req.topic, (m) => emit("Researching real sources", 18, "Research", m));
   emit("Researching real sources", 20, "Research", `${research.facts.length} cited facts from ${research.sources.length} sources`);
   mark("research", tt);
 
@@ -129,6 +130,14 @@ export async function generateDeckV4(req: V3Request, opts: V4Options = {}): Prom
     if (logo) {
       assets.push(logo);
       emit("Finding images", 38, "Images", `Institution logo added — on the title${logo.forSlides.length > 1 ? "/closing" : ""} slide, small in the corner on the others`);
+    }
+  }
+  // v4: one vision pass drops photos that do not fit their slide (product/brand shots, charts, text, off-topic)
+  if (assets.some((a) => a.origin !== "upload" && a.origin !== "generated")) {
+    const dropped = await vetPhotos(assets, outline.slides, dir);
+    if (dropped.length) {
+      for (const a of dropped) assets.splice(assets.indexOf(a), 1);
+      emit("Finding images", 38, "Images", `dropped ${dropped.length} photo(s) that did not fit their slide: ${dropped.map((a) => `slide ${a.forSlides.join(",")}`).join("; ")}`);
     }
   }
   const design = await runArtDirector(brief, outline, assets.filter((a) => a.origin !== "upload"));
@@ -241,6 +250,8 @@ export async function generateDeckV4(req: V3Request, opts: V4Options = {}): Prom
     };
   }
 
+  const polishing: Promise<void>[] = [];
+  const polishSlots = limiter(Math.max(1, Number(process.env.V4_POLISHERS || 2)));
   async function buildSlide(os: OutlineSlide): Promise<void> {
     const ts = Date.now();
     const b = briefs.get(os.n)!;
@@ -282,18 +293,23 @@ export async function generateDeckV4(req: V3Request, opts: V4Options = {}): Prom
       saveSlides();
       slideEvt({ n: os.n, state: "ready", status: "Ready — polishing in the background", preview: true });
     } catch {}
-    // the v3 polish passes (never skipped)
-    try {
-      const final = await polish(os, d!, agent);
-      slides.set(os.n, final);
-    } catch (e: any) {
-      console.error(`[v4] slide ${os.n} polish failed — keeping the draft`, e);
-      emit("Visual QA", 88, `QA ${os.n}`, `could not finish the checks (${String(e?.message || e).slice(0, 80)}) — kept the draft`);
-    }
-    done++;
-    saveSlides();
-    slideEvt({ n: os.n, state: "done", status: "Done", preview: true });
-    agentStats.push({ n: os.n, requests: agent?.requests ?? 1, turns: agent?.turns ?? 0, checks: agent?.checks ?? 0, submitted: !!agent?.submitted, fallback: agent?.fallback, seconds: Math.round((Date.now() - ts) / 1000), model: agent?.model, icons: agent?.iconsUsed.length ?? 0, note: agent?.note });
+    // the v3 polish passes (never skipped) run beside the next designers, so a slot is free for the next slide at once
+    const designSeconds = Math.round((Date.now() - ts) / 1000);
+    polishing.push(
+      polishSlots(async () => {
+        try {
+          const final = await polish(os, d!, agent);
+          slides.set(os.n, final);
+        } catch (e: any) {
+          console.error(`[v4] slide ${os.n} polish failed — keeping the draft`, e);
+          emit("Visual QA", 88, `QA ${os.n}`, `could not finish the checks (${String(e?.message || e).slice(0, 80)}) — kept the draft`);
+        }
+        done++;
+        saveSlides();
+        slideEvt({ n: os.n, state: "done", status: "Done", preview: true });
+        agentStats.push({ n: os.n, requests: agent?.requests ?? 1, turns: agent?.turns ?? 0, checks: agent?.checks ?? 0, submitted: !!agent?.submitted, fallback: agent?.fallback, seconds: designSeconds, model: agent?.model, icons: agent?.iconsUsed.length ?? 0, note: agent?.note });
+      })
+    );
   }
 
   // designers: slide 1 first, then the rest — V4_DESIGNERS at once (the scheduler's per-provider limits throttle further)
@@ -314,6 +330,7 @@ export async function generateDeckV4(req: V3Request, opts: V4Options = {}): Prom
       }
     })
   );
+  await Promise.all(polishing);
   mark("designers+polish", tt);
   // any slide that never landed gets the calm backup layout so the deck is complete
   for (const os of outline.slides)
@@ -406,4 +423,42 @@ Reply ONLY JSON: {"overall": "one sentence", "revisions": [{"n": 3, "instruction
     }
     slideEvt({ n: s.n, state: "done", status: "Done", preview: true });
   }
+}
+
+/** vision check of the sourced photos against their slides; returns the assets to drop */
+async function vetPhotos(assets: Asset[], slides: OutlineSlide[], dir: string): Promise<Asset[]> {
+  const list = assets.filter((a) => a.origin !== "upload" && a.origin !== "generated").slice(0, 8);
+  if (!list.length) return [];
+  try {
+    const tw = 360, th = 240, lab = 26;
+    const tiles = await Promise.all(list.map(async (a, i) => ({ input: await sharp(path.join(dir, a.file)).resize(tw, th, { fit: "cover" }).jpeg({ quality: 70 }).toBuffer(), left: (i % 4) * (tw + 10), top: Math.floor(i / 4) * (th + lab + 10) + lab })));
+    const W = Math.min(4, list.length) * (tw + 10), H = Math.ceil(list.length / 4) * (th + lab + 10);
+    const labels = list.map((_, i) => `<text x="${(i % 4) * (tw + 10) + 4}" y="${Math.floor(i / 4) * (th + lab + 10) + 20}" font-size="20" font-family="sans-serif" font-weight="bold">${i + 1}</text>`).join("");
+    const sheet = await sharp({ create: { width: W, height: H, channels: 3, background: "#ffffff" } }).composite([...tiles, { input: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">${labels}</svg>`), left: 0, top: 0 }]).jpeg({ quality: 75 }).toBuffer();
+    const lines = list.map((a, i) => {
+      const s = slides.find((x) => a.forSlides.includes(x.n));
+      return `${i + 1}. slide "${s?.title || "?"}" — ${(s?.points || []).map((p) => p.text).join("; ").slice(0, 160)}`;
+    });
+    const { data } = await chatJson<any>("agent", [{ role: "user", content: [{ type: "text", text: `Each numbered picture was chosen for the slide listed below it. Reject a picture when it does NOT clearly show the slide's subject, or when it is a commercial product / brand / logo shot, a chart, graph, map or diagram with text, a screenshot, a scanned page, or has big text or a watermark. Keep good, relevant photos.\n${lines.join("\n")}\nReply ONLY JSON: {"reject":[numbers]}` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${sheet.toString("base64")}` } }] }], { temperature: 0, maxTokens: 300, timeoutMs: 90_000, label: "v4 photo vet" });
+    const rej: number[] = (Array.isArray(data?.reject) ? data.reject : []).map(Number).filter((x: number) => Number.isInteger(x) && x >= 1 && x <= list.length);
+    return rej.map((x) => list[x - 1]);
+  } catch {
+    return [];
+  }
+}
+
+/** tiny concurrency limiter */
+function limiter(n: number) {
+  let active = 0;
+  const q: (() => void)[] = [];
+  return async <T,>(fn: () => Promise<T>): Promise<T> => {
+    if (active >= n) await new Promise<void>((r) => q.push(r));
+    active++;
+    try {
+      return await fn();
+    } finally {
+      active--;
+      q.shift()?.();
+    }
+  };
 }

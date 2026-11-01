@@ -1,9 +1,8 @@
 /**
  * Which engine makes a deck. v3 stays the default on the live site; ENGINE_DEFAULT=v4 switches everyone.
- * The site owner (OWNER_EMAILS, comma-separated Google login emails) can pick either engine per deck with the
+ * The site owner (OWNER_USER_IDS = Supabase user ids and/or OWNER_EMAILS = Google login emails, comma-separated) can pick either engine per deck with the
  * "New engine (beta)" switch; everyone else always gets ENGINE_DEFAULT.
  */
-import type { AuthUser } from "./auth";
 
 export type Engine = "v3" | "v4";
 
@@ -18,13 +17,23 @@ export function ownerEmails(): string[] {
     .filter((s) => s.includes("@"));
 }
 
-export function isOwner(user: Pick<AuthUser, "email"> | null | undefined): boolean {
-  const e = String(user?.email || "").trim().toLowerCase();
+export function ownerUserIds(): string[] {
+  return String(process.env.OWNER_USER_IDS || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => /^[0-9a-f-]{20,}$/.test(s));
+}
+
+export function isOwner(user: { id?: string; email?: string } | null | undefined): boolean {
+  if (!user) return false;
+  const id = String(user.id || "").trim().toLowerCase();
+  if (id && ownerUserIds().includes(id)) return true;
+  const e = String(user.email || "").trim().toLowerCase();
   return !!e && ownerEmails().includes(e);
 }
 
 /** the engine for a new deck: the owner's explicit choice, else the site default */
-export function engineFor(user: Pick<AuthUser, "email"> | null | undefined, requested: unknown): Engine {
+export function engineFor(user: { id?: string; email?: string } | null | undefined, requested: unknown): Engine {
   if ((requested === "v3" || requested === "v4") && isOwner(user)) return requested;
   return engineDefault();
 }
