@@ -98,3 +98,96 @@ test("QA: every slide (references too) gets a vision review on its first render;
   const dom = await import("./render/domScripts");
   assert.match(dom.CONTRAST_FIX_JS, /box-shadow/);
 });
+
+test("images: daily Cloudflare budget persists, stops at the limit and after a 'daily allowance used' answer", async () => {
+  process.env.DECKCRAFT_STORAGE = "local";
+  const b = await import("./assets/imageBudget");
+  b.resetBudgetForTests();
+  process.env.CF_IMAGE_DAILY_LIMIT = "2";
+  assert.equal((await b.canGenerate()).ok, true);
+  await b.recordGeneration("ok");
+  await b.recordGeneration("ok");
+  const gate = await b.canGenerate();
+  assert.equal(gate.ok, false);
+  assert.match(gate.reason!, /budget reached \(2\/2/);
+  // survives a restart (read back from storage)
+  b.resetBudgetForTests();
+  assert.equal((await b.loadBudget()).used, 2);
+  process.env.CF_IMAGE_DAILY_LIMIT = "90";
+  assert.equal((await b.canGenerate()).ok, true);
+  await b.recordGeneration("quota");
+  b.resetBudgetForTests();
+  assert.match((await b.canGenerate()).reason!, /allowance is used up/);
+  process.env.CF_IMAGE_DAILY_LIMIT = "0";
+  assert.match((await b.canGenerate()).reason!, /switched off/);
+  delete process.env.CF_IMAGE_DAILY_LIMIT;
+  assert.ok(b.isDailyQuotaError(429, '{"errors":[{"message":"AiError: you have used up your daily free allocation of 10,000 neurons"}]}'));
+  assert.ok(!b.isDailyQuotaError(500, "neurons"));
+  // a new UTC day starts from zero
+  const fs2 = await import("node:fs");
+  const metaDir = path.join(process.env.DECKCRAFT_DATA_DIR!, "meta");
+  assert.ok(fs2.readdirSync(metaDir).some((f) => f.startsWith(`cf-images-${b.utcDay()}`)));
+});
+
+test("images: dropped photo slots are restored; references/agenda never get one", async () => {
+  const { restoreDroppedSlots } = await import("./agents/imageDirector");
+  const slides: any[] = [slide(1, "title", "photo"), slide(2, "content", "diagram"), slide(3, "content", "chart"), slide(4, "content", "generated"), slide(5, "content", "photo", { query: "VR headset" }), slide(6, "references", "photo")];
+  const items: any[] = [{ n: 1, source: "ai", subject: "x" }, { n: 4, source: "ai", subject: "y" }];
+  assert.deepEqual(restoreDroppedSlots(slides, items), [5]);
+  assert.deepEqual(items.find((x) => x.n === 5), { n: 5, source: "real", query: "VR headset", subject: "Slide 5", authentic: false, why: "restored: the outline asked for an image here" });
+  assert.ok(!items.some((x) => x.n === 6));
+});
+
+test("images: when the AI image fails (Cloudflare 429), the slot gets a real attributed photo; no second Cloudflare call", async () => {
+  process.env.DECKCRAFT_STORAGE = "local";
+  process.env.CLOUDFLARE_API_TOKEN = "test-token-0123456789";
+  process.env.CLOUDFLARE_ACCOUNT_ID = "acc123";
+  for (const k of ["GOOGLE_AI_API_KEY", "GROQ_API_KEY", "NVIDIA_NIM_API_KEY", "MISTRAL_API_KEY", "OPENROUTER_API_KEY", "ZAI_API_KEY", "SAMBANOVA_API_KEY"]) delete process.env[k];
+  const b = await import("./assets/imageBudget");
+  fs.rmSync(path.join(process.env.DECKCRAFT_DATA_DIR!, "meta"), { recursive: true, force: true }); // a fresh day
+  b.resetBudgetForTests();
+  const sharp = (await import("sharp")).default;
+  const jpeg = await sharp({ create: { width: 1400, height: 900, channels: 3, background: { r: 30, g: 90, b: 160 } } }).jpeg({ quality: 95 }).toBuffer();
+  const big = Buffer.concat([jpeg]);
+  let cf = 0;
+  const real = globalThis.fetch;
+  globalThis.fetch = (async (input: any) => {
+    const url = String(input?.url || input);
+    if (url.includes("api.cloudflare.com")) {
+      cf++;
+      return new Response('{"errors":[{"message":"AiError: AiError: you have used up your daily free allocation of 10,000 neurons"}]}', { status: 429 });
+    }
+    if (url.includes("commons.wikimedia.org/w/api.php") && url.includes("generator=search"))
+      return Response.json({ query: { pages: Object.fromEntries([1, 2].map((i) => [String(i), { index: i, title: `File:Virtual reality headset user ${i}.jpg`, imageinfo: [{ mime: "image/jpeg", width: 2000, height: 1300, thumburl: `https://upload.wikimedia.org/thumb/vr${i}.jpg`, thumbwidth: 1280, thumbheight: 832, descriptionurl: `https://commons.wikimedia.org/wiki/File:VR${i}.jpg`, extmetadata: { Artist: { value: "Jane Doe" }, LicenseShortName: { value: "CC BY-SA 4.0" }, ImageDescription: { value: "A person using a VR headset" } } }] }])) } });
+    if (url.includes("upload.wikimedia.org")) return new Response(big, { status: 200, headers: { "content-type": "image/jpeg" } });
+    return Response.json({});
+  }) as any;
+  try {
+    const { sourceImages } = await import("./assets/images");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dc-img-"));
+    const logs: string[] = [];
+    const slides: any[] = [slide(1, "title", "generated"), slide(4, "content", "generated")];
+    const assets = await sourceImages(slides, dir, { mode: "real-first", topic: "Are we living in a simulation", plan: { style: "flat vector", items: [{ n: 1, source: "ai", subject: "a person wearing a VR headset in a dark room" }, { n: 4, source: "ai", subject: "glowing code rain over a city" }] } }, (m) => logs.push(m));
+    assert.ok(cf <= 2, `the two AI slots ask in parallel at most once each (${cf})`);
+    const { generateImage } = await import("./assets/images");
+    const before = cf;
+    assert.equal(await generateImage("anything"), null);
+    assert.equal(cf, before, "after the daily-allowance answer Cloudflare is not asked again today");
+    assert.equal(assets.length, 2);
+    assert.notEqual(assets[0].sourceUrl, assets[1].sourceUrl, "never the same photo on two slides");
+    for (const a of assets) {
+      assert.equal(a.origin, "wikimedia");
+      assert.match(a.credit || "", /Jane Doe, CC BY-SA 4\.0, via Wikimedia Commons/);
+      assert.ok(fs.existsSync(path.join(dir, a.file)));
+    }
+    assert.ok(logs.some((l) => /real photos instead|searching real photos/.test(l)), logs.join("\n"));
+  } finally {
+    globalThis.fetch = real;
+  }
+});
+
+test("images: photo query from an AI subject sentence", async () => {
+  const { photoQueryFromSubject } = await import("./assets/images");
+  assert.equal(photoQueryFromSubject("a person wearing a VR headset in a dark room", "x"), "person wearing VR headset dark");
+  assert.equal(photoQueryFromSubject("", "Challenges"), "Challenges");
+});

@@ -71,6 +71,7 @@ export async function runImageDirector(brief: Brief, slides: OutlineSlide[], sty
       if (it.source === "real" && !it.query) it.query = (s.visual.query || s.title).slice(0, 80);
       if (it.source === "ai" && !it.subject) it.subject = s.visual.prompt || s.visual.idea || s.title;
     }
+    restoreDroppedSlots(slides, items);
     return { style: String(data.style || "").slice(0, 400), items };
   } catch {
     // the AI call failed: keep the story agent's own suggestion per slide
@@ -81,6 +82,31 @@ export async function runImageDirector(brief: Brief, slides: OutlineSlide[], sty
         .map((s) => ({ n: s.n, source: s.visual.kind === "photo" ? "real" : "ai", query: s.visual.query || s.title, subject: s.visual.prompt || s.title })),
     };
   }
+}
+
+/**
+ * The story agent asked for a photo / image on a slide but the image director's reply left that slide out (or said
+ * "none" while the deck still has room for images): put the slot back, so a photo slide never silently loses its image.
+ * References / agenda / chart / data slides stay without images; about half the deck at most carries images.
+ */
+export function restoreDroppedSlots(slides: OutlineSlide[], items: ImagePlanItem[]): number[] {
+  const restored: number[] = [];
+  const cap = Math.ceil(slides.length / 2) + 1;
+  const withImage = () => items.filter((x) => x.source !== "none").length;
+  for (const s of slides) {
+    if (s.visual.kind !== "photo" && s.visual.kind !== "generated") continue;
+    if (s.role === "references" || s.role === "agenda" || s.role === "data") continue;
+    const it = items.find((x) => x.n === s.n);
+    if (it && it.source !== "none") continue;
+    if (it && withImage() >= cap) continue; // the director said "none" deliberately and the deck has enough images
+    const real = s.visual.kind === "photo";
+    const item: ImagePlanItem = { n: s.n, source: real ? "real" : "ai", query: (s.visual.query || s.title).slice(0, 80), subject: s.visual.prompt || s.visual.idea || s.title, authentic: false, why: "restored: the outline asked for an image here" };
+    if (it) Object.assign(it, item);
+    else items.push(item);
+    restored.push(s.n);
+  }
+  items.sort((a, b) => a.n - b.n);
+  return restored;
 }
 
 /** The hard rule for AI images, appended mechanically to every prompt. */

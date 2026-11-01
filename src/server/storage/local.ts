@@ -5,6 +5,12 @@ import type { JobRecord } from "../jobs/types";
 import { DATA_ROOT } from "../paths";
 
 const JOBS_DIR = path.join(DATA_ROOT, "jobs");
+const META_DIR = path.join(DATA_ROOT, "meta");
+
+function metaPath(key: string) {
+  if (!/^[a-z0-9._-]+$/i.test(key)) throw new Error("bad meta key");
+  return path.join(META_DIR, `${key}.json`);
+}
 
 function jobPath(id: string) {
   if (!/^[a-z0-9-]+$/i.test(id)) throw new Error("bad job id");
@@ -73,6 +79,22 @@ export class LocalStorage implements StorageAdapter {
       .filter((j) => j.status === "done" && j.startedAt && j.finishedAt)
       .sort((a, b) => (b.finishedAt || "").localeCompare(a.finishedAt || ""))
       .slice(0, limit);
+  }
+
+  async getMeta(key: string) {
+    try {
+      return JSON.parse(fs.readFileSync(metaPath(key), "utf8"));
+    } catch {
+      return null;
+    }
+  }
+
+  async putMeta(key: string, value: unknown) {
+    fs.mkdirSync(META_DIR, { recursive: true });
+    const p = metaPath(key);
+    const tmp = `${p}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(value));
+    fs.renameSync(tmp, p);
   }
 
   async persistDeck() {

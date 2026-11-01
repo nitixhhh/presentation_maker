@@ -30,4 +30,7 @@ export interface StorageAdapter {
   deleteJob(id: string): Promise<void>;
   /** delete a deck's durable files (deck.json, assets, exports, previews) */
   deleteDeck(deckId: string): Promise<void>;
+  /** small engine bookkeeping that must survive restarts/redeploys (e.g. the daily AI-image budget); null if absent */
+  getMeta(key: string): Promise<any | null>;
+  putMeta(key: string, value: unknown): Promise<void>;
 }

@@ -14,6 +14,7 @@ import sharp from "sharp";
 import modelsConfig from "@/config/models.json";
 import { AI_IMAGE_SAFETY, type ImagePlan } from "../agents/imageDirector";
 import { chatJson } from "../llm";
+import { canGenerate, recordGeneration, isDailyQuotaError, perDeckLimit } from "./imageBudget";
 import type { Asset, OutlineSlide } from "../types";
 
 const UA = "DeckCraftAI/3.0 (academic presentation engine)";
@@ -266,11 +267,16 @@ async function store(buf: Buffer, dir: string, id: string): Promise<{ file: stri
   }
 }
 
-/** Cloudflare Workers AI text-to-image (Flux schnell → SDXL lightning). */
-export async function generateImage(prompt: string, style?: string): Promise<Buffer | null> {
+/** Cloudflare Workers AI text-to-image (Flux schnell → SDXL lightning), within the daily budget (assets/imageBudget.ts). */
+export async function generateImage(prompt: string, style?: string, log?: (m: string) => void): Promise<Buffer | null> {
   const token = process.env.CLOUDFLARE_API_TOKEN;
   const acc = process.env.CLOUDFLARE_ACCOUNT_ID;
   if (!token || !acc) return null;
+  const gate = await canGenerate();
+  if (!gate.ok) {
+    log?.(`AI image skipped: ${gate.reason}`);
+    return null;
+  }
   const base = (process.env.CLOUDFLARE_API_BASE || "https://api.cloudflare.com/client/v4").replace(/\/$/, "");
   const models: string[] = (modelsConfig as any).engineV3?.imageGeneration?.models || ["@cf/black-forest-labs/flux-1-schnell"];
   for (const model of models) {
@@ -289,23 +295,47 @@ export async function generateImage(prompt: string, style?: string): Promise<Buf
       clearTimeout(t);
       if (!res.ok) {
         // say why in the host log (daily free allowance used up, token without Workers AI permission …)
-        console.warn(`[v3/images] AI image ${model} failed: HTTP ${res.status} ${(await res.text().catch(() => "")).slice(0, 200)}`);
+        const body = (await res.text().catch(() => "")).slice(0, 300);
+        console.warn(`[v3/images] AI image ${model} failed: HTTP ${res.status} ${body.slice(0, 200)}`);
+        if (isDailyQuotaError(res.status, body)) {
+          // the allowance is per account, not per model: stop asking Cloudflare for the rest of the day
+          await recordGeneration("quota");
+          log?.("Cloudflare's free daily image allowance is used up — real photos instead");
+          return null;
+        }
         continue;
       }
       const ct = res.headers.get("content-type") || "";
+      let out: Buffer | null = null;
       if (ct.includes("json")) {
         const j: any = await res.json();
         const b64 = j?.result?.image;
-        if (b64) return Buffer.from(b64, "base64");
+        if (b64) out = Buffer.from(b64, "base64");
       } else {
         const b = Buffer.from(await res.arrayBuffer());
-        if (b.length > 5000) return b;
+        if (b.length > 5000) out = b;
+      }
+      if (out) {
+        await recordGeneration("ok");
+        return out;
       }
     } catch {
       /* next model */
     }
   }
+  await recordGeneration("fail");
   return null;
+}
+
+/** 2–6 search words from an AI-image subject sentence (for the real-photo fallback). */
+export function photoQueryFromSubject(subject: string, fallback: string): string {
+  const STOP = new Set("a an the of and or with in on at to for from by into over under showing shows show depicting depict image photo picture illustration scene concept view close up close-up background foreground its their his her that this these those is are being as like very soft clean minimal style".split(" "));
+  const words = String(subject || "")
+    .replace(/[^\p{L}\p{N}\s-]/gu, " ")
+    .split(/\s+/)
+    .filter((w) => w && !STOP.has(w.toLowerCase()));
+  const q = words.slice(0, 5).join(" ");
+  return (q.length >= 3 ? q : fallback).slice(0, 80);
 }
 
 interface Want {
@@ -384,32 +414,60 @@ export async function sourceImages(
   const style = opts.plan?.style || "";
   if (style) log(`AI image style for this deck: ${style}`);
 
-  // 1. search candidates in parallel
+  // 0. AI images start at once (within today's Cloudflare budget and the per-deck cap); an AI slot whose image does not
+  //    come back (quota used up, error, timeout) falls back to a real, attributed photo found for the same subject.
+  const deckCap = perDeckLimit();
+  let aiAsked = 0;
+  const generated = new Map<number, Buffer>();
+  const aiFailed = new Set<number>();
+  const tryGenerate = async (w: Want): Promise<Buffer | null> => {
+    if (aiAsked >= deckCap) {
+      log(`AI image for slide ${w.slide.n} skipped: this deck already used its ${deckCap} AI images`);
+      return null;
+    }
+    aiAsked++;
+    return generateImage(w.prompt || `${w.query}, related to ${opts.topic}`, style, log);
+  };
+  const searchFor = async (w: Want, query: string): Promise<Candidate[]> => {
+    const [lead, c, o, nasa, px, pb] = await Promise.all([
+      searchWikipediaLead(query, 2),
+      searchCommons(query, 5),
+      searchOpenverse(query, 3),
+      searchNasa(query, 2),
+      searchPexels(query, 2),
+      searchPixabay(query, 2),
+    ]);
+    let cands = dedupe([...lead, ...px, ...pb, ...c, ...o, ...nasa]);
+    if (cands.length < 3) {
+      // broaden: shorter queries (first two words, last two words) and the deck topic itself
+      const words = query.split(/\s+/);
+      const variants = Array.from(new Set([words.slice(0, 2).join(" "), words.slice(-2).join(" "), opts.topic])).filter((q) => q && q !== query);
+      for (const q of variants) {
+        if (cands.length >= 4) break;
+        const more = await Promise.all([searchCommons(q, 4), searchWikipediaLead(q, 2)]);
+        cands = dedupe([...cands, ...more.flat()]);
+      }
+    }
+    return cands.slice(0, 6);
+  };
+
+  // 1. search candidates in parallel (AI slots search their subject at the same time as the image is generated,
+  //    so the fallback costs no extra wait; the search results are dropped when the AI image arrives)
   const searched = await Promise.all(
     wants.map(async (w) => {
-      if (w.source === "ai") return { w, cands: [] as Candidate[] };
-      const [lead, c, o, nasa, px, pb] = await Promise.all([
-        searchWikipediaLead(w.query, 2),
-        searchCommons(w.query, 5),
-        searchOpenverse(w.query, 3),
-        searchNasa(w.query, 2),
-        searchPexels(w.query, 2),
-        searchPixabay(w.query, 2),
-      ]);
-      let cands = dedupe([...lead, ...px, ...pb, ...c, ...o, ...nasa]);
-      if (cands.length < 3) {
-        // broaden: shorter queries (first two words, last two words) and the deck topic itself
-        const words = w.query.split(/\s+/);
-        const variants = Array.from(new Set([words.slice(0, 2).join(" "), words.slice(-2).join(" "), opts.topic])).filter((q) => q && q !== w.query);
-        for (const q of variants) {
-          if (cands.length >= 4) break;
-          const more = await Promise.all([searchCommons(q, 4), searchWikipediaLead(q, 2)]);
-          cands = dedupe([...cands, ...more.flat()]);
+      if (w.source === "ai") {
+        const [buf, cands] = await Promise.all([tryGenerate(w), searchFor(w, photoQueryFromSubject(w.prompt || "", w.query))]);
+        if (buf) {
+          generated.set(w.slide.n, buf);
+          return { w, cands: [] as Candidate[] };
         }
+        aiFailed.add(w.slide.n);
+        return { w, cands };
       }
-      return { w, cands: cands.slice(0, 6) };
+      return { w, cands: await searchFor(w, w.query) };
     })
   );
+  if (aiFailed.size) log(`AI image unavailable for slide(s) ${[...aiFailed].join(", ")} — searching real photos for them instead`);
 
   log(`photo candidates: ${searched.map(({ w, cands }) => `slide ${w.slide.n}: ${cands.length}`).join(", ")}`);
   // 2. download thumbnails for the contact sheet
@@ -426,9 +484,10 @@ export async function sourceImages(
   for (let i = 0; i < withCands.length; i += 6) {
     const chunk = withCands.slice(i, i + 6);
     try {
-      const sheet = await contactSheet(chunk.map((g) => ({ slideN: g.w.slide.n, subject: g.w.query, cands: g.cands })));
+      const need = (w: Want) => (w.source === "ai" ? (w.prompt || w.query).slice(0, 140) : w.query);
+      const sheet = await contactSheet(chunk.map((g) => ({ slideN: g.w.slide.n, subject: need(g.w), cands: g.cands })));
       const desc = chunk
-        .map((g) => `Slide ${g.w.slide.n} "${g.w.slide.title}" needs: ${g.w.query}. Candidates: ${g.cands.map((x, k) => `${String.fromCharCode(65 + k)}="${x.c.title.slice(0, 60)}"`).join(", ")}`)
+        .map((g) => `Slide ${g.w.slide.n} "${g.w.slide.title}" needs: ${need(g.w)}. Candidates: ${g.cands.map((x, k) => `${String.fromCharCode(65 + k)}="${x.c.title.slice(0, 60)}"`).join(", ")}`)
         .join("\n");
       const { data } = await chatJson<{ picks: { slide: number; choice: string }[] }>("vision", [
         {
@@ -453,34 +512,58 @@ export async function sourceImages(
     }
   }
 
-  // 4. store chosen photos at full size; generate where nothing fits
+  // never the same photo on two slides: a later slide whose pick is already used takes its next candidate
+  const usedUrls = new Set<string>();
+  for (const g of [...groups].sort((a, b) => a.w.slide.n - b.w.slide.n)) {
+    const idx = picks.get(g.w.slide.n);
+    if (idx === undefined) continue;
+    let j = idx;
+    if (usedUrls.has(g.cands[idx].c.sourceUrl)) {
+      j = g.cands.findIndex((x) => !usedUrls.has(x.c.sourceUrl));
+      if (j < 0) {
+        picks.delete(g.w.slide.n);
+        continue;
+      }
+      picks.set(g.w.slide.n, j);
+    }
+    usedUrls.add(g.cands[j].c.sourceUrl);
+  }
+
+  // 4. store AI images and chosen photos at full size; generate where nothing fits
   const assets: Asset[] = [];
   let k = 0;
+  const storeGenerated = async (n: number, id: string, prompt: string, buf: Buffer) => {
+    const st = await store(buf, dir, id);
+    if (!st) return false;
+    assets.push({ id, ...st, mime: "image/jpeg", origin: "generated", title: prompt.slice(0, 80), description: `AI-generated illustration (deck style): ${prompt}`, credit: "AI-generated image (Flux, Cloudflare Workers AI)", forSlides: [n] });
+    return true;
+  };
   await Promise.all(
-    groups.map(async (g) => {
-      const n = g.w.slide.n;
-      const idx = picks.get(n);
+    searched.map(async ({ w }) => {
+      const n = w.slide.n;
       const id = `img${n}`;
-      if (idx !== undefined) {
+      const prompt = w.prompt || `${w.query}, related to ${opts.topic}`;
+      const gen = generated.get(n);
+      if (gen && (await storeGenerated(n, id, prompt, gen))) return;
+      const g = groups.find((x) => x.w.slide.n === n);
+      const idx = picks.get(n);
+      if (g && idx !== undefined) {
         const c = g.cands[idx].c;
         const full = (await download(c.url)) || g.cands[idx].buf;
         const st = await store(full, dir, id);
         if (st) {
           assets.push({ id, ...st, mime: "image/jpeg", origin: c.origin, title: c.title, description: c.description, credit: c.credit, sourceUrl: c.sourceUrl, forSlides: [n] });
           k++;
+          if (aiFailed.has(n)) log(`slide ${n}: real photo instead of the AI image — "${c.title.slice(0, 60)}" (${c.credit.slice(0, 60)})`);
           return;
         }
       }
-      if (g.w.allowGenerated) {
-        const prompt = g.w.prompt || `${g.w.query}, related to ${opts.topic}`;
-        const buf = await generateImage(prompt, style);
-        const st = buf ? await store(buf, dir, id) : null;
-        if (st) {
-          assets.push({ id, ...st, mime: "image/jpeg", origin: "generated", title: prompt.slice(0, 80), description: `AI-generated illustration (deck style): ${prompt}`, credit: "AI-generated image (Flux, Cloudflare Workers AI)", forSlides: [n] });
-          return;
-        }
+      // a real-photo slot with nothing fitting may get an AI image when authenticity is not required
+      if (w.source === "real" && w.allowGenerated) {
+        const buf = await tryGenerate(w);
+        if (buf && (await storeGenerated(n, id, prompt, buf))) return;
       }
-      log(`no suitable image for slide ${n} (${g.w.query}) — designer will use typography/diagram`);
+      log(`no suitable image for slide ${n} (${w.query}) — designer will use typography/diagram`);
     })
   );
   assets.sort((a, b) => a.forSlides[0] - b.forSlides[0]);

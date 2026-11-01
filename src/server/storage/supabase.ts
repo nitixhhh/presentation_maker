@@ -151,6 +151,25 @@ export class SupabaseStorage implements StorageAdapter {
     }
   }
 
+  async getMeta(key: string) {
+    if (!/^[a-z0-9._-]+$/i.test(key)) throw new Error("bad meta key");
+    const { data, error } = await this.db.storage.from(BUCKET).download(`_meta/${key}.json`);
+    if (error || !data) return null;
+    try {
+      return JSON.parse(await data.text());
+    } catch {
+      return null;
+    }
+  }
+
+  async putMeta(key: string, value: unknown) {
+    if (!/^[a-z0-9._-]+$/i.test(key)) throw new Error("bad meta key");
+    const { error } = await this.db.storage
+      .from(BUCKET)
+      .upload(`_meta/${key}.json`, Buffer.from(JSON.stringify(value)), { upsert: true, contentType: "application/json" });
+    if (error) throw new Error(`supabase putMeta: ${error.message}`);
+  }
+
   async restoreDeck(deckId: string, localDir: string) {
     if (fs.existsSync(path.join(localDir, "deck.json"))) return true;
     const get = async (rel: string) => {
