@@ -1,7 +1,7 @@
 /** Engine v4 unit tests (no network, no browser). */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readSkill, resolveSkill, layoutIds, listSkills } from "./skills";
+import { readSkill, resolveSkill, layoutIds, listSkills, skeletonTexts } from "./skills";
 import { expandIcons, collapseIcons, iconsInHtml } from "./iconRender";
 import { makeDiagram } from "./diagrams";
 import { cleanAgentHtml, pruneHistory, stripUnknownPlaceholders } from "./designerAgent";
@@ -16,6 +16,7 @@ test("skills: index, layouts and fuzzy names resolve", () => {
   assert.equal(resolveSkill("timeline"), "layouts/timeline.md");
   assert.match(readSkill("nope-nothing"), /^Error: no skill/);
   assert.match(readSkill("INDEX.md"), /read this first/i);
+  assert.ok(skeletonTexts().includes("Where the idea came from"));
 });
 
 test("icons: placeholders expand to inline SVG and collapse back", () => {

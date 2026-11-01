@@ -13,7 +13,7 @@ import { ensureFields, fillPlaceholders, maskText, missingPlaceholders, type Fie
 import { searchCommons, searchWikipediaLead, searchNasa, searchOpenverse, download, store, type Candidate } from "../engine-v3/assets/images";
 import { assetDir } from "../engine-v3/store";
 import type { Asset, Deck, OutlineSlide } from "../engine-v3/types";
-import { readSkill, layoutIds } from "./skills";
+import { readSkill, layoutIds, skeletonTexts } from "./skills";
 import { ICON_TOOL_DEFS, handleIconTool } from "./icons/icons";
 import { collapseIcons, expandIcons, iconsInHtml, resolveIconName } from "./iconRender";
 import { makeDiagram, ALL_KINDS } from "./diagrams";
@@ -337,6 +337,11 @@ export async function runDesignerAgent(ctx: AgentCtx): Promise<AgentResult> {
       // only the student's own fields exist as placeholders ({{P1}}..{{Pn}}); anything else is an invented detail
       const unknown = Array.from(new Set((html.match(/\{\{P(\d+)\}\}/g) || []).filter((m) => Number(m.slice(3, -2)) > fields.length || Number(m.slice(3, -2)) < 1)));
       if (unknown.length) issues.push({ type: "unknown-placeholder", severity: "high", detail: `${unknown.join(", ")} do not exist — the student filled only ${fields.length ? fields.map((f, k) => `{{P${k + 1}}} (${f.label})`).join(", ") : "no details"}. Remove those rows entirely (label and value); never show empty detail fields.` });
+    }
+    {
+      const plain = html.replace(/<style[\s\S]*?<\/style>/g, " ").replace(/\s+/g, " ");
+      const copied = skeletonTexts().filter((t) => plain.includes(t) && !ctx.allowedText.includes(t)).slice(0, 3);
+      if (copied.length) issues.push({ type: "example-text", severity: "high", detail: `Sample text from the layout guide is on the slide (${copied.map((t) => `"${t}"`).join(", ")}) — replace it with this slide's own content.` });
     }
     if (os.role === "title" && !/<img|background-image|v3-diagram|v4-mermaid/i.test(html) && (html.match(/data-icon=/g) || []).length < 3)
       issues.push({ type: "title-no-visual", severity: "medium", detail: "The title slide has no hero visual — add a photo (search_photos) or a large icon/diagram composition so half the slide is not empty." });

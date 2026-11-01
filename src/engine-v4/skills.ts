@@ -60,3 +60,20 @@ export function readSkill(name: string): string {
 export function layoutIds(): string[] {
   return listSkills().filter((f) => f.startsWith("layouts/")).map((f) => f.slice(8, -3));
 }
+
+let examples: string[] | null = null;
+/** sample sentences inside the skills' HTML skeletons — they must never end up on a real slide */
+export function skeletonTexts(): string[] {
+  if (examples) return examples;
+  const out = new Set<string>();
+  for (const f of listSkills()) {
+    const md = readSkill(f);
+    for (const block of md.match(/```html[\s\S]*?```/g) || [])
+      for (const m of block.matchAll(/>([^<>{}]{8,120})</g)) {
+        const t = m[1].replace(/\s+/g, " ").trim();
+        if (t.split(" ").length >= 3 && !/[{}]/.test(t)) out.add(t);
+      }
+  }
+  examples = [...out];
+  return examples;
+}
