@@ -233,3 +233,48 @@ test("mistral-small is paced to at most 1 request per second; zai-glm-5-3 is gon
   assert.equal(at.length, 2);
   assert.ok(at[1] - at[0] >= 950, `second call came ${at[1] - at[0]} ms after the first`);
 });
+
+test("an unusable reply (fails the caller's check) moves to the next model instead of failing", async () => {
+  setKeys("NVIDIA_NIM_API_KEY", "GROQ_API_KEY");
+  const calls = mockFetch({
+    "integrate.api.nvidia.com": () => okReply("Sure! Here is a description of the slide, but no markup."),
+    "api.groq.com": () => okReply("<slide><div>ok</div></slide>"),
+  });
+  const routes = { design: [{ provider: "nvidia", model: "chatty" }, { provider: "groq", model: "x" }] };
+  const r = await llm.llmContext.run({ routes }, () => llm.chat("design", msgs, { stream: false, validate: (t) => t.includes("<slide>") }));
+  assert.equal(r.provider, "groq");
+  assert.deepEqual(calls, ["integrate.api.nvidia.com", "api.groq.com"]);
+});
+
+test("a reply whose content is an already-parsed object is read as JSON, not '[object Object]'", async () => {
+  setKeys("CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID");
+  mockFetch({ "api.cloudflare.com": () => new Response(JSON.stringify({ result: { response: { name: "Deck", n: 1 } } }), { status: 200 }) });
+  const routes = { art: [{ provider: "cloudflare", model: "m" }] };
+  const { data } = await llm.llmContext.run({ routes }, () => llm.chatJson<any>("art", msgs, { stream: false }));
+  assert.deepEqual(data, { name: "Deck", n: 1 });
+  assert.equal(llm.asText([{ type: "text", text: "a" }, { type: "text", text: "b" }]), "ab");
+});
+
+test("chatJson: a reply that is not JSON moves to the next model", async () => {
+  setKeys("NVIDIA_NIM_API_KEY", "GROQ_API_KEY");
+  mockFetch({ "integrate.api.nvidia.com": () => okReply("[object Object]"), "api.groq.com": () => okReply('{"ok":1}') });
+  const routes = { art: [{ provider: "nvidia", model: "bad" }, { provider: "groq", model: "x" }] };
+  const { data, meta } = await llm.llmContext.run({ routes }, () => llm.chatJson<any>("art", msgs, { stream: false }));
+  assert.deepEqual(data, { ok: 1 });
+  assert.equal(meta.provider, "groq");
+});
+
+test("a Gemini quota 429 that names its model cools only that model, not all of Google", async () => {
+  setKeys("GOOGLE_AI_API_KEY");
+  const quota = (m: string) => new Response(JSON.stringify([{ error: { code: 429, message: `Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 5, model: ${m}, description: Generate content requests per minute limit exceeded`, details: [{ "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "45s" }] } }]), { status: 429 });
+  const calls: string[] = [];
+  globalThis.fetch = (async (_u: any, init: any) => {
+    const model = JSON.parse(init.body).model;
+    calls.push(model);
+    return model.includes("lite") ? okReply() : quota(model);
+  }) as typeof fetch;
+  const routes = { design: [{ provider: "google", model: "flash-a" }, { provider: "google", model: "flash-b" }, { provider: "google", model: "flash-lite" }] };
+  const r = await llm.llmContext.run({ routes }, () => llm.chat("design", msgs, { stream: false }));
+  assert.equal(r.model, "flash-lite");
+  assert.deepEqual(calls, ["flash-a", "flash-b", "flash-lite"]);
+});

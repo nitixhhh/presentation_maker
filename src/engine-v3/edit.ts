@@ -3,7 +3,7 @@
  * slide (same deck design system, same facts and citations), then the normal render → DOM check → revise loop.
  */
 import path from "path";
-import { designerSystemPrompt, designerUserPrompt, parseDesign, reviseSlide, type DesignOut } from "./agents/designer";
+import { designerSystemPrompt, designerUserPrompt, parseDesign, reviseSlide, usableDesign, type DesignOut } from "./agents/designer";
 import { chat, type Msg } from "./llm";
 import { inspectSlide } from "./qa/inspect";
 import { deckDir, saveDeck } from "./store";
@@ -24,7 +24,7 @@ export async function editSlide(deck: Deck, n: number, instruction: string, emit
     },
   ];
   emit("Redesigning the slide", 20, `Designer is redoing slide ${n}`);
-  const r = await chat("design", messages, { temperature: 0.6, maxTokens: 12000, timeoutMs: 240_000, label: `edit slide ${n}`, reasoning: (process.env.V3_DESIGN_REASONING as any) || "medium" });
+  const r = await chat("design", messages, { temperature: 0.6, maxTokens: 12000, timeoutMs: 240_000, label: `edit slide ${n}`, reasoning: (process.env.V3_DESIGN_REASONING as any) || "medium", validate: usableDesign });
   const parsed = parseDesign(r.text);
   if (parsed.html.length < 200) throw new Error("designer produced no usable HTML for the edit");
   let d: DesignOut = { html: parsed.html, notes: parsed.notes || cur.notes || "", provider: r.provider, model: r.model, messages: [...messages, { role: "assistant", content: r.text }] };

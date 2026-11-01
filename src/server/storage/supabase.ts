@@ -133,6 +133,24 @@ export class SupabaseStorage implements StorageAdapter {
     }
   }
 
+  async deleteJob(id: string) {
+    const { error } = await this.db.from("jobs").delete().eq("id", id);
+    if (error) throw new Error(`supabase deleteJob: ${error.message}`);
+  }
+
+  async deleteDeck(deckId: string) {
+    const paths: string[] = [];
+    for (const sub of ["", "assets", "exports", "previews"]) {
+      const prefix = sub ? `${deckId}/${sub}` : deckId;
+      const { data } = await this.db.storage.from(BUCKET).list(prefix, { limit: 1000 });
+      for (const f of data || []) if (f.id) paths.push(`${prefix}/${f.name}`); // folders have no id
+    }
+    for (let i = 0; i < paths.length; i += 100) {
+      const { error } = await this.db.storage.from(BUCKET).remove(paths.slice(i, i + 100));
+      if (error) throw new Error(`supabase deleteDeck: ${error.message}`);
+    }
+  }
+
   async restoreDeck(deckId: string, localDir: string) {
     if (fs.existsSync(path.join(localDir, "deck.json"))) return true;
     const get = async (rel: string) => {

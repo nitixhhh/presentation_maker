@@ -525,6 +525,16 @@ function penalize(provider: string, keyIdx: number, model: string, e: any) {
       (accountWide ? acct : b).reason = "daily quota used";
       saveBudgets();
     } else b.coolUntil = now + Math.min(Math.max(delay ?? 20, 2), 300) * 1000;
+    // A quota error that names its model (Gemini: "Quota exceeded for metric … model: gemini-3.6-flash") is a
+    // per-model limit: cool that model (Gemini aliases share one quota, so the named model too), never the
+    // whole provider — benching all of Google for one model's per-minute limit once stalled a deck for 8 min.
+    const named = msg.match(/\bmodel:\s*([A-Za-z0-9._\-/]+)/);
+    if (named) {
+      const nb = bucket(`${keyId(provider, keyIdx)}|${named[1]}`);
+      if (daily && (delay == null || delay > 600)) nb.exhaustedUntil = Math.max(nb.exhaustedUntil || 0, b.exhaustedUntil || 0);
+      else nb.coolUntil = Math.max(nb.coolUntil || 0, b.coolUntil || 0);
+      return;
+    }
     provider429(provider, keyIdx, model, delay);
     return;
   }
@@ -550,12 +560,27 @@ export function sleep(ms: number) {
 }
 
 export class NoCapacityError extends Error {}
+/** A model answered, but the answer could not be used (cut off, no slide markup, not JSON). */
+export class UnusableReplyError extends Error {}
+const MAX_UNUSABLE = 4;
+function safeValidate(v: (t: string) => boolean, text: string): boolean {
+  try {
+    return !!v(text);
+  } catch {
+    return false;
+  }
+}
 
 export interface CallOpts {
   temperature?: number;
   maxTokens?: number;
   json?: boolean;
   timeoutMs?: number;
+  /**
+   * Checks that a reply is usable (e.g. it contains a complete slide or valid JSON). A reply that fails is
+   * treated like a failed call on that model: the next route is tried, so one bad model never sinks a deck.
+   */
+  validate?: (text: string) => boolean;
   /** kept for compatibility (old round-robin start index) */
   spread?: number;
   label?: string;
@@ -597,8 +622,11 @@ export async function chat(role: Role, messages: Msg[], opts: CallOpts = {}): Pr
   const errors: string[] = [];
   const triedThisRequest = new Set<string>(); // key+model pairs that failed for THIS request (non-429)
   let lastWaitNote = 0;
+  let unusable = 0;
 
   for (;;) {
+    // a request whose replies keep failing the usability check on every model is given up after a few tries
+    if (unusable >= MAX_UNUSABLE) throw new Error(`no usable reply for ${role}${opts.label ? ` (${opts.label})` : ""} after ${unusable} tries:\n${errors.slice(-4).join("\n")}`);
     // Walk routes in priority order. Take the first key+model that is free now, unless a better route
     // frees up within its tolerance (then wait for it — quality first, but never long).
     type Cand = { r: Route; k: number; key: string; wait: number; out: number };
@@ -659,6 +687,10 @@ export async function chat(role: Role, messages: Msg[], opts: CallOpts = {}): Pr
     const t0 = Date.now();
     try {
       const res = await callOnce(r, key, messages, { ...opts, maxTokens: out });
+      if (opts.validate && !safeValidate(opts.validate, res.text)) {
+        unusable++;
+        throw new UnusableReplyError(`unusable reply (${res.text.length} chars, failed the ${role} check)`);
+      }
       G.lastSuccessAt = Date.now();
       markHealthy(r.provider);
       if (res.usage && !providerCfg(r.provider)?.tpmInputOnly) correctTokens(r.provider, k, r.model, est, res.usage);
@@ -671,7 +703,7 @@ export async function chat(role: Role, messages: Msg[], opts: CallOpts = {}): Pr
       // status code + provider's error body (never the key) in the server log, so host logs show WHY a route fails
       console.warn(`[v3/llm] ${role}${opts.label ? ` (${opts.label})` : ""} ${r.provider}/${r.model} failed after ${((Date.now() - t0) / 1000).toFixed(1)}s: ${msg.slice(0, 500)}`);
       errors.push(`${r.provider}/${r.model}: ${msg.slice(0, 220)}`);
-      penalize(r.provider, k, r.model, e);
+      if (!(e instanceof UnusableReplyError)) penalize(r.provider, k, r.model, e);
       if (!(e instanceof HttpError && e.status === 429)) triedThisRequest.add(`${kid}|${r.model}`);
       const stat: CallStat = { role, provider: r.provider, model: r.model, ms: Date.now() - t0, waitedMs: t0 - tStart, ok: false, error: msg.slice(0, 200), at: new Date().toISOString() };
       ctx?.stats?.push(stat);
@@ -813,9 +845,10 @@ async function callOnce(route: Route, apiKey: string, messages: Msg[], opts: Cal
             const j = JSON.parse(data);
             if (j.error) throw new HttpError(Number(j.error.code) || 500, `stream error: ${JSON.stringify(j.error).slice(0, 300)}`, null);
             const c = j.choices?.[0];
-            if (c?.delta?.content) text += c.delta.content;
+            if (c?.delta?.content) text += typeof c.delta.content === "string" ? c.delta.content : asText(c.delta.content);
             else if (c?.delta?.reasoning_content || c?.delta?.reasoning) reasoningChars += String(c.delta.reasoning_content || c.delta.reasoning).length;
             else if (typeof j.response === "string") text += j.response; // Cloudflare native stream shape
+            else if (j.response && typeof j.response === "object") text += JSON.stringify(j.response); // Cloudflare JSON mode
             if (c?.finish_reason) finish = c.finish_reason;
             if (j.usage?.total_tokens) usage = j.usage.total_tokens;
           } catch (err) {
@@ -830,7 +863,7 @@ async function callOnce(route: Route, apiKey: string, messages: Msg[], opts: Cal
     const json: any = await res.json();
     const choice = json.choices?.[0];
     let text: any = choice?.message?.content ?? json.result?.response ?? "";
-    if (Array.isArray(text)) text = text.map((p: any) => p.text || "").join("");
+    text = asText(text);
     if (!text || !String(text).trim())
       throw new Error(choice?.message?.reasoning_content || choice?.message?.reasoning ? `empty completion: the model spent its whole budget thinking (finish_reason=${choice?.finish_reason})` : `empty completion (finish_reason=${choice?.finish_reason})`);
     return { text: String(text), usage: json.usage?.total_tokens };
@@ -842,6 +875,18 @@ async function callOnce(route: Route, apiKey: string, messages: Msg[], opts: Cal
     if (fbTimer) clearTimeout(fbTimer);
     if (idleTimer) clearTimeout(idleTimer);
   }
+}
+
+/**
+ * A reply's content as text. Some providers (Cloudflare JSON mode) hand back an already-parsed object, and
+ * String(object) would be "[object Object]" — which once failed whole decks.
+ */
+export function asText(v: any): string {
+  if (v == null) return "";
+  if (typeof v === "string") return v;
+  if (Array.isArray(v)) return v.map((p: any) => (typeof p === "string" ? p : p?.text ?? (p && typeof p === "object" && !p.type ? JSON.stringify(p) : ""))).join("");
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
 }
 
 /** Extract the first JSON object/array from a model reply. */
@@ -886,7 +931,11 @@ export function extractJson<T = any>(text: string): T {
 
 /** chat() + JSON parse with one corrective retry. */
 export async function chatJson<T = any>(role: Role, messages: Msg[], opts: CallOpts = {}): Promise<{ data: T; meta: LlmResult }> {
-  const first = await chat(role, messages, { ...opts, json: true });
+  const isJson = (t: string) => {
+    extractJson(t);
+    return true;
+  };
+  const first = await chat(role, messages, { ...opts, json: true, validate: opts.validate || isJson });
   try {
     return { data: extractJson<T>(first.text), meta: first };
   } catch {

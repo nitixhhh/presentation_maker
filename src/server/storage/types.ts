@@ -26,4 +26,8 @@ export interface StorageAdapter {
   persistDeck(deckId: string, localDir: string): Promise<void>;
   /** make sure a deck exists locally (download from durable storage if needed); false if unknown */
   restoreDeck(deckId: string, localDir: string): Promise<boolean>;
+  /** delete a job record for good */
+  deleteJob(id: string): Promise<void>;
+  /** delete a deck's durable files (deck.json, assets, exports, previews) */
+  deleteDeck(deckId: string): Promise<void>;
 }

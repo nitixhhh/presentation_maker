@@ -215,6 +215,7 @@ function JobScreen({ id, me, onHome, onRetry }: { id: string; me: Me | null; onH
 function RecentDecks({ onOpen, limit, onAll, signedIn }: { onOpen: (id: string) => void; limit?: number; onAll?: () => void; signedIn?: boolean }) {
   const [saved, setSaved] = useState<SavedJob[] | null>(null);
   const [jobs, setJobs] = useState<Record<string, JobView>>({});
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => {
     let stop = false;
@@ -305,16 +306,33 @@ function RecentDecks({ onOpen, limit, onAll, signedIn }: { onOpen: (id: string) 
                 </span>
                 <ChevronRight className="h-4 w-4 shrink-0 text-[var(--faint)]" />
               </button>
-              {!limit && !signedIn && (
+              {!limit && (
                 <button
-                  aria-label="Remove from list"
-                  onClick={() => {
-                    forgetJob(s.id);
-                    setSaved(savedJobs());
+                  aria-label="Delete deck"
+                  disabled={deleting === s.id}
+                  onClick={async () => {
+                    const busy = j && (j.status === "queued" || j.status === "running");
+                    if (busy) return window.alert("This deck is still being made. You can delete it once it is finished.");
+                    if (!window.confirm(`Delete "${j?.title || s.topic}"? This cannot be undone.`)) return;
+                    setDeleting(s.id);
+                    try {
+                      const r = await api(`/api/v3/jobs/${s.id}`, { method: "DELETE" });
+                      if (!r.ok && r.status !== 404) {
+                        const d = await r.json().catch(() => ({}));
+                        window.alert(d.error || "Could not delete the deck. Please try again.");
+                        return;
+                      }
+                      forgetJob(s.id);
+                      setSaved((cur) => (cur || []).filter((x) => x.id !== s.id));
+                    } catch {
+                      window.alert("No internet connection. Please try again.");
+                    } finally {
+                      setDeleting(null);
+                    }
                   }}
-                  className="px-3 py-3.5 text-[var(--faint)]"
+                  className="px-3 py-3.5 text-[var(--faint)] transition-colors hover:text-[var(--bad)] disabled:opacity-40"
                 >
-                  <Trash2 className="h-4 w-4" />
+                  {deleting === s.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                 </button>
               )}
             </li>

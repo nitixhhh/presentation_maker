@@ -146,6 +146,11 @@ export interface DesignOut {
   messages: Msg[];
 }
 
+/** A designer reply is usable when it holds a complete slide (the scheduler tries another model otherwise). */
+export function usableDesign(text: string): boolean {
+  return parseDesign(text).html.length > 200;
+}
+
 export function parseDesign(text: string): { html: string; notes: string } {
   let html = "";
   const m = text.match(/<slide>([\s\S]*?)<\/slide>/i);
@@ -204,7 +209,7 @@ export async function designSlide(
   for (let attempt = 0; attempt < 2; attempt++) {
     let r;
     try {
-      r = await chat("design", messages, { temperature: 0.85, maxTokens, spread, timeoutMs: 300_000, label: `slide ${slide.n}`, reasoning });
+      r = await chat("design", messages, { temperature: 0.85, maxTokens, spread, timeoutMs: 300_000, label: `slide ${slide.n}`, reasoning, validate: usableDesign });
     } catch (e: any) {
       // a reasoning model that spent the whole budget thinking: try once more with more room and less thinking
       if (attempt === 0 && /finish_reason=length/.test(String(e?.message))) {
@@ -234,10 +239,10 @@ export async function reviseSlide(prev: DesignOut, feedback: string): Promise<De
   ];
   let r;
   try {
-    r = await chat("design", messages, { temperature: 0.5, maxTokens: 12000, timeoutMs: 240_000, label: "revision", reasoning: (process.env.V3_DESIGN_REASONING as any) || "medium" });
+    r = await chat("design", messages, { temperature: 0.5, maxTokens: 12000, timeoutMs: 240_000, label: "revision", reasoning: (process.env.V3_DESIGN_REASONING as any) || "medium", validate: usableDesign });
   } catch (e: any) {
     if (!/finish_reason=length/.test(String(e?.message))) throw e;
-    r = await chat("design", messages, { temperature: 0.5, maxTokens: 24000, timeoutMs: 300_000, label: "revision", reasoning: "low" });
+    r = await chat("design", messages, { temperature: 0.5, maxTokens: 24000, timeoutMs: 300_000, label: "revision", reasoning: "low", validate: usableDesign });
   }
   const { html, notes } = parseDesign(r.text);
   if (html.length < 200) return prev;

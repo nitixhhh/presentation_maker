@@ -82,4 +82,14 @@ export class LocalStorage implements StorageAdapter {
   async restoreDeck(_deckId: string, localDir: string) {
     return fs.existsSync(path.join(localDir, "deck.json"));
   }
+
+  async deleteJob(id: string) {
+    try {
+      fs.rmSync(jobPath(id), { force: true });
+    } catch {}
+  }
+
+  async deleteDeck() {
+    /* the working copy on disk is the only copy; the job manager removes it */
+  }
 }

@@ -426,11 +426,34 @@ export async function getJobViews(ids: string[]): Promise<JobView[]> {
 }
 
 /** getJobView for one caller: null (→ 404) when the job belongs to another account. */
-export async function getJobViewFor(id: string, viewerKey: string, hasStreamToken = false): Promise<JobView | null> {
+export async function getJobViewFor(id: string, viewerKey: string | Promise<string>, hasStreamToken = false): Promise<JobView | null> {
+  // the login check and the job lookup run at the same time (a wrong link answers "not found" sooner)
+  const [j, viewer] = await Promise.all([ready().then(() => S.jobs.get(id) || storage().getJob(id)), viewerKey]);
+  if (!j || !canSeeJob(j, viewer, hasStreamToken)) return null;
+  return viewOf(j);
+}
+
+/**
+ * Delete a deck for good (job record + deck files), for its owner only. A deck still being made cannot be
+ * deleted yet. Returns "ok" | "not_found" | "busy".
+ */
+export async function deleteJobFor(id: string, ownerKey: string): Promise<"ok" | "not_found" | "busy"> {
   await ready();
   const j = S.jobs.get(id) || (await storage().getJob(id));
-  if (!j || !canSeeJob(j, viewerKey, hasStreamToken)) return null;
-  return viewOf(j);
+  if (!j || j.kind === "benchmark") return "not_found";
+  const isOwner = j.userId ? ownerKey === `u:${j.userId}` : j.ownerKey === ownerKey;
+  if (!isOwner) return "not_found";
+  if (j.status === "queued" || j.status === "running" || S.running.has(id)) return "busy";
+  if (j.deckId && j.kind !== "edit") {
+    // (an edit job points at its parent deck: deleting the edit record must not delete the deck)
+    await storage().deleteDeck(j.deckId);
+    try {
+      fs.rmSync(deckDir(j.deckId), { recursive: true, force: true });
+    } catch {}
+  }
+  await storage().deleteJob(id);
+  S.jobs.delete(id);
+  return "ok";
 }
 
 /** getJobViews for one caller: jobs of other accounts are left out. */

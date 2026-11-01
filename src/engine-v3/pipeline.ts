@@ -9,7 +9,7 @@ import { runBrief } from "./agents/brief";
 import { runResearch } from "./agents/research";
 import { runOutline } from "./agents/outline";
 import { runArtDirector } from "./agents/artDirector";
-import { designSlide, reviseSlide, type DesignOut } from "./agents/designer";
+import { designSlide, reviseSlide, designerSystemPrompt, designerUserPrompt, type DesignOut } from "./agents/designer";
 import { pickRecipes } from "./design/pickRecipes";
 import { runImageDirector } from "./agents/imageDirector";
 import { addLogoAsset } from "./assets/logo";
@@ -18,8 +18,9 @@ import { inspectSlide, LAYOUT_TYPES, GEOMETRY_TYPES, type Inspection } from "./q
 import { visionReview, type VisionVerdict } from "./qa/vision";
 import { formatReference } from "./research/sources";
 import { referencesSlideHtml } from "./agents/referencesSlide";
+import { fallbackSlideHtml } from "./agents/fallbackSlide";
 import { assetDir, deckDir, newDeckId, saveDeck } from "./store";
-import { availableProviders, llmContext, usageSummary, usageLine } from "./llm";
+import { availableProviders, llmContext, usageSummary, usageLine, sleep } from "./llm";
 import type { Deck, ProgressFn, SlideDesign, V3Request } from "./types";
 
 export interface PipelineOptions {
@@ -107,101 +108,146 @@ export async function generateDeckV3(req: V3Request, opts: PipelineOptions = {})
     if (missing.length) insp.issues.push({ type: "references-missing", severity: "high", detail: `${missing.length} reference(s) missing or altered — every reference must appear exactly as given, e.g. "${missing[0].slice(0, 80)}"` });
   };
 
+  // A designer that cannot get a usable slide from any model (the scheduler already walked every route)
+  // gets one fresh try with a simpler brief after a pause; only then the calm on-brand backup layout.
+  const designWithRetry = async (os: (typeof outline.slides)[number], i: number): Promise<DesignOut> => {
+    try {
+      return await designSlide(deck, os, citeMap, i, inspiration.get(os.n));
+    } catch (e1: any) {
+      emit("Designing slides", 50, `Designer ${os.n}`, `first design attempt failed (${String(e1?.message || e1).slice(0, 80)}) — trying again`);
+      await sleep(20_000);
+      try {
+        return await designSlide(deck, os, citeMap, i + 1, pickRecipes(os, assets, usedRecipes, 2), "Choose a clear, robust composition with fewer elements and generous space, still distinctive and on-brand.");
+      } catch (e2: any) {
+        console.error(`[v3] slide ${os.n}: no AI designer produced a usable slide — backup layout`, e2);
+        emit("Designing slides", 50, `Designer ${os.n}`, "used a calm backup layout (the AI designers were unavailable for this slide)");
+        const html = os.role === "references" ? referencesSlideHtml(deck, os.title || "References") : fallbackSlideHtml(deck, os, citeMap);
+        return {
+          html,
+          notes: os.notes || "",
+          provider: "engine",
+          model: "fallback",
+          messages: [
+            { role: "system", content: designerSystemPrompt(deck.design, deck.brief) },
+            { role: "user", content: designerUserPrompt(deck, os, citeMap) },
+          ],
+        };
+      }
+    }
+  };
+
   // Designers in parallel (the provider scheduler throttles), each followed by its own QA loop
   const renderDir = path.join(deckDir(id), "render");
   let done = 0;
   const total = outline.slides.length;
   const slides: SlideDesign[] = await Promise.all(
     outline.slides.map(async (os, i): Promise<SlideDesign> => {
-      const isRefs = os.role === "references";
-      let d: DesignOut = await designSlide(deck, os, citeMap, i, inspiration.get(os.n));
-      emit("Designing slides", 50 + Math.round((done / total) * 30), `Designer ${os.n}`, `drafted "${os.title}"`);
-      type Rec = { d: DesignOut; insp: Inspection; vision: VisionVerdict | null; rank: number };
-      let best: Rec | null = null;
-      let revisions = 0;
-      let redesigned = false;
-      const allowed = [os.title, os.keyMessage, ...os.points.map((x) => x.text), ...os.points.flatMap((x) => (x.factIds || []).map((id) => research.facts.find((f) => f.id === id)?.text || "")), ...brief.titleSlideFields.map((f) => f.value), brief.title, String(new Date().getFullYear())].join(" ");
-      for (let round = 0; round <= maxRevisions; round++) {
-        const insp = await inspectSlide(deck, os.n, d.html, renderDir, os.role, allowed);
-        // the references slide must carry every reference exactly (mechanical check)
-        if (isRefs) checkReferences(insp);
-        const high = insp.issues.filter((x) => x.severity === "high").length;
-        const med = insp.issues.filter((x) => x.severity === "medium").length;
-        const wantVision = visionMode === "always" || (visionMode === "smart" && (high + med > 0 || (os.role === "title" && round === 0)));
-        const vision = wantVision && !isRefs ? await visionReview(insp.screenshot, os, insp.issues, brief.title) : null;
-        const score = vision?.score ?? (high ? 4 : med ? 6 : 7.5);
-        const rank = score - 2 * high - 0.5 * med;
-        const rec: Rec = { d: { ...d, html: insp.html }, insp, vision, rank };
-        if (!best || rank > best.rank) best = rec;
-        // the code decides whether the layout is clean: any geometry problem (overlap, line over text, cut-off or tiny
-        // label) needs another round even when the vision model is happy — the AI never approves its own layout
-        const needFix = high > 0 || !!vision?.fix || insp.issues.some((x) => GEOMETRY_TYPES.has(x.type));
-        emit("Visual QA", 55 + Math.round((done / total) * 35), `QA ${os.n}`, `round ${round + 1}: ${vision ? `score ${vision.score}/10, ` : wantVision ? "" : "clean render, "}${high} serious + ${med} minor issues${insp.autoFixes.length ? `, auto-fit ${insp.autoFixes.length}` : ""}`);
-        if (!needFix) break;
-        if (round === maxRevisions) {
-          // still broken after its revisions: one fresh redesign by the AI (new composition), never a fixed layout
-          if (!redesigned && high > 0) {
-            redesigned = true;
-            try {
-              d = await designSlide(deck, os, citeMap, i + 1, pickRecipes(os, assets, usedRecipes, 2), "IMPORTANT: an earlier design of this slide kept breaking (text cut off or overlapping). Choose a simpler, more robust composition with fewer elements and more space, still distinctive.");
-              const insp2 = await inspectSlide(deck, os.n, d.html, renderDir, os.role, allowed);
-              if (isRefs) checkReferences(insp2);
-              const h2 = insp2.issues.filter((x) => x.severity === "high").length;
-              const m2 = insp2.issues.filter((x) => x.severity === "medium").length;
-              const r2 = (h2 ? 4 : m2 ? 6 : 7.5) - 2 * h2 - 0.5 * m2;
-              if (r2 > best.rank) best = { d: { ...d, html: insp2.html }, insp: insp2, vision: null, rank: r2 };
-              emit("Visual QA", 90, `QA ${os.n}`, `fresh redesign: ${h2} serious + ${m2} minor issues`);
-            } catch (e: any) {
-              emit("Visual QA", 90, `QA ${os.n}`, `redesign unavailable: ${String(e.message).slice(0, 100)}`);
+      // one slide can never sink the whole deck: any error below falls back to the best design we have
+      let d: DesignOut | null = null;
+      try {
+        const isRefs = os.role === "references";
+        d = await designWithRetry(os, i);
+        emit("Designing slides", 50 + Math.round((done / total) * 30), `Designer ${os.n}`, `drafted "${os.title}"`);
+        type Rec = { d: DesignOut; insp: Inspection; vision: VisionVerdict | null; rank: number };
+        let best: Rec | null = null;
+        let revisions = 0;
+        let redesigned = false;
+        const allowed = [os.title, os.keyMessage, ...os.points.map((x) => x.text), ...os.points.flatMap((x) => (x.factIds || []).map((id) => research.facts.find((f) => f.id === id)?.text || "")), ...brief.titleSlideFields.map((f) => f.value), brief.title, String(new Date().getFullYear())].join(" ");
+        for (let round = 0; round <= maxRevisions; round++) {
+          const insp = await inspectSlide(deck, os.n, d.html, renderDir, os.role, allowed);
+          // the references slide must carry every reference exactly (mechanical check)
+          if (isRefs) checkReferences(insp);
+          const high = insp.issues.filter((x) => x.severity === "high").length;
+          const med = insp.issues.filter((x) => x.severity === "medium").length;
+          const wantVision = visionMode === "always" || (visionMode === "smart" && (high + med > 0 || (os.role === "title" && round === 0)));
+          const vision = wantVision && !isRefs ? await visionReview(insp.screenshot, os, insp.issues, brief.title) : null;
+          const score = vision?.score ?? (high ? 4 : med ? 6 : 7.5);
+          const rank = score - 2 * high - 0.5 * med;
+          const rec: Rec = { d: { ...d, html: insp.html }, insp, vision, rank };
+          if (!best || rank > best.rank) best = rec;
+          // the code decides whether the layout is clean: any geometry problem (overlap, line over text, cut-off or tiny
+          // label) needs another round even when the vision model is happy — the AI never approves its own layout
+          const needFix = high > 0 || !!vision?.fix || insp.issues.some((x) => GEOMETRY_TYPES.has(x.type));
+          emit("Visual QA", 55 + Math.round((done / total) * 35), `QA ${os.n}`, `round ${round + 1}: ${vision ? `score ${vision.score}/10, ` : wantVision ? "" : "clean render, "}${high} serious + ${med} minor issues${insp.autoFixes.length ? `, auto-fit ${insp.autoFixes.length}` : ""}`);
+          if (!needFix) break;
+          if (round === maxRevisions) {
+            // still broken after its revisions: one fresh redesign by the AI (new composition), never a fixed layout
+            if (!redesigned && high > 0) {
+              redesigned = true;
+              try {
+                d = await designSlide(deck, os, citeMap, i + 1, pickRecipes(os, assets, usedRecipes, 2), "IMPORTANT: an earlier design of this slide kept breaking (text cut off or overlapping). Choose a simpler, more robust composition with fewer elements and more space, still distinctive.");
+                const insp2 = await inspectSlide(deck, os.n, d.html, renderDir, os.role, allowed);
+                if (isRefs) checkReferences(insp2);
+                const h2 = insp2.issues.filter((x) => x.severity === "high").length;
+                const m2 = insp2.issues.filter((x) => x.severity === "medium").length;
+                const r2 = (h2 ? 4 : m2 ? 6 : 7.5) - 2 * h2 - 0.5 * m2;
+                if (r2 > best.rank) best = { d: { ...d, html: insp2.html }, insp: insp2, vision: null, rank: r2 };
+                emit("Visual QA", 90, `QA ${os.n}`, `fresh redesign: ${h2} serious + ${m2} minor issues`);
+              } catch (e: any) {
+                emit("Visual QA", 90, `QA ${os.n}`, `redesign unavailable: ${String(e.message).slice(0, 100)}`);
+              }
             }
+            break;
           }
-          break;
+          const feedback = [...insp.issues.map((x) => `- [${x.severity}] ${x.detail}`), ...(vision?.issues || []).map((x) => `- ${x}`)].join("\n");
+          try {
+            d = await reviseSlide({ ...d, html: insp.html }, feedback);
+            revisions++;
+          } catch (e: any) {
+            emit("Visual QA", 60, `QA ${os.n}`, `revision unavailable: ${String(e.message).slice(0, 100)}`);
+            break;
+          }
         }
-        const feedback = [...insp.issues.map((x) => `- [${x.severity}] ${x.detail}`), ...(vision?.issues || []).map((x) => `- ${x}`)].join("\n");
+        // Layout guarantee: after the AI rounds, if the code still measures overlaps / lines over text / cut-off text,
+        // the engine fixes them deterministically (shrink to a floor, move labels, backdrop/halo) and re-measures.
+        if (best && best.insp.issues.some((x) => LAYOUT_TYPES.has(x.type) && x.severity === "high")) {
+          const before = best.insp.issues.filter((x) => LAYOUT_TYPES.has(x.type) && x.severity === "high").length;
+          try {
+            const fixed = await inspectSlide(deck, os.n, best.d.html, renderDir, os.role, allowed, { enforce: true });
+            if (isRefs) checkReferences(fixed);
+            const after = fixed.issues.filter((x) => LAYOUT_TYPES.has(x.type) && x.severity === "high").length;
+            if (after < before) best = { ...best, d: { ...best.d, html: fixed.html }, insp: fixed };
+            emit("Visual QA", 90, `QA ${os.n}`, `layout auto-fix: ${before} → ${Math.min(before, after)} layout problems${fixed.autoFixes.length ? ` (${fixed.autoFixes.slice(0, 4).join(", ")})` : ""}`);
+          } catch (e: any) {
+            emit("Visual QA", 90, `QA ${os.n}`, `layout auto-fix unavailable: ${String(e?.message || e).slice(0, 100)}`);
+          }
+        }
+        // Safety net for citations only: if the AI's references slide still drops references (checked again on the
+        // final HTML, whichever round it came from), use the engine's exact list so the deck never carries wrong
+        // or generic citations ("Course textbook").
+        if (isRefs && best && (best.insp.issues.some((x) => x.type === "references-missing") || missingReferences(best.d.html).length)) {
+          const html = referencesSlideHtml(deck, os.title || "References");
+          const insp = await inspectSlide(deck, os.n, html, renderDir, "references");
+          best = { d: { ...best.d, html: insp.html, provider: "engine", model: "references" }, insp, vision: null, rank: 6 };
+          emit("Visual QA", 90, `QA ${os.n}`, "references slide: used the exact reference list");
+        }
+        done++;
+        const b = best!;
+        fs.mkdirSync(renderDir, { recursive: true });
+        fs.writeFileSync(path.join(renderDir, `preview-${String(os.n).padStart(2, "0")}.jpg`), b.insp.screenshot);
+        return {
+          n: os.n,
+          html: b.d.html,
+          notes: b.d.notes,
+          provider: b.d.provider,
+          model: b.d.model,
+          revisions,
+          qa: { domIssues: b.insp.issues, visionScore: b.vision?.score, visionIssues: b.vision?.issues, autoFixes: b.insp.autoFixes },
+        };
+      } catch (e: any) {
+        console.error(`[v3] slide ${os.n} failed in design/QA — keeping ${d ? "its draft" : "the backup layout"}`, e);
+        emit("Visual QA", 90, `QA ${os.n}`, `could not finish the checks (${String(e?.message || e).slice(0, 80)}) — kept ${d ? "the draft" : "a calm backup layout"}`);
+        done++;
+        const html = d?.html || (os.role === "references" ? referencesSlideHtml(deck, os.title || "References") : fallbackSlideHtml(deck, os, citeMap));
         try {
-          d = await reviseSlide({ ...d, html: insp.html }, feedback);
-          revisions++;
-        } catch (e: any) {
-          emit("Visual QA", 60, `QA ${os.n}`, `revision unavailable: ${String(e.message).slice(0, 100)}`);
-          break;
+          const insp = await inspectSlide(deck, os.n, html, renderDir, os.role);
+          fs.mkdirSync(renderDir, { recursive: true });
+          fs.writeFileSync(path.join(renderDir, `preview-${String(os.n).padStart(2, "0")}.jpg`), insp.screenshot);
+          return { n: os.n, html: insp.html, notes: d?.notes || os.notes || "", provider: d?.provider || "engine", model: d?.model || "fallback", revisions: 0, qa: { domIssues: insp.issues, autoFixes: insp.autoFixes } };
+        } catch {
+          return { n: os.n, html, notes: d?.notes || os.notes || "", provider: d?.provider || "engine", model: d?.model || "fallback", revisions: 0, qa: { domIssues: [], autoFixes: [] } };
         }
       }
-      // Layout guarantee: after the AI rounds, if the code still measures overlaps / lines over text / cut-off text,
-      // the engine fixes them deterministically (shrink to a floor, move labels, backdrop/halo) and re-measures.
-      if (best && best.insp.issues.some((x) => LAYOUT_TYPES.has(x.type) && x.severity === "high")) {
-        const before = best.insp.issues.filter((x) => LAYOUT_TYPES.has(x.type) && x.severity === "high").length;
-        try {
-          const fixed = await inspectSlide(deck, os.n, best.d.html, renderDir, os.role, allowed, { enforce: true });
-          if (isRefs) checkReferences(fixed);
-          const after = fixed.issues.filter((x) => LAYOUT_TYPES.has(x.type) && x.severity === "high").length;
-          if (after < before) best = { ...best, d: { ...best.d, html: fixed.html }, insp: fixed };
-          emit("Visual QA", 90, `QA ${os.n}`, `layout auto-fix: ${before} → ${Math.min(before, after)} layout problems${fixed.autoFixes.length ? ` (${fixed.autoFixes.slice(0, 4).join(", ")})` : ""}`);
-        } catch (e: any) {
-          emit("Visual QA", 90, `QA ${os.n}`, `layout auto-fix unavailable: ${String(e?.message || e).slice(0, 100)}`);
-        }
-      }
-      // Safety net for citations only: if the AI's references slide still drops references (checked again on the
-      // final HTML, whichever round it came from), use the engine's exact list so the deck never carries wrong
-      // or generic citations ("Course textbook").
-      if (isRefs && best && (best.insp.issues.some((x) => x.type === "references-missing") || missingReferences(best.d.html).length)) {
-        const html = referencesSlideHtml(deck, os.title || "References");
-        const insp = await inspectSlide(deck, os.n, html, renderDir, "references");
-        best = { d: { ...best.d, html: insp.html, provider: "engine", model: "references" }, insp, vision: null, rank: 6 };
-        emit("Visual QA", 90, `QA ${os.n}`, "references slide: used the exact reference list");
-      }
-      done++;
-      const b = best!;
-      fs.mkdirSync(renderDir, { recursive: true });
-      fs.writeFileSync(path.join(renderDir, `preview-${String(os.n).padStart(2, "0")}.jpg`), b.insp.screenshot);
-      return {
-        n: os.n,
-        html: b.d.html,
-        notes: b.d.notes,
-        provider: b.d.provider,
-        model: b.d.model,
-        revisions,
-        qa: { domIssues: b.insp.issues, visionScore: b.vision?.score, visionIssues: b.vision?.issues, autoFixes: b.insp.autoFixes },
-      };
     })
   );
   deck.slides = slides.sort((a, b) => a.n - b.n);

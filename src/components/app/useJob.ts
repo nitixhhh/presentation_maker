@@ -18,6 +18,11 @@ export function useJob(jobId: string | null) {
 
   useEffect(() => {
     if (!jobId) return;
+    // a link that cannot be a deck id is "not found" at once (no spinner, no server round trip)
+    if (!/^[a-z0-9-]{6,64}$/i.test(jobId)) {
+      setMissing(true);
+      return;
+    }
     let stopped = false;
     let es: EventSource | null = null;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
