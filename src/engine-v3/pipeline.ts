@@ -136,6 +136,15 @@ export async function generateDeckV3(req: V3Request, opts: PipelineOptions = {})
     }
   };
 
+  // Rework deadline: revisions and fresh redesigns are optional polish. When the free models are saturated
+  // (Gemini's daily quota used up, backups timing out) one slide's extra round once kept a deck waiting
+  // 20+ minutes. After this many minutes of design, no NEW revision/redesign starts; every slide keeps its
+  // best version so far, the code's layout auto-fix still runs. Normal decks finish well inside it.
+  // V3_REWORK_DEADLINE_MIN=0 turns it off.
+  const reworkMin = Number(process.env.V3_REWORK_DEADLINE_MIN ?? 14);
+  const reworkDeadline = reworkMin > 0 ? Date.now() + reworkMin * 60_000 : Infinity;
+  const pastDeadline = () => Date.now() > reworkDeadline;
+
   // Designers in parallel (the provider scheduler throttles), each followed by its own QA loop
   const renderDir = path.join(deckDir(id), "render");
   let done = 0;
@@ -170,6 +179,10 @@ export async function generateDeckV3(req: V3Request, opts: PipelineOptions = {})
           const needFix = high > 0 || !!vision?.fix || insp.issues.some((x) => GEOMETRY_TYPES.has(x.type));
           emit("Visual QA", 55 + Math.round((done / total) * 35), `QA ${os.n}`, `round ${round + 1}: ${vision ? `score ${vision.score}/10, ` : wantVision ? "" : "clean render, "}${high} serious + ${med} minor issues${insp.autoFixes.length ? `, auto-fit ${insp.autoFixes.length}` : ""}`);
           if (!needFix) break;
+          if (pastDeadline()) {
+            emit("Visual QA", 90, `QA ${os.n}`, "time limit reached — keeping the best version so far");
+            break;
+          }
           if (round === maxRevisions) {
             // still broken after its revisions: one fresh redesign by the AI (new composition), never a fixed layout
             if (!redesigned && high > 0) {

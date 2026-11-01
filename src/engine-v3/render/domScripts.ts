@@ -149,6 +149,10 @@ blocks.forEach(function(block, bi){
   if (rect.left < -2 || rect.top < -2 || rect.right > 1282 || rect.bottom > 722) issues.push({type:'out-of-canvas', severity:'high', detail: 'Text ' + label + ' goes outside the 1280x720 canvas (box ' + Math.round(rect.left) + ',' + Math.round(rect.top) + ' to ' + Math.round(rect.right) + ',' + Math.round(rect.bottom) + ').', id: id});
   var clipR = clipAncestorRect(block);
   if (clipR && (rect.bottom > clipR.bottom + 3 || rect.right > clipR.right + 3 || rect.top < clipR.top - 3 || rect.left < clipR.left - 3)) issues.push({type:'text-clipped', severity:'high', detail:'Text ' + label + ' is cut off by its container (overflow).', id:id});
+  // a word wider than its own box spills sideways out of it (e.g. a 72px title in a 440px column): on a coloured
+  // panel the spilled letters land on the background and look cut off. Reported as clipped so it is fixed.
+  else { var ob = block.getBoundingClientRect(); var obL = ob.left - SR.left, obR = ob.right - SR.left;
+    if (ob.width > 20 && (rect.right > obR + 4 || rect.left < obL - 4)) issues.push({type:'text-clipped', severity:'high', detail:'Text ' + label + ' is wider than its box (' + Math.round(ob.width) + 'px wide, text spills ' + Math.round(Math.max(rect.right - obR, obL - rect.left)) + 'px out) — a word is too long for this font size or column; make the column wider or the text smaller.', id:id}); }
   var minFs = 99; lines.forEach(function(l){ l.forEach(function(r){ if (!r.s.sup && r.t.trim().length > 2) minFs = Math.min(minFs, r.s.size); }); });
   var isRefLike = /^\s*\[\d+\]|https?:|doi|retrieved|wikipedia|credit|cc by|via wikimedia/i.test(block.innerText);
   if (minFs < 13 && !isRefLike) issues.push({type:'tiny-text', severity:'medium', detail:'Text ' + label + ' is only ' + minFs.toFixed(0) + 'px — too small for a classroom (min 16px for labels).', id:id});
