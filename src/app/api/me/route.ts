@@ -3,6 +3,7 @@ import { ensureProfile } from "@/server/billing";
 import { accounts } from "@/server/accounts/store";
 import { paymentProvider } from "@/server/payments";
 import { pricing } from "@/server/pricing";
+import { engineDefault, isOwner } from "@/server/engineChoice";
 
 /** What the browser needs to know about the visitor and the site's setup. */
 export async function GET(req: Request) {
@@ -17,6 +18,8 @@ export async function GET(req: Request) {
       auth: { configured: authConfigured(), required: loginRequired(), url: process.env.NEXT_PUBLIC_SUPABASE_URL || null, anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || null },
       payments: provider ? provider.publicConfig() : null,
       pricing: pricing(),
+      // the owner sees the "New engine (beta)" switch; everyone else gets the site default engine
+      engine: { default: engineDefault(), canChoose: isOwner(user) },
     },
     { headers: { "Cache-Control": "private, no-store" } }
   );

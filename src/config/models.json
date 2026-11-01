@@ -52,7 +52,11 @@
       "dailyReset": "rolling",
       "_note": "NVIDIA API Trial Terms of Service (v. 19 Sep 2025) §1.4: without a paid subscription the API may be used 'only ... for internal testing and evaluation purposes, not in production'. So the engine NEVER routes production jobs here; these models appear only on /benchmark. NVIDIA no longer uses credits; per-model rate limits are not published (shown at the top right of build.nvidia.com; users report ~40 requests/min). Exception: ALLOW_NVIDIA_PRODUCTION=true (owner's own decision and risk) adds them to production routes via engineV3.optInRoutes.nvidia. 31 Oct 2026 probe: mistral-large-4-1t-a52b and glm-5.3-flash now think before answering and are very slow on the free queue (no first byte in 200 s on a design-sized prompt; glm ~50 s even for 'Say OK'), so they were removed from production routes; nemotron-3.5-super-vl needs chat_template_kwargs.enable_thinking=false or it returns only thinking.",
       "firstByteMs": 60000,
-      "idleMs": 90000
+      "idleMs": 90000,
+      "accountLimits": {
+        "rpm": 38
+      },
+      "_accountNote": "1 Nov 2026: NVIDIA's free account limit is ~40 requests/min across all models; 38 keeps the v4 designers (2 in parallel) and v3 polish under it."
     },
     "cloudflare": {
       "name": "Cloudflare Workers AI",
@@ -343,6 +347,21 @@
         "mistral:mistral-small-2603",
         "groq:openai/gpt-oss-120b",
         "google:gemma-4-31b-it"
+      ],
+      "planner": [
+        "nvidia:nvidia/nemotron-3.5-super-vl-120b-a12b",
+        "nvidia:nvidia/nemotron-3-ultra-550b-a55b",
+        "nvidia:nvidia/nemotron-3.5-lightning-30b-a3b",
+        "openrouter:nvidia/nemotron-3.5-super-vl:free",
+        "groq:openai/gpt-oss-120b"
+      ],
+      "agent": [
+        "nvidia:nvidia/nemotron-3.5-super-vl-120b-a12b",
+        "nvidia:nvidia/nemotron-3.5-lightning-30b-a3b",
+        "nvidia:meta/muse-glimmer-30b",
+        "nvidia:nvidia/nemotron-3-ultra-550b-a55b",
+        "openrouter:nvidia/nemotron-3.5-super-vl:free",
+        "groq:openai/gpt-oss-120b"
       ]
     },
     "models": {
@@ -699,6 +718,19 @@
         "tier": "strong",
         "timeoutMs": 180000,
         "_note": "1 Nov 2026: one-slide design 34 s (reasons ~25 s first, can't be switched off), valid layout."
+      },
+      "nvidia:nvidia/nemotron-3.5-lightning-30b-a3b": {
+        "rpm": 35,
+        "ctx": 250000,
+        "maxOutput": 16000,
+        "vision": false,
+        "timeoutMs": 150000,
+        "extraBody": {
+          "chat_template_kwargs": {
+            "enable_thinking": false
+          }
+        },
+        "_note": "1 Nov 2026: tool loop 100% valid calls, one call per turn, ~27 s/slide; weaker colour sense (QA catches contrast)."
       }
     },
     "imageGeneration": {
@@ -827,6 +859,7 @@
       "zai:glm-4.7-flash",
       "nvidia:nvidia/nemotron-3-ultra-550b-a55b"
     ],
-    "_revisionComment": "Revision/polish passes (designer.reviseSlide, pass 'revision'): while more than V3_GEMINI_DRAFT_RESERVE (default 30) Gemini Flash calls are left today they use the normal design chain; below that they start at revisionBackups (Nemotron 3.5 Super VL when ALLOW_NVIDIA_PRODUCTION=true, then Mistral Large 4, DeepSeek-V3.1, GLM-4.7-Flash, Nemotron 3 Ultra) and Gemini follows them, so the last Gemini calls go to first drafts. Same number of design calls and polish passes; only the model order changes. V3_REVISION_ROUTE=gemini-first turns this off, =backup-first always uses backups first."
+    "_revisionComment": "Revision/polish passes (designer.reviseSlide, pass 'revision'): while more than V3_GEMINI_DRAFT_RESERVE (default 30) Gemini Flash calls are left today they use the normal design chain; below that they start at revisionBackups (Nemotron 3.5 Super VL when ALLOW_NVIDIA_PRODUCTION=true, then Mistral Large 4, DeepSeek-V3.1, GLM-4.7-Flash, Nemotron 3 Ultra) and Gemini follows them, so the last Gemini calls go to first drafts. Same number of design calls and polish passes; only the model order changes. V3_REVISION_ROUTE=gemini-first turns this off, =backup-first always uses backups first.",
+    "_v4Comment": "engine-v4 (1 Nov 2026 tool-calling test): planner + per-slide designer agents use OpenAI-style tool calls. Super VL 100% valid tool calls (~8 requests/slide); backups Lightning -> Muse Glimmer -> Ultra -> Super VL :free on OpenRouter. Avoid MiniMax, gpt-oss-20b, Groq Qwen, Mistral, SambaNova for tool loops. groq gpt-oss-120b is the last-resort agent route (94% valid tool calls)."
   }
 }

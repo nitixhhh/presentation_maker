@@ -15,6 +15,8 @@ export interface CreateRequest {
   logoId?: string;
   presenter: { names: string; rollNo: string; department: string; institute: string; guide: string; course: string };
   ageConfirmed?: boolean;
+  /** owner only: which engine makes the deck (the server ignores it for everyone else) */
+  engine?: "v3" | "v4";
 }
 
 const EMPTY: CreateRequest = {
@@ -35,8 +37,12 @@ const SLIDES = [6, 8, 10, 12, 15, 18, 20];
 export const field = "field";
 const label = "label";
 
-export default function CreateForm({ onSubmit, busy, error }: { onSubmit: (r: CreateRequest) => void; busy: boolean; error: string | null }) {
+export const ENGINE_KEY = "dc_engine_v4";
+
+export default function CreateForm({ onSubmit, busy, error, canChooseEngine = false, engineDefault = "v3" }: { onSubmit: (r: CreateRequest) => void; busy: boolean; error: string | null; canChooseEngine?: boolean; engineDefault?: "v3" | "v4" }) {
   const [r, setR] = useState<CreateRequest>(EMPTY);
+  // owner-only "New engine (beta)" switch, remembered on this phone
+  const [useV4, setUseV4] = useState(() => (typeof window !== "undefined" && localStorage.getItem(ENGINE_KEY) ? localStorage.getItem(ENGINE_KEY) === "1" : engineDefault === "v4"));
   const [more, setMore] = useState(false);
   // Gemini API terms: users must be 18+. Asked once per phone, remembered in localStorage.
   const [ageOk, setAgeOk] = useState(() => typeof window !== "undefined" && localStorage.getItem(AGE_KEY) === "1");
@@ -73,7 +79,7 @@ export default function CreateForm({ onSubmit, busy, error }: { onSubmit: (r: Cr
           ageRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
           return;
         }
-        onSubmit({ ...r, ageConfirmed: true });
+        onSubmit({ ...r, ageConfirmed: true, ...(canChooseEngine ? { engine: useV4 ? "v4" : "v3" } : {}) });
       }}
       className="space-y-6"
     >
@@ -160,6 +166,26 @@ export default function CreateForm({ onSubmit, busy, error }: { onSubmit: (r: Cr
           </div>
         </div>
       </div>
+
+      {canChooseEngine && (
+        <label className="flex cursor-pointer items-center justify-between gap-3 rounded-[var(--r-md)] border border-[var(--rule)] bg-[rgba(255,253,248,.7)] px-4 py-3.5">
+          <span className="min-w-0">
+            <span className="block text-[15px] font-medium text-[var(--ink)]">New engine (beta)</span>
+            <span className="block text-[12.5px] text-[var(--muted)]">Slide-by-slide agents with icons and diagrams. Only you see this switch.</span>
+          </span>
+          <input
+            type="checkbox"
+            className="check"
+            role="switch"
+            aria-checked={useV4}
+            checked={useV4}
+            onChange={(e) => {
+              setUseV4(e.target.checked);
+              localStorage.setItem(ENGINE_KEY, e.target.checked ? "1" : "0");
+            }}
+          />
+        </label>
+      )}
 
       {error && <p className="rounded-[var(--r-md)] border border-[#EBC3B6] bg-[var(--bad-soft)] px-4 py-3 text-[14px] text-[var(--bad)]">{error}</p>}
 

@@ -1,0 +1,30 @@
+/**
+ * Which engine makes a deck. v3 stays the default on the live site; ENGINE_DEFAULT=v4 switches everyone.
+ * The site owner (OWNER_EMAILS, comma-separated Google login emails) can pick either engine per deck with the
+ * "New engine (beta)" switch; everyone else always gets ENGINE_DEFAULT.
+ */
+import type { AuthUser } from "./auth";
+
+export type Engine = "v3" | "v4";
+
+export function engineDefault(): Engine {
+  return String(process.env.ENGINE_DEFAULT || "v3").trim().toLowerCase() === "v4" ? "v4" : "v3";
+}
+
+export function ownerEmails(): string[] {
+  return String(process.env.OWNER_EMAILS || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => s.includes("@"));
+}
+
+export function isOwner(user: Pick<AuthUser, "email"> | null | undefined): boolean {
+  const e = String(user?.email || "").trim().toLowerCase();
+  return !!e && ownerEmails().includes(e);
+}
+
+/** the engine for a new deck: the owner's explicit choice, else the site default */
+export function engineFor(user: Pick<AuthUser, "email"> | null | undefined, requested: unknown): Engine {
+  if ((requested === "v3" || requested === "v4") && isOwner(user)) return requested;
+  return engineDefault();
+}

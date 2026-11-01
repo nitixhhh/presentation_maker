@@ -82,7 +82,7 @@ for (var i = 0; i < items.length; i++) for (var j = i + 1; j < items.length; j++
 }
 
 // 2. lines / arrows / outlines crossing text (SVG strokes + thin HTML rules)
-var shapes = [].slice.call(SLIDE.querySelectorAll('svg line, svg polyline, svg polygon, svg path, svg rect, svg circle, svg ellipse')).filter(function(s){ return !s.closest('defs,marker,clipPath,mask,pattern,symbol') && op(s) > 0.3; });
+var shapes = [].slice.call(SLIDE.querySelectorAll('svg line, svg polyline, svg polygon, svg path, svg rect, svg circle, svg ellipse')).filter(function(s){ return !s.closest('defs,marker,clipPath,mask,pattern,symbol,svg.dc-icon') && op(s) > 0.3; });
 var hitsBy = {};
 shapes.forEach(function(s, si){
   var st = cs(s); if (st.stroke === 'none' || alphaOf(st.stroke) * parseFloat(st.strokeOpacity || 1) < 0.3) return;

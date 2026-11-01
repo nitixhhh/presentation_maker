@@ -13,6 +13,25 @@ export interface JobProgress {
   notice?: string;
   noticeAt?: number;
   log: { t: string; agent: string; msg: string }[]; // last ~40 lines
+  /** engine v4: live slide-by-slide state (each slide appears the moment its designer agent submits it) */
+  live?: LiveDeck;
+}
+
+export interface LiveSlide {
+  n: number;
+  title: string;
+  state: "waiting" | "building" | "ready" | "polishing" | "done";
+  /** the agent's latest real steps, newest last (the UI rotates through them) */
+  statuses: string[];
+  /** preview version — bumps every time a new render is written */
+  v: number;
+  /** signed preview URL (added to the view; not stored) */
+  image?: string;
+}
+
+export interface LiveDeck {
+  engine: "v4";
+  slides: LiveSlide[];
 }
 
 export interface JobRecord {
@@ -41,6 +60,7 @@ export interface JobRecord {
 export interface JobView extends Omit<JobRecord, "ownerKey" | "userId" | "request"> {
   topic: string;
   slideCount?: number;
+  engine?: "v3" | "v4";
   queuePosition?: number; // 1 = next to start
   etaSeconds?: number; // until the deck is ready
   elapsedSeconds?: number;

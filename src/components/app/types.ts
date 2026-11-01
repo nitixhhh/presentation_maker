@@ -12,7 +12,8 @@ export interface JobView {
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;
-  progress: { stage: JobStage; step: string; percent: number; details?: string; notice?: string; log: { t: string; agent: string; msg: string }[] };
+  progress: { stage: JobStage; step: string; percent: number; details?: string; notice?: string; log: { t: string; agent: string; msg: string }[]; live?: LiveDeck };
+  engine?: "v3" | "v4";
   queuePosition?: number;
   etaSeconds?: number;
   elapsedSeconds?: number;
@@ -37,4 +38,18 @@ export interface DeckSummary {
   locked?: boolean;
   payments?: { provider: string; keyId?: string; testMode?: boolean; price: number; pack5: number; credits: number } | null;
   edits?: { used: number; free: number };
+}
+
+/** engine v4: slides appear one by one while the deck is being made */
+export interface LiveSlide {
+  n: number;
+  title: string;
+  state: "waiting" | "building" | "ready" | "polishing" | "done";
+  statuses: string[];
+  v: number;
+  image?: string;
+}
+export interface LiveDeck {
+  engine: "v4";
+  slides: LiveSlide[];
 }

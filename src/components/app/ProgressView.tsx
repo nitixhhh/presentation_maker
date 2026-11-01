@@ -3,6 +3,7 @@ import { Check, Loader2, Clock, WifiOff, RotateCcw } from "lucide-react";
 import type { JobStage, JobView } from "./types";
 import type { LinkState } from "./useJob";
 import { formatDuration } from "./useJob";
+import LiveSlides from "./LiveSlides";
 
 const STEPS: { key: JobStage; label: string; hint: string }[] = [
   { key: "research", label: "Research", hint: "Reading real sources and collecting cited facts" },
@@ -89,6 +90,8 @@ export default function ProgressView({ job, link, onRetry, onHome }: { job: JobV
           </>
         )}
       </div>
+
+      {!queued && job.progress.live?.slides?.length ? <LiveSlides live={job.progress.live} /> : null}
 
       <ol className="panel rise d2 space-y-0.5 rounded-[var(--r-lg)] p-3 sm:p-4">
         {STEPS.map((s) => {

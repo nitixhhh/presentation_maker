@@ -2,6 +2,7 @@ import { createJob, getJobViewsFor, jobsOfOwner, queueStats, QueueFullError } fr
 import { parseV3Request } from "@/server/http";
 import { loginRequired, resolveOwner } from "@/server/auth";
 import { clientIp, rateLimit, tooMany } from "@/server/rateLimit";
+import { engineFor } from "@/server/engineChoice";
 
 /** Start a deck. Returns { job } immediately; the deck is generated in the background. */
 export async function POST(req: Request) {
@@ -21,6 +22,8 @@ export async function POST(req: Request) {
   }
   const parsed = parseV3Request(body);
   if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
+  // engine: v3 by default; only the owner may pick (body.engine "v4" / "v3"), ENGINE_DEFAULT switches everyone
+  parsed.value.engine = engineFor(user, body?.engine);
   try {
     const job = await createJob(parsed.value, ownerKey, user?.id);
     return Response.json({ job }, { status: 202 });

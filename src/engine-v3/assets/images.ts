@@ -19,7 +19,7 @@ import type { Asset, OutlineSlide } from "../types";
 
 const UA = "DeckCraftAI/3.0 (academic presentation engine)";
 
-interface Candidate {
+export interface Candidate {
   url: string; // download url (thumb ~1600px)
   width: number;
   height: number;
@@ -227,7 +227,7 @@ async function slot<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-async function download(url: string, timeoutMs = 20000, attempt = 0): Promise<Buffer | null> {
+export async function download(url: string, timeoutMs = 20000, attempt = 0): Promise<Buffer | null> {
   const res = await slot(() => downloadOnce(url, timeoutMs));
   if (res === "retry" && attempt < 3) {
     await new Promise((r) => setTimeout(r, 1500 * 2 ** attempt));
@@ -253,7 +253,7 @@ async function downloadOnce(url: string, timeoutMs: number): Promise<Buffer | nu
 }
 
 /** Normalise any raster into a JPEG ≤1600px and measure it. */
-async function store(buf: Buffer, dir: string, id: string): Promise<{ file: string; width: number; height: number; avgColor: string } | null> {
+export async function store(buf: Buffer, dir: string, id: string): Promise<{ file: string; width: number; height: number; avgColor: string } | null> {
   try {
     const img = sharp(buf, { failOn: "none" }).rotate().resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true }).flatten({ background: "#ffffff" });
     const out = await img.jpeg({ quality: 86, mozjpeg: true }).toBuffer({ resolveWithObject: true });

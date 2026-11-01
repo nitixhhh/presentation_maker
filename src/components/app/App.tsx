@@ -141,7 +141,7 @@ export default function App() {
               <p className="lede mt-2.5 text-[15.5px]">Real sources with references, every slide designed on its own, and both PDF and editable PowerPoint.</p>
             </div>
             <div className="glass rise d1 rounded-[var(--r-xl)] p-4 sm:p-6">
-              <CreateForm onSubmit={start} busy={busy} error={error} />
+              <CreateForm onSubmit={start} busy={busy} error={error} canChooseEngine={!!me?.engine?.canChoose} engineDefault={me?.engine?.default || "v3"} />
             </div>
             {me?.auth.required && !me.user && <p className="-mt-6 text-center text-[13px] text-[var(--muted)]">You'll sign in with Google before the deck starts.</p>}
             {me && <RecentDecks key={me.user?.id || "anon"} onOpen={(id) => go({ name: "job", id })} limit={3} onAll={() => go({ name: "decks" })} signedIn={!!me.user} />}

@@ -2,6 +2,7 @@
 import type { Deck, DesignSystem } from "../types";
 import { COMPONENTS_CSS, COMPONENTS_JS } from "./components";
 import { deckLogo, logoCornerHtml, stripEngineLogo } from "../assets/logo";
+import { expandIcons, ICON_CSS } from "../../engine-v4/iconRender";
 
 export function resolveAssets(html: string, assetBase: string, deck: Pick<Deck, "assets">): string {
   return html.replace(/asset:([a-z0-9_-]+)/gi, (m, id) => {
@@ -12,12 +13,15 @@ export function resolveAssets(html: string, assetBase: string, deck: Pick<Deck, 
 
 export function slideDocument(design: DesignSystem, innerHtml: string, opts: { assetBase: string; deck: Pick<Deck, "assets">; n?: number; extraHead?: string }): string {
   let body = resolveAssets(stripEngineLogo(innerHtml), opts.assetBase, opts.deck);
+  // engine v4 icon placeholders (<i data-icon="lucide:cpu">) → real inline SVG (no-op for slides without icons)
+  const iconCss = /data-icon\s*=/.test(body) ? ICON_CSS : "";
+  if (iconCss) body = expandIcons(body).html;
   // the institution logo: designed into the title/closing slide; every other slide gets the same small corner logo
   const logo = opts.deck.assets ? deckLogo(opts.deck as { assets: any[] }) : undefined;
   if (logo && opts.n != null && !logo.forSlides.includes(opts.n)) body += `\n${logoCornerHtml(`${opts.assetBase}${logo.file}`)}`;
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=1280">
 ${design.fontLink}
-<style>${design.css}${COMPONENTS_CSS}</style>${opts.extraHead || ""}
+<style>${design.css}${COMPONENTS_CSS}${iconCss}</style>${opts.extraHead || ""}
 </head><body><section class="slide" data-n="${opts.n ?? ""}">
 ${body}
 </section><script>window.__v3ready=false;function __v3draw(){try{${COMPONENTS_JS}}finally{window.__v3ready=true;}}document.fonts && document.fonts.ready ? document.fonts.ready.then(__v3draw) : __v3draw();</script></body></html>`;

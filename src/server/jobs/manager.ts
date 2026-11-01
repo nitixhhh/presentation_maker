@@ -14,6 +14,8 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { generateDeckV3 } from "@/engine-v3/pipeline";
+import { generateDeckV4 } from "@/engine-v4/pipeline";
+import { deckToken } from "../deckAuth";
 import { llmContext, type CallStat } from "@/engine-v3/llm";
 import { deckDir, loadDeck, saveDeck } from "@/engine-v3/store";
 import { exportPdf } from "@/engine-v3/export/pdf";
@@ -146,7 +148,15 @@ function remainingSeconds(j: JobRecord): number {
 
 export function viewOf(j: JobRecord): JobView {
   const { ownerKey: _o, userId: _u, request, routes: _r, ...rest } = j;
-  const v: JobView = { ...rest, topic: request.topic, slideCount: request.slideCount };
+  const v: JobView = { ...rest, topic: request.topic, slideCount: request.slideCount, engine: request.engine || "v3" };
+  // engine v4 live slides: signed preview links for the slides already made (the job view only reaches the job's owner)
+  if (v.progress?.live && j.deckId) {
+    let t = "";
+    try {
+      t = deckToken(j.deckId, "view");
+    } catch {}
+    v.progress = { ...v.progress, live: { ...v.progress.live, slides: v.progress.live.slides.map((s) => (s.v > 0 && t ? { ...s, image: `/api/v3/deck/${j.deckId}/preview/${s.n}?t=${t}&v=${s.v}` } : s)) } };
+  }
   if (v.progress?.notice && Date.now() - (v.progress.noticeAt || 0) > 90_000) v.progress = { ...v.progress, notice: undefined };
   if (j.startedAt) v.elapsedSeconds = Math.round(((j.finishedAt ? Date.parse(j.finishedAt) : Date.now()) - Date.parse(j.startedAt)) / 1000);
   if (j.status === "running") v.etaSeconds = remainingSeconds(j);
@@ -217,9 +227,7 @@ async function run(job: JobRecord) {
       await runEdit(job, stats, onWait);
       return;
     }
-    const deck = await llmContext.run({ onWait, stats, routes: job.routes as any }, () => generateDeckV3(job.request, {
-      visionMode: job.visionMode,
-      onProgress: (p) => {
+    const onProgress = (p: import("@/engine-v3/types").ProgressEvent) => {
         const stage = stageOf(p.step);
         const pr = job.progress;
         // never go backwards (designers + QA run in parallel and report out of order)
@@ -233,12 +241,39 @@ async function run(job: JobRecord) {
         }
         persist(job);
         notify(job);
-      },
-      onDeckId: (id) => {
-        job.deckId = id;
-        persist(job, true);
-      },
-    }));
+    };
+    const onDeckId = (id: string) => {
+      job.deckId = id;
+      persist(job, true);
+    };
+    const v4 = job.request.engine === "v4";
+    const deck = await llmContext.run({ onWait, stats, routes: job.routes as any }, () =>
+      v4
+        ? generateDeckV4(job.request, {
+            visionMode: job.visionMode,
+            onProgress,
+            onDeckId,
+            onPlan: (slides) => {
+              job.progress.live = { engine: "v4", slides: slides.map((s) => ({ n: s.n, title: s.title, state: "waiting", statuses: [], v: 0 })) };
+              persist(job, true);
+              notify(job);
+            },
+            onSlide: (e) => {
+              const ls = job.progress.live?.slides.find((x) => x.n === e.n);
+              if (!ls) return;
+              // a slide already shown never goes back to "building"
+              if (!(e.state === "building" && (ls.state === "ready" || ls.state === "polishing" || ls.state === "done"))) ls.state = e.state;
+              if (e.status && ls.statuses[ls.statuses.length - 1] !== e.status) {
+                ls.statuses.push(e.status);
+                if (ls.statuses.length > 6) ls.statuses.splice(0, ls.statuses.length - 6);
+              }
+              if (e.preview) ls.v += 1;
+              persist(job);
+              notify(job);
+            },
+          })
+        : generateDeckV3(job.request, { visionMode: job.visionMode, onProgress, onDeckId })
+    );
     job.deckId = deck.id;
     job.title = deck.brief.title;
     if (job.kind !== "benchmark") {

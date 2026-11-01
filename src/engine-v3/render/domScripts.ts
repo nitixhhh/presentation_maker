@@ -338,6 +338,8 @@ var s = document.querySelector('section.slide').cloneNode(true);
 s.querySelectorAll('[data-v3-text],[data-v3-img],[data-v3-inl],[data-v3-svgt]').forEach(function(e){ e.removeAttribute('data-v3-text'); e.removeAttribute('data-v3-img'); e.removeAttribute('data-v3-inl'); e.removeAttribute('data-v3-svgt'); });
 // drawn component layers are regenerated on every load — never store them
 s.querySelectorAll('figure.v3-diagram > .v3d').forEach(function(e){ e.remove(); });
+// engine v4 icons are re-expanded on every render — store the compact placeholder
+s.querySelectorAll('[data-ic-x]').forEach(function(e){ e.innerHTML = ''; e.removeAttribute('data-ic-x'); var st = e.getAttribute('style'); if (st){ st = st.replace(/--ic-(size|color):[^;]*;?/g, '').trim(); if (st) e.setAttribute('style', st); else e.removeAttribute('style'); } });
 return s.innerHTML;
 })()`;
 

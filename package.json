@@ -7,12 +7,13 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test src/engine-v3/llm.test.ts src/engine-v3/fixes.test.ts src/engine-v3/quickfixes.test.ts src/server/keepAlive.test.ts src/engine-v3/render/geometry.test.ts src/server/access.test.ts src/lib/client/store.test.ts"
+    "test": "tsx --test src/engine-v3/llm.test.ts src/engine-v3/fixes.test.ts src/engine-v3/quickfixes.test.ts src/server/keepAlive.test.ts src/engine-v3/render/geometry.test.ts src/server/access.test.ts src/lib/client/store.test.ts src/engine-v4/v4.test.ts src/engine-v4/icons/icons.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
     "echarts": "^6.1.0",
     "lucide-react": "^1.63.0",
+    "mermaid": "^11.17.2",
     "next": "16.4.3",
     "pdf-lib": "^1.17.1",
     "playwright": "^1.64.1",

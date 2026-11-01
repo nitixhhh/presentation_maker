@@ -5,6 +5,7 @@ import { loginRequired, resolveOwner } from "@/server/auth";
 import { clientIp, rateLimit, tooMany } from "@/server/rateLimit";
 import { loadDeck } from "@/engine-v3/store";
 import { deckSummary } from "@/engine-v3/summary";
+import { engineFor } from "@/server/engineChoice";
 
 
 /**
@@ -27,6 +28,7 @@ export async function POST(req: NextRequest) {
   }
   const parsed = parseV3Request(body);
   if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
+  parsed.value.engine = engineFor(user, body?.engine);
   let jobId: string;
   try {
     jobId = (await createJob(parsed.value, ownerKey, user?.id)).id;
