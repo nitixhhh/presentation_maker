@@ -75,7 +75,8 @@ If the content does not fit at minimum sizes, cut words. The speaker notes carry
 - Every element must earn its place: it either carries information or guides the eye.
 - Remove: decorative clip-art, extra borders, shadows on everything, gradients behind text,
   logos on every slide, repeated titles inside the slide, "Introduction:" prefixes.
-- Decorative shapes are allowed only as quiet background (motif, faded numeral, thin rule),
+- Decorative shapes are allowed only as quiet background (motif, thin rule) — never decorative slide
+  numbers or giant numerals ("04"); the engine removes them,
   never on top of text and never competing with the main visual.
 
 ## 10. Truth

@@ -69,13 +69,16 @@ Rules:
 - Timeline / process slides: 4–6 dated events or steps in true chronological order, each with its date or period from the facts (never guess a period such as "Ancient" for a 1641 work). Agenda: one short item per section. Closing slide: 2–3 distinct take-aways (never repeat a sentence), no new claims.
 - Every content slide needs a real visual: a photo only when a concrete, on-topic subject exists (never product, brand or logo shots); otherwise a diagram, chart, big number or icon set. The title slide needs a hero visual (photo_query of the subject, or an icon/diagram composition).
 - Vary layouts: never the same layout on neighbouring slides, no layout more than twice. Mix photo, diagram/chart, icon cards and big-number slides. A chart only with ≥ 3 real numbers from the facts.
-- Photos only for concrete physical subjects; icons are real SVG icons (give 2–5 concepts).
+- Photos only for concrete physical subjects that ARE the slide's subject (a named person, place, experiment, instrument, organism, artwork). Never a gadget, device or product as a metaphor for an abstract idea (no VR headset for "simulation", no laptop/robot for "AI", no phone for "technology") — an abstract idea gets a diagram or icon cards. Icons are real SVG icons (give 2–5 concepts).
+- Sources: facts marked [scholarly] come from papers/books, not Wikipedia. When any exist, attach at least one [scholarly] fact on a content slide (the deck must cite more than Wikipedia).
 - Write all slide text in the deck language; photo_query/ai_prompt/icons stay in English.
 - Presenter details are placeholders filled by the engine; never write names yourself.`;
 }
 
 function userPrompt(brief: Brief, research: ResearchPack): string {
-  const facts = research.facts.map((f) => `${f.id}: ${f.text}`).join("\n");
+  const kindOf = new Map(research.sources.map((s) => [s.id, s.kind]));
+  const tag = (ids: string[]) => (ids.some((id) => kindOf.get(id) && kindOf.get(id) !== "wikipedia") ? " [scholarly]" : "");
+  const facts = research.facts.map((f) => `${f.id}${tag(f.sources || [])}: ${f.text}`).join("\n");
   const terms = research.keyTerms.map((k) => `${k.term} — ${k.meaning}`).join("\n");
   return `BRIEF
 Title: ${brief.title}${brief.subtitle ? ` — ${brief.subtitle}` : ""}

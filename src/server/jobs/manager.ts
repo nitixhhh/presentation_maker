@@ -15,6 +15,7 @@ import fs from "fs";
 import path from "path";
 import { generateDeckV3 } from "@/engine-v3/pipeline";
 import { generateDeckV4 } from "@/engine-v4/pipeline";
+import { finalizePlaceholders, assertNoPlaceholdersInPptx } from "@/engine-v4/finalize";
 import { deckToken } from "../deckAuth";
 import { llmContext, type CallStat } from "@/engine-v3/llm";
 import { deckDir, loadDeck, saveDeck } from "@/engine-v3/store";
@@ -357,9 +358,18 @@ export async function buildExports(deckId: string) {
   const deck = loadDeck(deckId);
   if (!deck) throw new Error("deck missing after generation");
   fs.mkdirSync(path.join(deckDir(deckId), "exports"), { recursive: true });
+  // engine v4: hard final gate — real presenter details, empty detail rows removed, no "{{" in any exported slide
+  if ((deck as any).engine === "v4") {
+    const fixed = finalizePlaceholders(deck);
+    if (fixed.length) {
+      console.log(`[v4/export] deck ${deckId}: placeholder gate fixed ${fixed.join("; ")}`);
+      saveDeck(deck);
+    }
+  }
   // LOW_MEMORY (512 MB hosts): PDF then PPTX one after the other instead of both at once
   const lowMem = process.env.LOW_MEMORY === "true";
   const [pdf, pptx] = lowMem ? [await exportPdf(deck), await exportPptx(deck)] : await Promise.all([exportPdf(deck), exportPptx(deck)]);
+  if ((deck as any).engine === "v4") await assertNoPlaceholdersInPptx(pptx, deckId);
   fs.writeFileSync(exportPath(deckId, "pdf"), pdf);
   fs.writeFileSync(exportPath(deckId, "pptx"), pptx);
   await buildPreviews(deckId);

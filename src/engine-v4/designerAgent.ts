@@ -17,6 +17,8 @@ import { readSkill, layoutIds, skeletonTexts } from "./skills";
 import { ICON_TOOL_DEFS, handleIconTool } from "./icons/icons";
 import { collapseIcons, expandIcons, iconsInHtml, resolveIconName } from "./iconRender";
 import { makeDiagram, ALL_KINDS } from "./diagrams";
+import { sanitizePlaceholders, removeEmptyDetailRows } from "./finalize";
+import { isProductShot, briefLeaks } from "./photoRules";
 
 export interface SlideBrief {
   n: number;
@@ -153,10 +155,11 @@ Hard rules:
 - HTML = one <style> block (every selector starts with .slide) + the markup that goes inside <section class="slide">. No <script>, no external URLs, no emoji as icons, no position:fixed.
 - Icons: <i class="ic" data-icon="ICON_ID"></i> (ids from search_icons), sized with CSS width/height, coloured with CSS color. Each point gets its OWN icon that depicts that point (never the same icon twice in a list). Place every icon you searched for, or drop that idea.
 - Fill the canvas: the content block spans roughly x 80–1200, y 190–660. No half-empty columns — enlarge type, add the visual, or widen cards. Layouts are flex/grid with height:auto, never fixed heights that the text can overflow.
-- Photos: show them clearly; a dark scrim only directly behind text that sits on the photo, never over a whole photo with no text on it. Big decorative numbers never overlap photos or text.
+- Photos: show them clearly; a dark scrim only directly behind text that sits on the photo, never over a whole photo with no text on it. Photos only of the real subject — never a gadget, product or brand shot (VR headset, phone, laptop) as a metaphor; then use icons or a diagram.
+- NO decorative slide numbers or giant numerals ("04", "01") anywhere — the engine deletes them. Step numbers in a process are small (≤ 40px) and inside their card.
 - Title slide: a hero visual (photo from search_photos/assets, or a large icon/diagram composition) plus a neatly aligned presenter block from the placeholders.
-- Content: only the text in your brief (you may tighten wording). Never invent numbers, dates, names, emails, URLs or sources. Keep citation markers as <sup>[2]</sup>. Write placeholders like {{P1}} exactly.
-- Sizes: title 44–64px, body 24–30px, labels ≥ 18px, at most ~55 words of body text; text ≥ 56px from the edges; every word inside a text element (h1–h4, p, li, span, strong, small, figcaption, td).
+- Content: the text in your brief — keep each point's substance (the name, year, number, mechanism or example; 8–16 words per card line, never cut to 2–3 words). Never invent numbers, dates, names, emails, URLs or sources. Keep citation markers as <sup>[2]</sup>. Presenter details: ONLY the placeholders listed in your brief ({{P1}} …), one row each, written exactly; never add a detail row (Course, Institution, Date…) that is not listed.
+- Sizes: title 44–64px, body 24–30px (never below 20px), labels and card captions ≥ 18px (prefer 20–22px), at most ~55 words of body text; text ≥ 56px from the edges; every word inside a text element (h1–h4, p, li, span, strong, small, figcaption, td).
 - Colours: only the deck variables var(--bg) var(--surface) var(--ink) var(--muted) var(--primary) var(--accent) var(--accent2) (tints with color-mix are fine); text must contrast with what is behind it. Fonts: var(--font-heading), var(--font-body).
 - Budget: at most ${12} turns. Always answer with tool calls, never with plain text.
 
@@ -294,10 +297,11 @@ export async function runDesignerAgent(ctx: AgentCtx): Promise<AgentResult> {
   let submitted: { html: string; notes: string; note?: string } | null = null;
   let plainReplies = 0;
 
+  // real details in; any detail row the student left empty (or a placeholder the model invented) out — label and value
   const fill = (h0: string) => {
-    const h = stripUnknownPlaceholders(h0, fields.length);
-    const withFields = os.role === "title" ? ensureFields(h, fields, missingPlaceholders(h, fields)) : h;
-    return fillPlaceholders(withFields, fields);
+    const withFields = os.role === "title" ? ensureFields(h0, fields, missingPlaceholders(h0, fields)) : h0;
+    const s = sanitizePlaceholders(withFields, fields).html;
+    return os.role === "title" ? removeEmptyDetailRows(s).html : s;
   };
   const mask = (t: string) => maskText(t, fields);
 
@@ -331,7 +335,7 @@ export async function runDesignerAgent(ctx: AgentCtx): Promise<AgentResult> {
         if (Number(fs[1]) < 18) small.push(`${sel.replace(/\s+/g, " ").slice(-40)} ${fs[1]}px`);
       }
       for (const m of html.matchAll(/<(p|span|div|li|h\d)[^>]*style="[^"]*font-size:\s*(\d+(?:\.\d+)?)px/g)) if (Number(m[2]) < 18) small.push(`inline ${m[2]}px`);
-      if (small.length) issues.push({ type: "small-type", severity: small.some((s) => Number(/(\d+(?:\.\d+)?)px$/.exec(s)?.[1]) < 16) ? "high" : "medium", detail: `Text set below 18px: ${small.slice(0, 4).join("; ")}. Card text and labels need ≥18px (sentences 22–28px) — make room by cutting words, not by shrinking type.` });
+      if (small.length) issues.push({ type: "small-type", severity: "high", detail: `Text set below 18px: ${small.slice(0, 4).join("; ")}. Card text and labels need ≥18px (sentences 22–28px) — make room by cutting words, not by shrinking type.` });
     }
     {
       // only the student's own fields exist as placeholders ({{P1}}..{{Pn}}); anything else is an invented detail
@@ -342,6 +346,11 @@ export async function runDesignerAgent(ctx: AgentCtx): Promise<AgentResult> {
       const plain = html.replace(/<style[\s\S]*?<\/style>/g, " ").replace(/\s+/g, " ");
       const copied = skeletonTexts().filter((t) => plain.includes(t) && !ctx.allowedText.includes(t)).slice(0, 3);
       if (copied.length) issues.push({ type: "example-text", severity: "high", detail: `Sample text from the layout guide is on the slide (${copied.map((t) => `"${t}"`).join(", ")}) — replace it with this slide's own content.` });
+    }
+    {
+      const plainTxt = html.replace(/<style[\s\S]*?<\/style>/g, " ").replace(/<[^>]+>/g, " ");
+      const leaked = briefLeaks(plainTxt, ctx.brief, ctx.allowedText);
+      if (leaked.length) issues.push({ type: "brief-text", severity: "high", detail: `Your design note is printed on the slide as text ("${leaked[0]}") — the visual idea/brief describes HOW to design; show only the slide's content.` });
     }
     if (os.role === "title" && !/<img|background-image|v3-diagram|v4-mermaid/i.test(html) && (html.match(/data-icon=/g) || []).length < 3)
       issues.push({ type: "title-no-visual", severity: "medium", detail: "The title slide has no hero visual — add a photo (search_photos) or a large icon/diagram composition so half the slide is not empty." });
@@ -531,6 +540,8 @@ export async function searchPhotos(deck: Deck, n: number, query: string, orienta
   if (q.length < 3) return { error: "query too short" };
   const lists = await Promise.all([withTimeout(searchCommons(q, 4), 12000, [] as Candidate[]), withTimeout(searchWikipediaLead(q, 2), 10000, [] as Candidate[]), withTimeout(searchNasa(q, 2), 8000, [] as Candidate[]), withTimeout(searchOpenverse(q, 2), 8000, [] as Candidate[])]);
   let cands = lists.flat().filter((c, i, a) => a.findIndex((x) => x.url === c.url) === i);
+  // product / gadget / brand shots never reach the slide (unless the slide is about that thing)
+  cands = cands.filter((c) => !isProductShot(`${c.title || ""} ${c.description || ""}`, slideTitle || query));
   const used = new Set(deck.assets.map((a) => a.sourceUrl));
   cands = cands.filter((c) => !used.has(c.sourceUrl));
   if (orientation === "landscape") cands.sort((a, b) => b.width / b.height - a.width / a.height);
@@ -570,7 +581,7 @@ async function visionPick(got: { c: Candidate; buf: Buffer }[], query: string, s
     const W = got.length * (tw + 10);
     const labels = got.map((_, i) => `<text x="${i * (tw + 10) + 6}" y="22" font-size="20" font-family="sans-serif" font-weight="bold">${String.fromCharCode(65 + i)}</text>`).join("");
     const sheet = await sharp({ create: { width: W, height: th + 40, channels: 3, background: "#ffffff" } }).composite([...tiles, { input: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${th + 40}">${labels}</svg>`), left: 0, top: 0 }]).jpeg({ quality: 75 }).toBuffer();
-    const { data } = await chatJson<any>("agent", [{ role: "user", content: [{ type: "text", text: `Candidate pictures A–${String.fromCharCode(64 + got.length)} for the presentation slide "${slideTitle || query}" (photo search: "${query}"). Pick the ones that are clean, good-looking photos (or clear renderings) that clearly show the slide's subject. Reject commercial product / brand / logo shots, charts, graphs, diagrams, maps with text, screenshots, scanned documents, pictures with large text or watermarks, and anything off-topic. Best first. Reply ONLY JSON: {"pick":["B","A"]} (empty list if none fit).` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${sheet.toString("base64")}` } }] }], { temperature: 0, maxTokens: 300, timeoutMs: 90_000, label: "v4 photo pick" });
+    const { data } = await chatJson<any>("agent", [{ role: "user", content: [{ type: "text", text: `Candidate pictures A–${String.fromCharCode(64 + got.length)} for the presentation slide "${slideTitle || query}" (photo search: "${query}"). Be strict — no photo is better than a wrong one. Pick only clean, good-looking photos that literally show the slide's subject (the named person, place, object, experiment or phenomenon). Reject: symbolic stand-ins for an abstract idea; consumer products, gadgets and devices (headsets, phones, laptops, consoles) and brand/logo shots; charts, graphs, diagrams, maps with text; screenshots, scanned documents; pictures with large text or watermarks; anything off-topic. Best first. Reply ONLY JSON: {"pick":["B","A"]} (empty list if none fit).` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${sheet.toString("base64")}` } }] }], { temperature: 0, maxTokens: 300, timeoutMs: 90_000, label: "v4 photo pick" });
     const picks: string[] = (Array.isArray(data?.pick) ? data.pick : []).map((x: any) => String(x).trim().toUpperCase().charAt(0));
     const out = picks.map((l) => got[l.charCodeAt(0) - 65]).filter(Boolean);
     return Array.from(new Set(out));

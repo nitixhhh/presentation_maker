@@ -273,9 +273,47 @@ texts.forEach(function(t){
 texts.forEach(function(t){
   var el = document.querySelector('[data-v3-text="'+t.id+'"]'); if (!el) return;
   var txt = el.innerText.trim();
-  if (t.words >= 7 && t.fontSize < 20 && !/^\s*\[\d+\]|https?:|doi|retrieved|wikipedia|credit|cc by|via wikimedia/i.test(txt)) issues.push({type:'small-body', severity: t.fontSize < 17 ? 'high' : 'medium', detail:'Body text "' + txt.slice(0,40) + '" is ' + Math.round(t.fontSize) + 'px — use 22–28px for sentences so the back row can read it.'});
+  if (t.words >= 7 && t.fontSize < 20 && !/^\s*\[\d+\]|https?:|doi|retrieved|wikipedia|credit|cc by|via wikimedia/i.test(txt)) issues.push({type:'small-body', severity: (t.fontSize < 17 || (document.documentElement.getAttribute('data-engine') === 'v4' && t.fontSize < 19.5)) ? 'high' : 'medium', detail:'Body text "' + txt.slice(0,40) + '" is ' + Math.round(t.fontSize) + 'px — use 22–28px for sentences so the back row can read it.'});
 });
 var V4 = document.documentElement.getAttribute('data-engine') === 'v4';
+var V4ROLE = document.documentElement.getAttribute('data-role') || '';
+// v4: captions and labels at least 18px (sources, credits, citations excepted)
+if (V4 && V4ROLE !== 'references') texts.forEach(function(t){
+  var el = document.querySelector('[data-v3-text="'+t.id+'"]'); if (!el || t.words >= 7) return;
+  var txt = el.innerText.trim(); if (txt.replace(/[^\p{L}\p{N}]/gu,'').length < 2 || /^\s*\[\d+|https?:|doi|retrieved|wikipedia|credit|source|cc by|wikimedia|nasa|©|^\d+\s*\/\s*\d+$/i.test(txt) || (t.opacity ?? 1) < 0.5) return;
+  if (t.fontSize < 17.5) issues.push({type:'small-caption', severity:'high', detail:'Label/caption "' + txt.slice(0,40) + '" is ' + Math.round(t.fontSize) + 'px — labels and captions need at least 18px (cut words instead of shrinking).'});
+  else if (t.words >= 3 && t.fontSize < 19.5) issues.push({type:'small-caption', severity:'medium', detail:'Card text "' + txt.slice(0,40) + '" is ' + Math.round(t.fontSize) + 'px — card sentences read best at 20–24px.'});
+});
+// v4: icons / badges / decorative SVG drawn over text (the DOM text checks only see text-on-text)
+if (V4) (function(){
+  var gfx = [];
+  SLIDE.querySelectorAll('svg, .ic, [data-icon], [data-ic-x]').forEach(function(g){
+    if (g.closest('figure.v3-diagram') || g.closest('.v4-mermaid') || g.closest('[class*="logo"]')) return;
+    if (g.tagName.toLowerCase() === 'svg' && g.parentElement && g.parentElement.closest('svg')) return;
+    if (g.tagName.toLowerCase() === 'svg' && g.querySelector('text')) return; // a diagram with its own labels
+    var cs = getComputedStyle(g); if (parseFloat(cs.opacity) < 0.35 || cs.visibility === 'hidden') return;
+    var r = g.getBoundingClientRect(); if (r.width < 12 || r.height < 12 || r.width * r.height > 1280*720*0.5) return;
+    // the badge around an icon is part of the graphic
+    var host = g; var p = g.parentElement;
+    while (p && p !== SLIDE && !(p.innerText || '').trim()) { var pr = p.getBoundingClientRect(); if (pr.width * pr.height > r.width * r.height * 9) break; host = p; p = p.parentElement; }
+    gfx.push({el: g, host: host, r: host.getBoundingClientRect()});
+  });
+  var seen = {};
+  gfx.forEach(function(g){ texts.forEach(function(t){ var te = document.querySelector('[data-v3-text="'+t.id+'"]'); if (!te || g.host.contains(te) || te.contains(g.host)) return;
+    var x0 = g.r.left - SR.left, y0 = g.r.top - SR.top; var ox = Math.min(x0 + g.r.width, t.x + t.w) - Math.max(x0, t.x), oy = Math.min(y0 + g.r.height, t.y + t.h) - Math.max(y0, t.y);
+    if (ox <= 4 || oy <= 4) return; var a = ox * oy; if (a < 0.12 * Math.min(g.r.width * g.r.height, t.w * t.h)) return;
+    var key = t.id; if (seen[key]) return; seen[key] = 1;
+    issues.push({type:'graphic-over-text', severity:'high', detail:'An icon/graphic at ' + Math.round(x0) + ',' + Math.round(y0) + ' (' + Math.round(g.r.width) + '×' + Math.round(g.r.height) + ') overlaps the text "' + te.innerText.trim().slice(0,40) + '" — move one of them (one flex/grid flow, no absolute boxes on top of each other) or drop the decoration.'}); }); });
+})();
+// v4: content that stops high up leaves the lower part of the slide empty
+if (V4 && /^(concept|comparison|process|timeline|data|case|summary|agenda|content|stats|definition|example|application|applications|advantages|limitations|history|overview)$/i.test(V4ROLE)) (function(){
+  var bottom = 0;
+  texts.forEach(function(t){ var el = document.querySelector('[data-v3-text="'+t.id+'"]'); if (!el) return; var tx = el.innerText.trim(); if (t.fontSize <= 18 && /source|credit|wikimedia|wikipedia|\[\d/i.test(tx)) return; bottom = Math.max(bottom, t.y + t.h); });
+  images.forEach(function(i){ if (i.w * i.h < 1280*720*0.6) bottom = Math.max(bottom, i.y + i.h); });
+  SLIDE.querySelectorAll('svg').forEach(function(sv){ if (sv.parentElement && sv.parentElement.closest('svg')) return; if (sv.closest('[class*="logo"]')) return; var r = sv.getBoundingClientRect(); if (r.width > 60 && r.width*r.height < 1280*720*0.6) bottom = Math.max(bottom, r.bottom - SR.top); });
+  SLIDE.querySelectorAll('*').forEach(function(el){ if (el.closest('svg') || el.closest('[class*="logo"]')) return; var cs = getComputedStyle(el); var bg = cs.backgroundColor || ''; if (!bg || /rgba?\(0, 0, 0, 0\)|transparent/.test(bg)) return; var r = el.getBoundingClientRect(); if (r.width < 120 || r.height < 60 || r.width*r.height > 1280*720*0.6) return; bottom = Math.max(bottom, r.bottom - SR.top); });
+  if (bottom > 0 && bottom < 480) issues.push({type:'bottom-empty', severity:'medium', detail:'The content stops at y=' + Math.round(bottom) + ' — the bottom ' + Math.round((720-bottom)/7.2) + '% of the slide is empty. Make the cards/visual taller and the type bigger so the content block reaches y≈620–660, or add substance from the brief.'});
+})();
 // word-per-line wrapping (a column squeezed so narrow that each line holds one or two words)
 if (V4) texts.forEach(function(t){
   var el = document.querySelector('[data-v3-text="'+t.id+'"]'); if (!el || t.words < 6) return;

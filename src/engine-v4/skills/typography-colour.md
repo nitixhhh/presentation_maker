@@ -29,7 +29,7 @@ an Office-safe twin (e.g. Poppins→Century Gothic), so avoid layouts that only 
 | Labels, captions, diagram text | 18–22 px (never < 18) | 500–700 | 1.2 |
 | Source lines, footnotes | 16–18 px, ≤ 6 words, or ≥ 20 px if longer | 400 | 1.3 |
 | References slide | 15–18 px | 400 | 1.4 |
-| Big numbers | 80–220 px | 800 | 1.0–1.1 |
+| Big numbers (real data only, never decorative slide numbers) | 80–140 px | 800 | 1.0–1.1 |
 
 Rules: steps between levels ≥ 1.3×; max two weights per font on a slide; line length 35–60
 characters (set a width on the text box); left-align multi-line text; avoid ALL CAPS except short

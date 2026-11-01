@@ -3,7 +3,7 @@
 Use for: starting a new part of a long deck (10+ slides). Quiet, bold, few words.
 
 ## Structure
-- Giant faded section number (200–320 px) as a background element.
+- No giant section numbers (they collide with titles in this engine); the kicker "Part 2" carries the position.
 - Section title (56–72 px) and one line of what this part answers (24–28 px).
 - Optional: a thin progress row showing all sections with the current one highlighted.
 
@@ -11,7 +11,6 @@ Use for: starting a new part of a long deck (10+ slides). Quiet, bold, few words
 
 ```html
 <style>
-.slide .num{position:absolute;right:70px;top:70px;font-family:var(--font-heading);font-size:280px;line-height:1;font-weight:800;color:color-mix(in srgb,var(--primary) 14%,transparent)}
 .slide .bar{position:absolute;left:80px;top:300px;width:8px;height:150px;border-radius:4px;background:var(--accent)}
 .slide .copy{position:absolute;left:120px;top:290px;width:760px;display:flex;flex-direction:column;gap:14px}
 .slide .kicker{font-size:20px;letter-spacing:.16em;text-transform:uppercase;font-weight:700;color:var(--primary)}
@@ -21,7 +20,6 @@ Use for: starting a new part of a long deck (10+ slides). Quiet, bold, few words
 .slide .steps span{flex:1;font-size:18px;color:var(--muted);border-top:4px solid color-mix(in srgb,var(--ink) 15%,transparent);padding-top:10px}
 .slide .steps .on{color:var(--ink);font-weight:700;border-top-color:var(--accent)}
 </style>
-<p class="num" aria-hidden="true">02</p>
 <div class="bar"></div>
 <div class="copy">
   <p class="kicker">Part 2</p>

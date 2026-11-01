@@ -4,8 +4,10 @@ Use for: slide 1. The most striking slide of the deck; sets palette, fonts and m
 
 ## Structure
 - Title (hero, 64–88 px if ≤ 7 words, else 52–64 px), optional subtitle (24–30 px).
-- Presenter block: label small/muted (18–20 px), value larger (20–24 px). Only fields that were given,
-  written as their placeholders `{{P1}}`, `{{P2}}`… exactly.
+- Presenter block: label (18–20 px, muted), value (20–24 px). ONLY the fields listed in your brief, each
+  written as its placeholder exactly ({{P1}} …). If the brief lists one field, the block has one row. Never add
+  rows for details you were not given (no "Course", "Institution", "Date" rows with invented placeholders).
+- No decorative numbers ("01") on the title slide.
 - One visual: a hero photo with a scrim, OR a typographic composition with motif shapes.
 - University/organisation logo, if uploaded: small (height 56–88 px), in a corner or above the
   title. Never as background, never stretched, never the main visual.
@@ -34,7 +36,7 @@ Use for: slide 1. The most striking slide of the deck; sets palette, fonts and m
   <h1>Black Holes</h1>
   <p class="sub">Where gravity wins against light</p>
   <div class="rule"></div>
-  <div class="meta"><span>Presented by</span><strong>{{P1}}</strong><span>Roll No.</span><strong>{{P2}}</strong></div>
+  <div class="meta"><span>Presented by</span><strong>{{P1}}</strong></div>
 </div>
 ```
 
@@ -43,7 +45,6 @@ Use for: slide 1. The most striking slide of the deck; sets palette, fonts and m
 ```html
 <style>
 .slide .band{position:absolute;left:0;top:0;width:430px;height:720px;background:var(--primary)}
-.slide .big{position:absolute;left:40px;top:120px;width:360px;font-family:var(--font-heading);font-size:240px;line-height:1;color:color-mix(in srgb,var(--bg) 18%,transparent)}
 .slide .logo{position:absolute;left:80px;top:56px;height:72px;width:auto;object-fit:contain}
 .slide .copy{position:absolute;left:510px;top:0;bottom:0;width:690px;display:flex;flex-direction:column;justify-content:center;gap:20px}
 .slide h1{font-size:64px;line-height:1.06;color:var(--ink)}
@@ -53,11 +54,10 @@ Use for: slide 1. The most striking slide of the deck; sets palette, fonts and m
 .slide .who span{color:var(--muted)}
 </style>
 <div class="band"></div>
-<p class="big" aria-hidden="true">01</p>
 <div class="copy">
   <h1>Are We Living in a Simulation?</h1>
   <p class="sub">The argument, the evidence and the objections</p>
-  <div class="who"><p><span>Presented by </span>{{P1}}</p><p><span>Department </span>{{P3}}</p></div>
+  <div class="who"><p><span>Presented by </span>{{P1}}</p></div>
 </div>
 ```
 

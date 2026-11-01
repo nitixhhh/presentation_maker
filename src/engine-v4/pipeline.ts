@@ -29,6 +29,10 @@ import type { Asset, Deck, OutlineSlide, ProgressFn, SlideDesign, V3Request } fr
 import { runPlanner } from "./planner";
 import { runDesignerAgent, type AgentResult, type SlideBrief } from "./designerAgent";
 import { collapseIcons } from "./iconRender";
+import { finishSlideV4 } from "./finish";
+import { isProductShot, briefLeaks } from "./photoRules";
+import { finalizePlaceholders, sanitizePlaceholders } from "./finalize";
+import { skeletonTexts } from "./skills";
 
 export type LiveState = "waiting" | "building" | "ready" | "polishing" | "done";
 export interface LiveSlideEvent {
@@ -116,6 +120,11 @@ export async function generateDeckV4(req: V3Request, opts: V4Options = {}): Prom
   const factSrc = new Map(research.facts.map((f) => [f.id, f.sources]));
   for (const s of outline.slides) for (const p of s.points) for (const fid of p.factIds || []) for (const sid of factSrc.get(fid) || []) if (!citeMap.has(sid)) citeMap.set(sid, citeMap.size + 1);
   if (citeMap.size < 3) for (const src of research.sources) if (!citeMap.has(src.id) && citeMap.size < 6) citeMap.set(src.id, citeMap.size + 1);
+  // at least one credible non-Wikipedia source in the references when research found one (facts were drawn from it)
+  if (![...citeMap.keys()].some((sid) => research.sources.find((s) => s.id === sid)?.kind !== "wikipedia")) {
+    const sch = research.sources.find((s) => s.kind !== "wikipedia" && research.facts.some((f) => f.sources.includes(s.id)));
+    if (sch) citeMap.set(sch.id, citeMap.size + 1);
+  }
   const references = Array.from(citeMap.entries())
     .sort((a, b) => a[1] - b[1])
     .map(([sid, n]) => ({ n, sourceId: sid, text: formatReference(research.sources.find((s) => s.id === sid)!, brief.referenceStyle) }));
@@ -138,9 +147,25 @@ export async function generateDeckV4(req: V3Request, opts: V4Options = {}): Prom
     if (dropped.length) {
       for (const a of dropped) assets.splice(assets.indexOf(a), 1);
       emit("Finding images", 38, "Images", `dropped ${dropped.length} photo(s) that did not fit their slide: ${dropped.map((a) => `slide ${a.forSlides.join(",")}`).join("; ")}`);
+      // no good photo left for a slide → its designer gets a diagram / icon composition instead of searching again
+      for (const a of dropped)
+        for (const n of a.forSlides) {
+          if (assets.some((x) => x.forSlides.includes(n) && x.origin !== "upload")) continue;
+          const os = outline.slides.find((x) => x.n === n);
+          const b = briefs.get(n);
+          if (!os || !b || os.role === "title") continue;
+          os.visual = { kind: "diagram", idea: `A diagram or icon composition that explains: ${os.keyMessage || os.title}` };
+          b.visual = { ...b.visual, kind: (b.visual.icons || []).length >= 2 ? "icons" : "diagram", diagram: b.visual.diagram || "hub", query: undefined };
+          b.designerBrief = `${b.designerBrief} No suitable photo exists for this slide (the candidates were off-concept or product shots) — do not search photos; use a diagram or icon cards.`.trim();
+        }
     }
   }
   const design = await runArtDirector(brief, outline, assets.filter((a) => a.origin !== "upload"));
+  // v4 never draws decorative numerals (they collided with titles): drop that part of the art director's motif/rules
+  const NUMERAL = /numeral|numbers?\b|digits?\b|slide[- ]number|watermark number/i;
+  if (NUMERAL.test(design.motif || "")) design.motif = (design.motif || "").split(/,\s*|;\s*|\s+(?:paired with|plus|and)\s+/).filter((x) => x && !NUMERAL.test(x)).join(", ") || "a thin accent rule beside each title";
+  design.rules = (design.rules || []).filter((r) => !NUMERAL.test(r));
+  for (const d of design.directions || []) if (NUMERAL.test(d.idea || "")) d.idea = d.idea.split(/,\s*|;\s*|\.\s+/).filter((x) => x && !NUMERAL.test(x)).join(", ");
   emit("Designing the look + finding images", 40, "ArtDirector", `${design.name}: ${design.font.heading}/${design.font.body}, motif — ${design.motif}`);
   mark("images+art", tt);
 
@@ -167,6 +192,34 @@ export async function generateDeckV4(req: V3Request, opts: V4Options = {}): Prom
     saveDeck(deck);
   };
 
+  /** v4 content gates the DOM check cannot see: sample text copied from the layout guides, raw placeholders */
+  const skeletons = skeletonTexts();
+  const contentIssues = (insp: Inspection, n = 0) => {
+    const plain = insp.html.replace(/<style[\s\S]*?<\/style>/g, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+    const copied = skeletons.filter((t) => plain.includes(t) && !`${brief.title} ${outline.slides.map((s) => [s.title, s.keyMessage, ...s.points.map((x) => x.text)].join(" ")).join(" ")}`.includes(t)).slice(0, 3);
+    if (copied.length) insp.issues.push({ type: "example-text", severity: "high", detail: `Sample text from the layout guide is on the slide (${copied.map((t) => `"${t}"`).join(", ")}) — replace it with this slide's own content from the brief.` });
+    const leakN = n;
+    const leaked = leakN ? briefLeaks(plain, briefs.get(leakN), (() => { const o = outline.slides.find((s) => s.n === leakN); return o ? [o.title, o.keyMessage, ...o.points.map((x) => x.text)].join(" ") : ""; })()) : [];
+    if (leaked.length) insp.issues.push({ type: "brief-text", severity: "high", detail: `The planner's design note is printed on the slide ("${leaked[0]}") — remove it; show only the slide's content.` });
+    if (/\{\{/.test(plain)) insp.issues.push({ type: "placeholder", severity: "high", detail: "A raw {{…}} placeholder is visible — keep only the presenter details you were given; remove any other detail row (label and value)." });
+  };
+
+  /** v4 final deterministic pass: no decorative numerals, type floor (20px body / 18px labels), content fills the slide */
+  async function finishBest(os: OutlineSlide, html: string): Promise<{ html: string; insp: Inspection; fixes: string[] } | null> {
+    try {
+      const fields = brief.titleSlideFields || [];
+      const clean = sanitizePlaceholders(html, fields).html;
+      const fin = await finishSlideV4(deck, os.n, clean, renderDir, os.role);
+      const insp = await inspectSlide(deck, os.n, fin.html, renderDir, os.role);
+      if (os.role === "references") checkReferences(insp);
+      contentIssues(insp, os.n);
+      return { html: insp.html, insp, fixes: fin.fixes };
+    } catch (e: any) {
+      console.warn(`[v4] finish pass failed on slide ${os.n}: ${String(e?.message || e).slice(0, 120)}`);
+      return null;
+    }
+  }
+
   /** the v3 polish passes for one slide, starting from the agent's submitted design */
   async function polish(os: OutlineSlide, d: DesignOut, agent: AgentResult | null): Promise<SlideDesign> {
     const isRefs = os.role === "references";
@@ -178,6 +231,7 @@ export async function generateDeckV4(req: V3Request, opts: V4Options = {}): Prom
     for (let round = 0; round <= maxRevisions; round++) {
       const insp = await inspectSlide(deck, os.n, d.html, renderDir, os.role, allowed);
       if (isRefs) checkReferences(insp);
+      contentIssues(insp, os.n);
       const high = insp.issues.filter((x) => x.severity === "high").length;
       const med = insp.issues.filter((x) => x.severity === "medium").length;
       const wantVision = visionMode === "always" || (visionMode === "smart" && (round === 0 || high + med > 0));
@@ -236,6 +290,18 @@ export async function generateDeckV4(req: V3Request, opts: V4Options = {}): Prom
       const insp = await inspectSlide(deck, os.n, html, renderDir, "references");
       best = { d: { ...best.d, html: insp.html, provider: "engine", model: "references" }, insp, vision: null, rank: 6 };
       emit("Visual QA", 88, `QA ${os.n}`, "references slide: used the exact reference list");
+    }
+    // v4 finish (decorative numerals, type floor, fill) — kept unless it makes the slide worse
+    if (best) {
+      const fin = await finishBest(os, best.d.html);
+      if (fin) {
+        const hb = best.insp.issues.filter((x) => x.severity === "high").length;
+        const ha = fin.insp.issues.filter((x) => x.severity === "high").length;
+        if (ha <= hb) {
+          best = { ...best, d: { ...best.d, html: fin.html }, insp: { ...fin.insp, autoFixes: [...best.insp.autoFixes, ...fin.fixes] } };
+          if (fin.fixes.length) emit("Visual QA", 88, `QA ${os.n}`, `finish: ${fin.fixes.slice(0, 4).join("; ")}`);
+        } else emit("Visual QA", 88, `QA ${os.n}`, `finish pass skipped (${ha} vs ${hb} serious issues)`);
+      }
     }
     const b = best!;
     await writePreview(id, os.n, b.insp.screenshot);
@@ -347,12 +413,33 @@ export async function generateDeckV4(req: V3Request, opts: V4Options = {}): Prom
   // ── parent review: the planner looks at the whole deck once and asks for targeted revisions ──────────────
   tt = Date.now();
   try {
-    await reviewDeck(deck, emit, slideEvt, renderDir);
+    await reviewDeck(deck, emit, slideEvt, renderDir, async (n, html) => {
+      const os = outline.slides.find((x) => x.n === n);
+      return os ? finishBest(os, html) : null;
+    });
   } catch (e: any) {
     emit("Final review", 92, "Planner", `deck review skipped: ${String(e?.message || e).slice(0, 100)}`);
   }
   mark("review", tt);
   saveSlides();
+  // hard final gate: real presenter details in, empty detail rows out, no "{{" on any slide (web, PDF, PPTX read this)
+  try {
+    const before = new Map(deck.slides.map((s) => [s.n, s.html]));
+    const fixedLog = finalizePlaceholders(deck);
+    if (fixedLog.length) {
+      emit("Final review", 93, "Engine", `presenter details: ${fixedLog.join("; ").slice(0, 200)}`);
+      for (const s of deck.slides)
+        if (before.get(s.n) !== s.html) {
+          const os = outline.slides.find((x) => x.n === s.n);
+          const insp = await inspectSlide(deck, s.n, s.html, renderDir, os?.role || "");
+          await writePreview(id, s.n, insp.screenshot);
+        }
+      saveDeck(deck);
+    }
+  } catch (e: any) {
+    emit("Final review", 93, "Engine", `placeholder gate: ${String(e?.message || e).slice(0, 120)}`);
+    throw e;
+  }
 
   const ctxStats = llmContext.getStore()?.stats;
   if (ctxStats) {
@@ -371,7 +458,7 @@ export async function generateDeckV4(req: V3Request, opts: V4Options = {}): Prom
 }
 
 /** One contact sheet of every slide → the planner (a vision model) → up to 3 targeted revisions. */
-async function reviewDeck(deck: Deck, emit: (step: string, percent: number, agent: string, action: string) => void, slideEvt: (e: LiveSlideEvent) => void, renderDir: string) {
+async function reviewDeck(deck: Deck, emit: (step: string, percent: number, agent: string, action: string) => void, slideEvt: (e: LiveSlideEvent) => void, renderDir: string, finish?: (n: number, html: string) => Promise<{ html: string; insp: Inspection; fixes: string[] } | null>) {
   const files = deck.slides.map((s) => previewFile(deck.id, s.n)).filter((f) => fs.existsSync(f));
   if (files.length < 3) return;
   const cols = 4, tw = 400, th = 225, pad = 8, lab = 22;
@@ -419,7 +506,13 @@ Reply ONLY JSON: {"overall": "one sentence", "revisions": [{"n": 3, "instruction
       if (ah <= bh) {
         s.html = after.html;
         s.revisions = (s.revisions || 0) + 1;
-        await writePreview(deck.id, s.n, after.screenshot);
+        let shot = after.screenshot;
+        const fin = finish ? await finish(s.n, after.html) : null;
+        if (fin && fin.insp.issues.filter((i) => i.severity === "high").length <= ah) {
+          s.html = fin.html;
+          shot = fin.insp.screenshot;
+        }
+        await writePreview(deck.id, s.n, shot);
         emit("Final review", 92, `Review ${s.n}`, `revised: ${String(r.instruction).slice(0, 100)}`);
       } else emit("Final review", 92, `Review ${s.n}`, `revision made it worse (${ah} vs ${bh} serious issues) — kept the original`);
     } catch (e: any) {
@@ -431,8 +524,14 @@ Reply ONLY JSON: {"overall": "one sentence", "revisions": [{"n": 3, "instruction
 
 /** vision check of the sourced photos against their slides; returns the assets to drop */
 async function vetPhotos(assets: Asset[], slides: OutlineSlide[], dir: string): Promise<Asset[]> {
-  const list = assets.filter((a) => a.origin !== "upload" && a.origin !== "generated").slice(0, 8);
-  if (!list.length) return [];
+  const all = assets.filter((a) => a.origin !== "upload" && a.origin !== "generated");
+  // product / brand / gadget shots are rejected by their own metadata before any AI looks (unless the slide is about that thing)
+  const pre = all.filter((a) => {
+    const s = slides.find((x) => a.forSlides.includes(x.n));
+    return isProductShot(`${a.title || ""} ${a.description || ""}`, `${s?.title || ""} ${s?.keyMessage || ""}`);
+  });
+  const list = all.filter((a) => !pre.includes(a)).slice(0, 8);
+  if (!list.length) return pre;
   try {
     const tw = 360, th = 240, lab = 26;
     const tiles = await Promise.all(list.map(async (a, i) => ({ input: await sharp(path.join(dir, a.file)).resize(tw, th, { fit: "cover" }).jpeg({ quality: 70 }).toBuffer(), left: (i % 4) * (tw + 10), top: Math.floor(i / 4) * (th + lab + 10) + lab })));
@@ -441,13 +540,13 @@ async function vetPhotos(assets: Asset[], slides: OutlineSlide[], dir: string): 
     const sheet = await sharp({ create: { width: W, height: H, channels: 3, background: "#ffffff" } }).composite([...tiles, { input: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">${labels}</svg>`), left: 0, top: 0 }]).jpeg({ quality: 75 }).toBuffer();
     const lines = list.map((a, i) => {
       const s = slides.find((x) => a.forSlides.includes(x.n));
-      return `${i + 1}. slide "${s?.title || "?"}" — ${(s?.points || []).map((p) => p.text).join("; ").slice(0, 160)}`;
+      return `${i + 1}. slide "${s?.title || "?"}" (message: ${(s?.keyMessage || "-").slice(0, 120)}) — ${(s?.points || []).map((p) => p.text).join("; ").slice(0, 160)}`;
     });
-    const { data } = await chatJson<any>("agent", [{ role: "user", content: [{ type: "text", text: `Each numbered picture was chosen for the slide listed below it. Reject a picture when it does NOT clearly show the slide's subject, or when it is a commercial product / brand / logo shot, a chart, graph, map or diagram with text, a screenshot, a scanned page, or has big text or a watermark. Keep good, relevant photos.\n${lines.join("\n")}\nReply ONLY JSON: {"reject":[numbers]}` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${sheet.toString("base64")}` } }] }], { temperature: 0, maxTokens: 300, timeoutMs: 90_000, label: "v4 photo vet" });
+    const { data } = await chatJson<any>("agent", [{ role: "user", content: [{ type: "text", text: `Each numbered picture was chosen for the slide listed below it. Be strict — a slide with no picture is better than a wrong one.\nREJECT a picture when ANY of these is true:\n- it does not literally show the slide's subject (a named person, place, object, experiment or phenomenon of THIS slide); a loosely related or symbolic stand-in is off-concept;\n- it is a consumer product, gadget or device shot (headset, phone, laptop, camera, console, packaging), a brand or logo, or a stock "technology" picture used as a metaphor for an abstract idea;\n- it is a chart, graph, map or diagram with text, a screenshot, a scanned page, or has big text or a watermark;\n- it is blurry, tiny, or mostly empty.\nKeep only photos a teacher would call exactly right for that slide.\n${lines.join("\n")}\nReply ONLY JSON: {"reject":[numbers], "why":"short"}` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${sheet.toString("base64")}` } }] }], { temperature: 0, maxTokens: 300, timeoutMs: 90_000, label: "v4 photo vet" });
     const rej: number[] = (Array.isArray(data?.reject) ? data.reject : []).map(Number).filter((x: number) => Number.isInteger(x) && x >= 1 && x <= list.length);
-    return rej.map((x) => list[x - 1]);
+    return [...pre, ...rej.map((x) => list[x - 1])];
   } catch {
-    return [];
+    return pre;
   }
 }
 
