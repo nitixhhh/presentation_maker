@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readSkill, resolveSkill, layoutIds, listSkills } from "./skills";
 import { expandIcons, collapseIcons, iconsInHtml } from "./iconRender";
 import { makeDiagram } from "./diagrams";
-import { cleanAgentHtml, pruneHistory } from "./designerAgent";
+import { cleanAgentHtml, pruneHistory, stripUnknownPlaceholders } from "./designerAgent";
 import { outlineFromBrief } from "./planner";
 import { engineFor, isOwner } from "../server/engineChoice";
 
@@ -106,4 +106,12 @@ test("pruned agent history keeps every tool-call argument valid JSON", () => {
   assert.match((out[2] as any).tool_calls[0].function.arguments, /omitted/);
   assert.ok(String((out[3] as any).content).length < 1400);
   assert.equal((out[4] as any).tool_calls[0].function.arguments.length > 4000, true); // last two assistant turns stay whole
+});
+
+test("placeholders the student never filled are removed, real ones kept", () => {
+  const h = `<div class="who"><p class="n">{{P1}}</p><div class="row"><span>Course</span><span class="v">{{P2}}</span></div><p>{{P3}}</p></div>`;
+  const o = stripUnknownPlaceholders(h, 1);
+  assert.match(o, /\{\{P1\}\}/);
+  assert.ok(!/\{\{P[23]\}\}/.test(o));
+  assert.equal(stripUnknownPlaceholders(h, 3), h);
 });

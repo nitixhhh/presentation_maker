@@ -14,7 +14,7 @@ Use for: group members, key scientists, stakeholders. ONLY people named in the b
 <style>
 .slide .hd{position:absolute;left:80px;top:60px;width:1120px}
 .slide .hd h2{font-size:50px;color:var(--ink)}
-.slide .grid{position:absolute;left:80px;top:200px;width:1120px;height:420px;display:grid;grid-template-columns:repeat(4,1fr);gap:28px}
+.slide .grid{position:absolute;left:80px;top:200px;width:1120px;min-height:420px;display:grid;grid-template-columns:repeat(4,1fr);gap:28px}
 .slide .p{display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;padding:28px 18px;background:var(--surface);border-radius:20px}
 .slide .av{width:150px;height:150px;border-radius:50%;background:color-mix(in srgb,var(--primary) 18%,transparent);display:flex;align-items:center;justify-content:center;border:4px solid var(--primary)}
 .slide .av span{font-family:var(--font-heading);font-size:52px;font-weight:800;color:var(--primary)}

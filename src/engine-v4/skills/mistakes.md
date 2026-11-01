@@ -69,3 +69,8 @@ past panels, a references slide broken by a long URL).
 - Fixing overflow by shrinking all text to 14 px.
 - Reading every skill file for every slide (token waste) — read INDEX, workflow, one layout, one topic.
 - Looping more than 3 fix rounds on the same layout instead of simplifying.
+
+
+## Fixed heights
+- Never give a grid/flex container that holds text a fixed `height` — use `min-height` (or top + bottom) so cards grow instead of clipping text. Overflowing cards are the most common reason a slide is rejected.
+- Never shrink body text below 20px to make it fit: cut words, use fewer columns, or move the badge beside the text.

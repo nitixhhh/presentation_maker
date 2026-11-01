@@ -294,7 +294,8 @@ export async function runDesignerAgent(ctx: AgentCtx): Promise<AgentResult> {
   let submitted: { html: string; notes: string; note?: string } | null = null;
   let plainReplies = 0;
 
-  const fill = (h: string) => {
+  const fill = (h0: string) => {
+    const h = stripUnknownPlaceholders(h0, fields.length);
     const withFields = os.role === "title" ? ensureFields(h, fields, missingPlaceholders(h, fields)) : h;
     return fillPlaceholders(withFields, fields);
   };
@@ -332,6 +333,11 @@ export async function runDesignerAgent(ctx: AgentCtx): Promise<AgentResult> {
       for (const m of html.matchAll(/<(p|span|div|li|h\d)[^>]*style="[^"]*font-size:\s*(\d+(?:\.\d+)?)px/g)) if (Number(m[2]) < 18) small.push(`inline ${m[2]}px`);
       if (small.length) issues.push({ type: "small-type", severity: small.some((s) => Number(/(\d+(?:\.\d+)?)px$/.exec(s)?.[1]) < 16) ? "high" : "medium", detail: `Text set below 18px: ${small.slice(0, 4).join("; ")}. Card text and labels need ≥18px (sentences 22–28px) — make room by cutting words, not by shrinking type.` });
     }
+    {
+      // only the student's own fields exist as placeholders ({{P1}}..{{Pn}}); anything else is an invented detail
+      const unknown = Array.from(new Set((html.match(/\{\{P(\d+)\}\}/g) || []).filter((m) => Number(m.slice(3, -2)) > fields.length || Number(m.slice(3, -2)) < 1)));
+      if (unknown.length) issues.push({ type: "unknown-placeholder", severity: "high", detail: `${unknown.join(", ")} do not exist — the student filled only ${fields.length ? fields.map((f, k) => `{{P${k + 1}}} (${f.label})`).join(", ") : "no details"}. Remove those rows entirely (label and value); never show empty detail fields.` });
+    }
     if (os.role === "title" && !/<img|background-image|v3-diagram|v4-mermaid/i.test(html) && (html.match(/data-icon=/g) || []).length < 3)
       issues.push({ type: "title-no-visual", severity: "medium", detail: "The title slide has no hero visual — add a photo (search_photos) or a large icon/diagram composition so half the slide is not empty." });
     {
@@ -359,6 +365,8 @@ export async function runDesignerAgent(ctx: AgentCtx): Promise<AgentResult> {
     const high = iss.filter((i) => i.severity === "high").length;
     const types = new Set(iss.map((i) => i.type));
     const hints: string[] = [];
+    if (types.has("edge")) hints.push("Keep every text box at least 56px inside the slide (x 56–1224, y 40–680); shrink the container width rather than letting it touch the edge.");
+    if (types.has("title-overlap")) hints.push("Leave the title its own band (top 60–170px); start panels at y ≥ 190, or shorten the title to one line.");
     if (["out-of-canvas", "text-clipped", "overflow", "text-past-panel", "text-overflow"].some((t) => types.has(t)))
       hints.push("Content is taller/wider than its box. Fix the box, not the font: remove fixed heights on grids/cards (height:auto, align-content:start), give the grid more room (content area is y 190–660), reduce padding, gaps and icon-badge size, or cut words. Never set body text below 20px.");
     if (types.has("too-much-text")) hints.push("Cut the text: short phrases, at most ~40 words on the slide; the details go in the speaker notes.");
@@ -420,7 +428,7 @@ export async function runDesignerAgent(ctx: AgentCtx): Promise<AgentResult> {
           const rec = lc0 && lc0.src === html ? lc0 : await check(html, false);
           let high = rec.insp.issues.filter((i) => i.severity === "high");
           // overflow-type problems: let the engine's auto-fit try once before sending the agent back
-          if (high.length && high.every((i) => FITTABLE.has(i.type))) {
+          if (process.env.V4_SUBMIT_AUTOFIT === "1" && high.length && high.every((i) => FITTABLE.has(i.type))) {
             try {
               const fx = await inspectSlide(deck, os.n, fill(html), ctx.renderDir, os.role, ctx.allowedText, { enforce: true, fixContrast: true });
               if (!fx.issues.some((i) => i.severity === "high")) {
@@ -604,4 +612,19 @@ export function pruneHistory(messages: Msg[]): Msg[] {
     if (m.role === "tool" && typeof m.content === "string" && m.content.length > 1400) return { ...m, content: m.content.slice(0, 1200) + " …[trimmed — call the tool again if you need the rest]" };
     return m;
   });
+}
+
+/** removes the innermost element carrying a placeholder the student never filled ({{P5}} with 2 fields), or the bare token */
+export function stripUnknownPlaceholders(html: string, n: number): string {
+  let out = html;
+  for (let guard = 0; guard < 12; guard++) {
+    const m = /\{\{P(\d+)\}\}/g;
+    let hit: RegExpExecArray | null = null;
+    for (let x; (x = m.exec(out)); ) if (Number(x[1]) > n || Number(x[1]) < 1) { hit = x; break; }
+    if (!hit) break;
+    const tok = hit[0];
+    const re = new RegExp(`<(p|span|div|li|small|strong|b|em|td|dd|dt|h[1-6])\\b[^>]*>[^<]*${tok.replace(/[{}]/g, "\\$&")}[^<]*<\\/\\1>`);
+    out = re.test(out) ? out.replace(re, "") : out.replace(tok, "");
+  }
+  return out;
 }

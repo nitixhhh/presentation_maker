@@ -15,7 +15,7 @@ Use for: comparing two options, methods, eras or theories on the same criteria.
 <style>
 .slide .hd{position:absolute;left:80px;top:60px;width:1120px}
 .slide .hd h2{font-size:50px;color:var(--ink)}
-.slide .cols{position:absolute;left:80px;top:190px;width:1120px;height:440px;display:grid;grid-template-columns:1fr 1fr;gap:64px}
+.slide .cols{position:absolute;left:80px;top:190px;width:1120px;min-height:440px;display:grid;grid-template-columns:1fr 1fr;gap:64px}
 .slide .col{background:var(--surface);border-radius:22px;padding:30px 34px;display:flex;flex-direction:column;gap:18px}
 .slide .col.win{border:3px solid var(--accent)}
 .slide .top{display:flex;align-items:center;gap:14px}

@@ -19,7 +19,9 @@ export function slideDocument(design: DesignSystem, innerHtml: string, opts: { a
   // the institution logo: designed into the title/closing slide; every other slide gets the same small corner logo
   const logo = opts.deck.assets ? deckLogo(opts.deck as { assets: any[] }) : undefined;
   if (logo && opts.n != null && !logo.forSlides.includes(opts.n)) body += `\n${logoCornerHtml(`${opts.assetBase}${logo.file}`)}`;
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=1280">
+  // engine v4 decks get a few stricter DOM checks (domScripts reads this flag); v3 decks render exactly as before
+  const v4 = (opts.deck as any).engine === "v4";
+  return `<!DOCTYPE html><html${v4 ? ' data-engine="v4"' : ""}><head><meta charset="utf-8"><meta name="viewport" content="width=1280">
 ${design.fontLink}
 <style>${design.css}${COMPONENTS_CSS}${iconCss}</style>${opts.extraHead || ""}
 </head><body><section class="slide" data-n="${opts.n ?? ""}">

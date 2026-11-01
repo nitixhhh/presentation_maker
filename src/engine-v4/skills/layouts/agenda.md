@@ -14,7 +14,7 @@ Use for: listing 3–6 sections near the start. Show it as a designed sequence, 
 <style>
 .slide .hd{position:absolute;left:80px;top:64px;width:1120px}
 .slide .hd h2{font-size:52px;color:var(--ink)}
-.slide .row{position:absolute;left:80px;top:190px;width:1120px;height:440px;display:grid;grid-template-columns:repeat(4,1fr);gap:24px}
+.slide .row{position:absolute;left:80px;top:190px;width:1120px;min-height:440px;display:grid;grid-template-columns:repeat(4,1fr);gap:24px}
 .slide .card{background:var(--surface);border-radius:20px;padding:28px 24px;display:flex;flex-direction:column;gap:14px;border-top:6px solid var(--primary)}
 .slide .card b{font-family:var(--font-heading);font-size:72px;color:var(--primary);line-height:1}
 .slide .card .ic{width:52px;height:52px;color:var(--accent);margin-top:auto}

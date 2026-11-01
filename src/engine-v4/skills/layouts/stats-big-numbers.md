@@ -16,7 +16,7 @@ from the brief, each with its source marker.
 .slide .hd{position:absolute;left:80px;top:60px;width:1120px;display:flex;flex-direction:column;gap:10px}
 .slide .hd h2{font-size:50px;color:var(--ink)}
 .slide .hd p{font-size:26px;color:var(--muted)}
-.slide .stats{position:absolute;left:80px;top:250px;width:1120px;height:300px;display:grid;grid-template-columns:repeat(3,1fr);gap:40px}
+.slide .stats{position:absolute;left:80px;top:250px;width:1120px;min-height:300px;display:grid;grid-template-columns:repeat(3,1fr);gap:40px}
 .slide .st{display:flex;flex-direction:column;gap:10px;padding-top:24px;border-top:6px solid var(--primary)}
 .slide .st:nth-child(2){border-top-color:var(--accent)}
 .slide .st b{display:block;font-family:var(--font-heading);font-size:96px;line-height:1.1;color:var(--ink);margin-bottom:6px}

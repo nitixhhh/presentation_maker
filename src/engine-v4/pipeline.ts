@@ -258,7 +258,11 @@ export async function generateDeckV4(req: V3Request, opts: V4Options = {}): Prom
     slideEvt({ n: os.n, state: "building", status: "Reading the slide brief…" });
     let agent: AgentResult | null = null;
     let d: DesignOut | null = null;
-    try {
+    // the references slide is laid out by the engine from the real sources (exact text, no AI turns needed)
+    if (os.role === "references") {
+      d = { html: referencesSlideHtml(deck, os.title || "References"), notes: os.notes || "", provider: "engine", model: "references", messages: [] };
+      slideEvt({ n: os.n, state: "building", status: "Laying out the real sources…" });
+    } else try {
       agent = await runDesignerAgent({
         deck,
         os,

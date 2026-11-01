@@ -1,6 +1,6 @@
 # Layout: Timeline
 
-Use for: events in chronological order (history, project phases, milestones). 3–6 events.
+Use for: events in chronological order (history, project phases, milestones). 4–6 events; the event cards fill the width and run down to ~y 640 (no empty lower half).
 For 7+ events, group into periods or split across two slides.
 
 ## Structure
@@ -14,26 +14,28 @@ For 7+ events, group into periods or split across two slides.
 
 ```html
 <style>
-.slide .hd{position:absolute;left:80px;top:60px;width:1120px}
-.slide .hd h2{font-size:50px;color:var(--ink)}
-.slide .line{position:absolute;left:80px;top:330px;width:1120px;height:4px;border-radius:2px;background:color-mix(in srgb,var(--primary) 35%,transparent)}
-.slide .events{position:absolute;left:80px;top:300px;width:1120px;display:grid;grid-template-columns:repeat(4,1fr);gap:28px}
-.slide .ev{display:flex;flex-direction:column;gap:10px}
+.slide .hd{position:absolute;left:80px;top:56px;width:1120px}
+.slide .hd h2{font-size:50px;line-height:1.1;color:var(--ink)}
+.slide .line{position:absolute;left:80px;top:262px;width:1120px;height:4px;border-radius:2px;background:color-mix(in srgb,var(--primary) 35%,transparent)}
+/* events fill the width AND the height: cards run from the line down to ~y 640 */
+.slide .events{position:absolute;left:80px;top:232px;width:1120px;bottom:72px;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:24px}
+.slide .ev{display:flex;flex-direction:column;gap:12px}
 .slide .dot{width:64px;height:64px;border-radius:50%;background:var(--surface);border:4px solid var(--primary);display:flex;align-items:center;justify-content:center}
 .slide .dot .ic{width:30px;height:30px;color:var(--primary)}
 .slide .ev.now .dot{background:var(--primary)}
 .slide .ev.now .dot .ic{color:var(--bg)}
-.slide .ev b{font-family:var(--font-heading);font-size:30px;color:var(--accent);margin-top:8px}
-.slide .ev h3{font-size:24px;color:var(--ink)}
-.slide .ev p{font-size:20px;line-height:1.35;color:var(--muted)}
+.slide .card{flex:1;background:var(--surface);border-radius:16px;padding:20px 20px 22px;display:flex;flex-direction:column;gap:8px}
+.slide .ev b{font-family:var(--font-heading);font-size:32px;line-height:1;color:var(--accent)}
+.slide .ev h3{font-size:24px;line-height:1.2;color:var(--ink)}
+.slide .ev p{font-size:21px;line-height:1.35;color:var(--muted)}
 </style>
 <div class="hd"><h2>From theory to first image</h2></div>
 <div class="line"></div>
 <div class="events">
-  <div class="ev"><div class="dot"><i class="ic" data-icon="lucide:scroll-text"></i></div><b>1916</b><h3>Prediction</h3><p>Equations allow a region light cannot leave</p></div>
-  <div class="ev"><div class="dot"><i class="ic" data-icon="lucide:telescope"></i></div><b>1971</b><h3>First candidate</h3><p>X-rays from Cygnus X-1</p></div>
-  <div class="ev"><div class="dot"><i class="ic" data-icon="lucide:audio-waveform"></i></div><b>2015</b><h3>Waves detected</h3><p>Two black holes merge</p></div>
-  <div class="ev now"><div class="dot"><i class="ic" data-icon="lucide:camera"></i></div><b>2019</b><h3>First image</h3><p>The shadow of M87*</p></div>
+  <div class="ev"><div class="dot"><i class="ic" data-icon="lucide:scroll-text"></i></div><div class="card"><b>1916</b><h3>Prediction</h3><p>Equations allow a region light cannot leave</p></div></div>
+  <div class="ev"><div class="dot"><i class="ic" data-icon="lucide:telescope"></i></div><div class="card"><b>1971</b><h3>First candidate</h3><p>X-rays from Cygnus X-1</p></div></div>
+  <div class="ev"><div class="dot"><i class="ic" data-icon="lucide:audio-waveform"></i></div><div class="card"><b>2015</b><h3>Waves detected</h3><p>Two black holes merge</p></div></div>
+  <div class="ev now"><div class="dot"><i class="ic" data-icon="lucide:camera"></i></div><div class="card"><b>2019</b><h3>First image</h3><p>The shadow of M87*</p></div></div>
 </div>
 ```
 

@@ -17,7 +17,7 @@ Use for: an ordered sequence with a start and an end (method, algorithm, how som
 .slide .hd{position:absolute;left:80px;top:60px;width:1120px;display:flex;flex-direction:column;gap:10px}
 .slide .hd h2{font-size:50px;color:var(--ink)}
 .slide .hd p{font-size:25px;color:var(--muted)}
-.slide .flow{position:absolute;left:80px;top:240px;width:1120px;height:290px;display:flex;gap:48px}
+.slide .flow{position:absolute;left:80px;top:240px;width:1120px;min-height:290px;display:flex;gap:48px}
 .slide .step{flex:1;position:relative;background:var(--surface);border-radius:18px;padding:24px 22px;display:flex;flex-direction:column;gap:12px}
 .slide .step:not(:last-child)::after{content:"";position:absolute;right:-34px;top:50%;width:20px;height:20px;border-top:4px solid var(--accent);border-right:4px solid var(--accent);transform:translateY(-50%) rotate(45deg)}
 .slide .n{width:52px;height:52px;border-radius:50%;background:var(--primary);display:flex;align-items:center;justify-content:center}

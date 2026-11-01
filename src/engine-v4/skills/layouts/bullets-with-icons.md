@@ -16,7 +16,7 @@ label and a one-line description.
 .slide .hd{position:absolute;left:80px;top:60px;width:1120px;display:flex;flex-direction:column;gap:12px}
 .slide .hd h2{font-size:50px;color:var(--ink)}
 .slide .hd p{font-size:26px;color:var(--muted);max-width:900px}
-.slide .cards{position:absolute;left:80px;top:250px;width:1120px;height:360px;display:grid;grid-template-columns:repeat(3,1fr);gap:32px}
+.slide .cards{position:absolute;left:80px;top:250px;width:1120px;min-height:360px;display:grid;grid-template-columns:repeat(3,1fr);gap:32px}
 .slide .card{background:var(--surface);border-radius:20px;padding:32px 28px;display:flex;flex-direction:column;gap:16px}
 .slide .badge{width:84px;height:84px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--primary) 14%,transparent)}
 .slide .badge .ic{width:44px;height:44px;color:var(--primary)}
@@ -33,7 +33,7 @@ label and a one-line description.
 
 ## Variants
 - Icon left, text right, stacked vertically (good beside a photo on the right 40 %).
-- 2×2 grid for 4 items with longer descriptions.
+- 2×2 grid for 4 items: put the badge LEFT of the text (card `flex-direction:row; align-items:center`, badge 72px) so each card stays ≤ 190px tall and the grid fits y 240–650.
 - No cards: icons on a thin horizontal rule, label below (lighter look).
 
 ## Don't
