@@ -12,8 +12,10 @@ export interface JobView {
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;
-  progress: { stage: JobStage; step: string; percent: number; details?: string; notice?: string; log: { t: string; agent: string; msg: string }[]; live?: LiveDeck };
-  engine?: "v3" | "v4" | "v5";
+  progress: { stage: JobStage; step: string; percent: number; details?: string; notice?: string; log: { t: string; agent: string; msg: string }[]; live?: LiveDeck; plan?: PlanInfo };
+  engine?: "v3" | "v4" | "v5" | "v6";
+  /** engine v6: "plan" while this job is the plan step */
+  stage?: "plan" | "deck";
   queuePosition?: number;
   etaSeconds?: number;
   elapsedSeconds?: number;
@@ -38,6 +40,7 @@ export interface DeckSummary {
   locked?: boolean;
   payments?: { provider: string; keyId?: string; testMode?: boolean; price: number; pack5: number; credits: number } | null;
   edits?: { used: number; free: number };
+  engine?: string;
 }
 
 /** engine v4: slides appear one by one while the deck is being made */
@@ -50,6 +53,31 @@ export interface LiveSlide {
   image?: string;
 }
 export interface LiveDeck {
-  engine: "v4" | "v5";
+  engine: "v4" | "v5" | "v6";
   slides: LiveSlide[];
+}
+
+/** engine v6 plan step */
+export interface PlanCard {
+  id: string;
+  title: string;
+  points: string[];
+  layout: string;
+  beat?: string;
+  sources: string[];
+  fixed?: "title" | "references" | "closing";
+}
+export interface PlanStyle {
+  id: string;
+  name: string;
+  why: string;
+  dark: boolean;
+  palette: Record<string, string>;
+  font: string;
+  previews: string[];
+}
+export interface PlanInfo {
+  cards: PlanCard[];
+  styles: PlanStyle[];
+  previewSlide?: number;
 }

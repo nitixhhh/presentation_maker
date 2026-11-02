@@ -25,7 +25,9 @@ export interface V3Request {
   imageMode?: "real-first" | "ai-allowed" | "none";
   styleHint?: string; // e.g. "dark and modern", "clean white academic"
   /** which engine makes the deck (set by the server: ENGINE_DEFAULT, or the owner's "New engine (beta)" switch) */
-  engine?: "v3" | "v4" | "v5";
+  engine?: "v3" | "v4" | "v5" | "v6";
+  /** engine v6: the plan step ("plan") or a deck made from an approved plan ("deck"); set by the server */
+  v6?: { stage: "plan" | "deck"; planJobId?: string; data?: any; cards?: any[]; styleId?: string | null; style?: any; previews?: any };
 }
 
 export interface Brief {

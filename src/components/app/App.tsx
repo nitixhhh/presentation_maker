@@ -8,6 +8,7 @@ import Gallery from "./Gallery";
 import CreateForm, { AGE_KEY, type CreateRequest } from "./CreateForm";
 import ProgressView from "./ProgressView";
 import DeckView from "./DeckView";
+import PlanFlow from "./PlanFlow";
 import { useJob } from "./useJob";
 import type { DeckSummary, JobView } from "./types";
 import { forgetJob, keepOnly, saveJob, savedJobs, type SavedJob } from "@/lib/client/store";
@@ -155,20 +156,32 @@ export default function App() {
             {me?.user && me.referralCode && <Invite me={me} />}
           </div>
         )}
-        {view.name === "job" && <JobScreen id={view.id} me={me} onHome={() => go({ name: "home" })} onRetry={start} />}
+        {view.name === "job" && (
+          <JobScreen
+            id={view.id}
+            me={me}
+            onHome={() => go({ name: "home" })}
+            onRetry={start}
+            onOpenJob={(id) => {
+              const s = savedJobs().find((x) => x.id === view.id);
+              saveJob({ id, topic: s?.topic || "", createdAt: new Date().toISOString(), request: s?.request });
+              go({ name: "job", id });
+            }}
+          />
+        )}
       </main>
     </div>
   );
 }
 
-function JobScreen({ id, me, onHome, onRetry }: { id: string; me: Me | null; onHome: () => void; onRetry: (r: Record<string, unknown>) => void }) {
+function JobScreen({ id, me, onHome, onRetry, onOpenJob }: { id: string; me: Me | null; onHome: () => void; onRetry: (r: Record<string, unknown>) => void; onOpenJob: (id: string) => void }) {
   const { job, link, missing } = useJob(id);
   const [deck, setDeck] = useState<DeckSummary | null>(null);
   const [reload, setReload] = useState(0);
   const onReload = useCallback(() => setReload((x) => x + 1), []);
 
   useEffect(() => {
-    if (job?.status === "done" && job.deckId) {
+    if (job?.status === "done" && job.deckId && job.stage !== "plan") {
       let tries = 0;
       const load = () =>
         api(`/api/v3/deck/${job.deckId}`)
@@ -199,6 +212,8 @@ function JobScreen({ id, me, onHome, onRetry }: { id: string; me: Me | null; onH
         </button>
       </div>
     );
+  // engine v6: the plan is ready — the student edits and approves it, then picks a style
+  if (job?.status === "done" && job.stage === "plan" && job.progress.plan) return <PlanFlow job={job} onStarted={onOpenJob} />;
   if (job?.status === "done")
     return deck ? (
       <DeckView deck={deck} me={me} onReload={onReload} />
@@ -289,7 +304,7 @@ function RecentDecks({ onOpen, limit, onAll, signedIn }: { onOpen: (id: string) 
       <ul className="panel divide-y divide-[var(--rule)] overflow-hidden rounded-[var(--r-lg)]">
         {list.map((s) => {
           const j = jobs[s.id];
-          const status = !j ? "" : j.status === "done" ? "Ready" : j.status === "failed" ? "Failed" : j.status === "queued" ? "In line" : `${Math.round(j.progress.percent)}%`;
+          const status = !j ? "" : j.status === "done" && j.stage === "plan" ? "Plan ready" : j.status === "done" ? "Ready" : j.status === "failed" ? "Failed" : j.status === "queued" ? "In line" : `${Math.round(j.progress.percent)}%`;
           return (
             <li key={s.id} className="flex items-center">
               <button onClick={() => onOpen(s.id)} className="flex min-w-0 flex-1 items-center gap-3 px-5 py-4 text-left transition-colors hover:bg-[rgba(29,25,19,.03)]">

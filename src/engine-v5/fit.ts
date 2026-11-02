@@ -43,6 +43,12 @@ export const FIT_JS = String.raw`(function(){
       if (!r.width || !r.height) return;
       if (r.bottom > R.bottom - 34 || r.right > R.right - 20 || r.top < R.top + 10) out.push({ where: 'canvas:' + el.tagName, px: Math.round(Math.max(r.bottom - (R.bottom - 34), r.right - (R.right - 20))) });
     });
+    // a hub card's own text never runs past the card's edge (the card itself is skipped above for its connector)
+    root.querySelectorAll('.v5-hub-card h3, .v5-hub-card p').forEach(function(el){
+      var card = el.closest('.v5-hub-card'); if (!card) return;
+      var dx2 = Math.max(el.scrollWidth - el.clientWidth, el.getBoundingClientRect().right - (card.getBoundingClientRect().right - 8));
+      if (dx2 > 1) out.push({ where: 'hub-text:x', px: Math.round(dx2) });
+    });
     // text that sticks out of its own container (overflow at the top is invisible to scrollHeight)
     root.querySelectorAll('.v5-body h3, .v5-body p, .v5-body li, .v5-body td').forEach(function(el){
       if (el.closest('figure') || el.closest('[data-v5-chrome]')) return;

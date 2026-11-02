@@ -24,6 +24,8 @@ export async function POST(req: Request) {
   if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
   // engine: v3 by default; only the owner may pick (body.engine "v4" / "v3"), ENGINE_DEFAULT switches everyone
   parsed.value.engine = engineFor(user, body?.engine);
+  // engine v6 starts with the PLAN step (outline cards + styles for this topic); the deck is made after approval
+  if (parsed.value.engine === "v6") parsed.value.v6 = { stage: "plan" };
   try {
     const job = await createJob(parsed.value, ownerKey, user?.id);
     return Response.json({ job }, { status: 202 });

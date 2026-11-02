@@ -50,11 +50,13 @@ export default function ProgressView({ job, link, onRetry, onHome }: { job: JobV
   const queued = job.status === "queued";
   const pct = Math.max(queued ? 0 : 2, Math.min(100, Math.round(job.progress.percent)));
   const rank = RANK[job.progress.stage];
+  // engine v6 plan step: only research and the story are made now; design waits for the student's approval
+  const steps = job.stage === "plan" ? [STEPS[0], { key: "outline" as JobStage, label: "Your plan", hint: "Writing the story slide by slide and three looks for your topic" }] : STEPS;
 
   return (
     <div className="space-y-5 py-2">
       <div className="rise px-1">
-        <span className="eyebrow">{queued ? "Waiting in line" : "Making your presentation"}</span>
+        <span className="eyebrow">{queued ? "Waiting in line" : job.stage === "plan" ? "Writing your plan" : "Making your presentation"}</span>
         <h2 className="display mt-2 text-[28px] sm:text-[34px]">{job.topic}</h2>
       </div>
 
@@ -94,7 +96,7 @@ export default function ProgressView({ job, link, onRetry, onHome }: { job: JobV
       {!queued && job.progress.live?.slides?.length ? <LiveSlides live={job.progress.live} /> : null}
 
       <ol className="panel rise d2 space-y-0.5 rounded-[var(--r-lg)] p-3 sm:p-4">
-        {STEPS.map((s) => {
+        {steps.map((s) => {
           const state = queued ? "todo" : rank > RANK[s.key] ? "done" : rank === RANK[s.key] ? "now" : "todo";
           return (
             <li key={s.key} className={`flex items-start gap-3.5 rounded-[14px] px-2.5 py-2.5 transition-colors ${state === "now" ? "bg-[rgba(243,230,207,.6)]" : ""}`}>

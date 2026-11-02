@@ -16,7 +16,7 @@ export interface CreateRequest {
   presenter: { names: string; rollNo: string; department: string; institute: string; guide: string; course: string };
   ageConfirmed?: boolean;
   /** owner only: which engine makes the deck (the server ignores it for everyone else) */
-  engine?: "v3" | "v4" | "v5";
+  engine?: "v3" | "v4" | "v5" | "v6";
 }
 
 const EMPTY: CreateRequest = {
@@ -39,13 +39,13 @@ const label = "label";
 
 export const ENGINE_KEY = "dc_engine_v4";
 
-export default function CreateForm({ onSubmit, busy, error, canChooseEngine = false, engineDefault = "v3" }: { onSubmit: (r: CreateRequest) => void; busy: boolean; error: string | null; canChooseEngine?: boolean; engineDefault?: "v3" | "v4" | "v5" }) {
+export default function CreateForm({ onSubmit, busy, error, canChooseEngine = false, engineDefault = "v3" }: { onSubmit: (r: CreateRequest) => void; busy: boolean; error: string | null; canChooseEngine?: boolean; engineDefault?: "v3" | "v4" | "v5" | "v6" }) {
   const [r, setR] = useState<CreateRequest>(EMPTY);
   // owner-only "New engine (beta)" switch, remembered on this phone
-  const [engine, setEngine] = useState<"v3" | "v4" | "v5">(() => {
+  const [engine, setEngine] = useState<"v3" | "v4" | "v5" | "v6">(() => {
     const saved = typeof window !== "undefined" ? localStorage.getItem(ENGINE_KEY) : null;
     // older phones saved "1" (= the v4 switch on) / "0"
-    if (saved === "v3" || saved === "v4" || saved === "v5") return saved;
+    if (saved === "v3" || saved === "v4" || saved === "v5" || saved === "v6") return saved;
     if (saved === "1") return "v4";
     if (saved === "0") return "v3";
     return engineDefault;
@@ -178,9 +178,10 @@ export default function CreateForm({ onSubmit, busy, error, canChooseEngine = fa
         <div className="rounded-[var(--r-md)] border border-[var(--rule)] bg-[rgba(255,253,248,.7)] px-4 py-3.5">
           <span className="block text-[15px] font-medium text-[var(--ink)]">Engine</span>
           <span className="mb-2.5 block text-[12.5px] text-[var(--muted)]">Only you see this choice. Classic is what every user gets.</span>
-          <div role="radiogroup" aria-label="Engine" className="grid grid-cols-3 gap-2">
+          <div role="radiogroup" aria-label="Engine" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {([
               ["v3", "Classic", "v3"],
+              ["v6", "Plan + style", "v6 beta"],
               ["v5", "Templates", "v5 beta"],
               ["v4", "Agents", "v4 beta"],
             ] as const).map(([id, name, tag]) => (

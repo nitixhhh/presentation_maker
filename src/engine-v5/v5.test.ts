@@ -32,7 +32,9 @@ test("photo templates without a photo fall back to a designed no-photo layout", 
 
 test("catalog lists every template for the planner", () => {
   const c = catalogText();
-  for (const t of TEMPLATES) assert.ok(c.includes(t.id));
+  for (const t of TEMPLATES) if (!t.v6) assert.ok(c.includes(t.id));
+  const c6 = catalogText("v6");
+  for (const t of TEMPLATES) assert.ok(c6.includes(t.id));
 });
 
 test("theme pick: style hint, subject keywords, design system carries v5 css", () => {

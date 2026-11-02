@@ -37,6 +37,7 @@ const AVG_W: Record<string, number> = {
   "dm serif display": 0.48, "dm sans": 0.5, "mukta": 0.5, "noto sans devanagari": 0.55, "noto serif devanagari": 0.56, "hind": 0.5,
   "century gothic": 0.56, "calibri": 0.45, "georgia": 0.53, "segoe ui": 0.5, "segoe ui semibold": 0.51, "cambria": 0.49,
   "franklin gothic medium": 0.47, "nirmala ui": 0.54, "consolas": 0.55,
+  "fraunces": 0.52, "manrope": 0.52, "sora": 0.55, "libre baskerville": 0.58, "baskerville old face": 0.5, "baloo 2": 0.52, "rozha one": 0.55,
 };
 function widthScale(webFamily: string, pptxFont: string): number {
   const a = AVG_W[String(webFamily).split(",")[0].replace(/["']/g, "").trim().toLowerCase()];

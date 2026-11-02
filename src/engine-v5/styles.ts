@@ -157,4 +157,19 @@ export const V5_CSS = String.raw`
 .slide .v5-credits{margin-top:auto;padding-top:10px;border-top:1px solid var(--line);font-size:14px;line-height:1.35;color:var(--muted);columns:2;column-gap:56px}
 .slide .v5-credits p{margin:0 0 3px 0;overflow-wrap:anywhere;break-inside:avoid}
 .slide .v5-credits p:first-child{column-span:all;margin-bottom:6px}
+/* hub: long words wrap inside their card (never past its edge) */
+.slide .v5-hub-card h3,.slide .v5-hub-card p{overflow-wrap:anywhere;hyphens:auto;min-width:0}
+/* closing: three things to remember */
+.slide .v5-recap{display:flex;flex-direction:column;gap:12px;margin-top:4px}
+.slide .v5-recap-row{display:flex;align-items:center;gap:16px}
+.slide .v5-recap-n{flex:none;width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--font-heading);font-weight:800;font-size:20px;background:var(--hero-accent,var(--accent));color:var(--on-accent)}
+.slide .v5-recap-t{font-size:min(24px,max(20px,calc(var(--s) * 22px)));line-height:1.28;color:var(--ink);font-weight:600}
+/* engine v6 data layouts */
+.slide .v5-trend-stat{flex:none;display:flex;flex-direction:column;justify-content:center;gap:2px;padding:calc(var(--s) * 14px) calc(var(--s) * 24px);border-radius:var(--radius);background:var(--primary);color:var(--on-primary)}
+.slide .v5-trend-stat b{font-family:var(--font-heading);font-weight:800;font-size:max(34px,calc(var(--s) * 44px));line-height:1}
+.slide .v5-trend-stat span{font-size:20px;font-weight:600}
+.slide .v5-trend-insight{flex:1;margin:0;align-self:center;font-family:var(--font-heading);font-weight:700;font-size:max(22px,calc(var(--s) * 27px));line-height:1.25;color:var(--ink);border-left:5px solid var(--accent);padding-left:calc(var(--s) * 20px)}
+.slide .v6-flowchart svg{max-width:100%;max-height:100%;width:auto;height:auto}
+.slide .v6-flowchart svg.v6-flow{width:100%;height:100%}
+.slide .v6-chartbox svg{display:block;width:100%;height:100%}
 `;

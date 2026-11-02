@@ -21,16 +21,29 @@ import { fittingTemplate, sparseProblems, sparseScore } from "./sparse";
 import { assetDir, deckDir, newDeckId, saveDeck } from "../engine-v3/store";
 import { availableProviders, chatJson, llmContext, usageSummary, usageLine } from "../engine-v3/llm";
 import { presenterFields } from "../engine-v3/privacy";
-import type { Asset, Deck, OutlineSlide, SlideDesign, V3Request } from "../engine-v3/types";
+import type { Asset, Brief, Deck, OutlineSlide, ResearchPack, SlideDesign, V3Request } from "../engine-v3/types";
 import { isProductShot } from "../engine-v4/photoRules";
 import { previewFile, type LiveSlideEvent, type V4Options } from "../engine-v4/pipeline";
-import { growSlide, runPlannerV5, type PlannedSlide } from "./planner";
+import { growSlide, runPlannerV5, clamp, type PlannedSlide } from "./planner";
 import { pickTheme, themeDesignSystem } from "./themes";
 import { renderSlide, NO_PHOTO } from "./render";
 import { templateById, type RenderCtx, type SlideContent } from "./templates";
 import { fitSlide, type FitResult } from "./fit";
+import { generateStyles, buildStyle, fontPairV6, type StyleTokens } from "../engine-v6/style";
+import { prepareFlowchart } from "../engine-v6/flow";
+import { prepareChart, heroStatOf } from "../engine-v6/charts";
 
-export type V5Options = V4Options;
+/**
+ * engine v6 rides the same pipeline: an approved plan (brief + research + slides from the plan step) skips those
+ * calls, and the deck wears a style generated for its topic (tokens → contrast-checked theme) instead of a fixed theme.
+ */
+export interface V6Input {
+  pre?: { brief: Brief; research: ResearchPack; slides: PlannedSlide[]; requests?: number; repaired?: string[] };
+  style?: StyleTokens;
+  /** owner's log line: how the plan / style were chosen */
+  note?: string;
+}
+export type V5Options = V4Options & { v6?: V6Input };
 
 async function writePreview(deckId: string, n: number, shot: Buffer) {
   const f = previewFile(deckId, n);
@@ -74,7 +87,9 @@ export async function generateDeckV5(req: V3Request, opts: V5Options = {}): Prom
   opts.onDeckId?.(id);
   const log: Deck["log"] = [];
   // every step also goes to the server log (Render), so a deck can be matched against the logs line by line
-  const v5log = (m: string) => console.log(`[v5 ${id}] ${m}`);
+  const v6 = opts.v6;
+  const ENG = v6 ? "v6" : "v5";
+  const v5log = (m: string) => console.log(`[${ENG} ${id}] ${m}`);
   const emit = (step: string, percent: number, agent: string, action: string, details?: string) => {
     log.push({ t: new Date().toISOString(), agent, msg: action });
     v5log(`${agent}: ${action}`);
@@ -89,26 +104,46 @@ export async function generateDeckV5(req: V3Request, opts: V5Options = {}): Prom
   const timings: Record<string, number> = {};
   const mark = (k: string, from: number) => (timings[k] = Math.round((Date.now() - from) / 1000));
 
-  emit("Understanding your brief", 3, "Brief", `Engine v5 (designer templates + slot-filling AI). Providers ready: ${availableProviders().join(", ") || "none"}`);
+  emit("Understanding your brief", 3, "Brief", v6 ? `Engine v6 (designer layouts + a style made for this topic${v6.pre ? ", approved plan" : ""}). Providers ready: ${availableProviders().join(", ") || "none"}` : `Engine v5 (designer templates + slot-filling AI). Providers ready: ${availableProviders().join(", ") || "none"}`);
   let tt = Date.now();
-  const brief = await runBrief(req);
+  const brief = v6?.pre ? v6.pre.brief : await runBrief(req);
   emit("Understanding your brief", 8, "Brief", `${brief.deckType} · ${brief.level} · ${brief.slideCount} slides · ${brief.language}`, brief.requiredSections.join(" → "));
   mark("brief", tt);
 
   tt = Date.now();
   emit("Researching real sources", 10, "Research", `Searching Wikipedia + OpenAlex for: ${brief.researchQueries.join("; ")}`);
-  const deep = await deepenResearch(brief, await runResearch(brief, (m) => emit("Researching real sources", 14, "Research", m), req.topic), req.topic, (m) => emit("Researching real sources", 18, "Research", m));
-  // papers before encyclopedia entries: top up to three peer-reviewed sources when research found fewer
-  const research = await boostScholarly(brief, deep, req.topic, (m) => emit("Researching real sources", 19, "Research", m));
+  const research = v6?.pre
+    ? v6.pre.research
+    : await boostScholarly(
+        brief,
+        await deepenResearch(brief, await runResearch(brief, (m) => emit("Researching real sources", 14, "Research", m), req.topic), req.topic, (m) => emit("Researching real sources", 18, "Research", m)),
+        req.topic,
+        // papers before encyclopedia entries: top up to three peer-reviewed sources when research found fewer
+        (m) => emit("Researching real sources", 19, "Research", m)
+      );
   emit("Researching real sources", 20, "Research", `${research.facts.length} cited facts from ${research.sources.length} sources`);
   mark("research", tt);
 
   tt = Date.now();
   emit("Planning the story", 22, "Planner", "Choosing a designed layout for every slide and writing its content");
-  const plan = await runPlannerV5(brief, research, (m) => emit("Planning the story", 26, "Planner", m));
+  const plan = v6?.pre
+    ? { slides: v6.pre.slides.map((x) => ({ ...x })), requests: 0, repaired: v6.pre.repaired || [], theme: undefined as string | undefined }
+    : await runPlannerV5(brief, research, (m) => emit("Planning the story", 26, "Planner", m), { v6: !!v6 });
+  if (v6?.pre) emit("Planning the story", 26, "Planner", `Using the plan you approved (${plan.slides.length} slides)`);
   mark("planner", tt);
-  const theme = pickTheme({ topic: req.topic, subject: `${brief.subject} ${brief.title}`, styleHint: req.styleHint || brief.styleHint, suggested: plan.theme });
-  const design = themeDesignSystem(theme, brief.language);
+  let theme = pickTheme({ topic: req.topic, subject: `${brief.subject} ${brief.title}`, styleHint: req.styleHint || brief.styleHint, suggested: plan.theme });
+  let design = themeDesignSystem(theme, brief.language);
+  let v6Style: ReturnType<typeof buildStyle> | null = null;
+  if (v6) {
+    // the deck's own style: the one the student chose, else the style director's first pick for this topic ("Surprise me")
+    tt = Date.now();
+    const tok = v6.style || (await generateStyles(brief, { count: 3, log: (m) => emit("Planning the story", 28, "Style", m) }))[0];
+    v6Style = buildStyle(tok);
+    theme = v6Style.theme;
+    design = themeDesignSystem(theme, brief.language, { font: fontPairV6(tok, brief.language), css: v6Style.css });
+    emit("Planning the story", 29, "Style", `${v6.style ? "Your style" : "Surprise style"} “${tok.name}” — ${tok.palette.bg} / ${tok.palette.primary} / ${tok.palette.accent}, ${design.font.heading} + ${design.font.body}, ${tok.card} cards, ${tok.motif} motif${v6Style.fixes.length ? ` — contrast fixed: ${v6Style.fixes.join("; ")}` : " — all text pairs pass contrast"}`);
+    mark("style", tt);
+  }
   emit("Planning the story", 30, "Planner", `${plan.slides.length} slides · theme ${theme.name} · layouts: ${plan.slides.map((s) => s.template).join(", ")}${plan.repaired.length ? ` — engine fixes: ${plan.repaired.join("; ")}` : ""}`);
   opts.onPlan?.(plan.slides.map((s) => ({ n: s.n, title: s.title, role: s.role, layout: s.template })));
 
@@ -178,7 +213,9 @@ export async function generateDeckV5(req: V3Request, opts: V5Options = {}): Prom
   if (wantsPhoto.length && req.imageMode !== "none") {
     emit("Finding images", 32, "Images", `Finding real photos for ${wantsPhoto.length} slide(s): ${wantsPhoto.map((s) => `${s.n} “${s.visual.query}”`).join(", ")}`);
     for (const s of wantsPhoto) slideEvt({ n: s.n, state: "building", status: `Finding a photo: ${s.visual.query}` });
-    assets = await sourceImages(wantsPhoto, dir, { mode: req.imageMode || "real-first", topic: brief.title }, (m) => emit("Finding images", 36, "Images", m)).catch(() => []);
+    // engine v6 "AI images": the photo slides get AI illustrations through the free image route (real photos when its daily allowance is used up)
+    const forSearch = v6 && req.imageMode === "ai-allowed" ? wantsPhoto.map((s) => ({ ...s, visual: { ...s.visual, kind: "generated" as const, prompt: (s.visual as any).prompt || `${s.visual.query}: a wide, calm editorial scene for a class presentation on "${brief.title}", natural light, no text, no logos, no close-up portrait` } })) : wantsPhoto;
+    assets = await sourceImages(forSearch as any, dir, { mode: req.imageMode || "real-first", topic: brief.title }, (m) => emit("Finding images", 36, "Images", m)).catch(() => []);
     for (const a of assets) v5log(`photo found for slide ${a.forSlides.join(",")}: “${a.title}” (${a.origin}) ${a.sourceUrl || ""}`);
     const dropped = await vetPhotos(assets, outline.slides, dir);
     for (const a of dropped) v5log(`photo rejected for slide ${a.forSlides.join(",")} (vision vet / product rule): “${a.title}” ${a.sourceUrl || ""}`);
@@ -214,8 +251,9 @@ export async function generateDeckV5(req: V3Request, opts: V5Options = {}): Prom
   mark("images", tt);
 
   const deck: Deck = { id, createdAt: new Date().toISOString(), request: req, brief, research, outline: outline as any, design, assets, slides: [], references, log };
-  (deck as any).engine = "v5";
+  (deck as any).engine = ENG;
   (deck as any).v5 = { theme: theme.id, templates: plan.slides.map((s) => s.template) };
+  if (v6Style) (deck as any).v6 = { style: v6Style.tokens, contrast: v6Style.checks, fixes: v6Style.fixes, beats: plan.slides.map((s) => s.beat || "") };
   saveDeck(deck);
 
   const renderDir = path.join(deckDir(id), "render");
@@ -224,7 +262,7 @@ export async function generateDeckV5(req: V3Request, opts: V5Options = {}): Prom
   const credits = assets.filter((a) => a.credit && a.origin !== "upload").map((a) => (a.origin === "generated" ? a.credit || "" : `“${a.title.replace(/[_]+/g, " ").replace(/\.\w{3,4}$/, "").slice(0, 50)}” — ${a.credit || ""}`));
   const deckIcons = [...new Set(plan.slides.flatMap((s) => [...(s.items || []).map((i) => i.icon), s.left?.icon, s.right?.icon]).filter((x): x is string => !!x && !/circle-dot|sparkles|hexagon|diamond|triangle|star$|(^|:)(info|circle|help-circle|circle-help|check|x|thumbs-up|thumbs-down)$/.test(x)))].slice(0, 3);
   const heroPhoto = assets.find((a) => a.origin !== "upload" && a.forSlides.includes(1))?.id;
-  const ctxBase = { theme, deckIcons, heroPhoto, deckTitle: brief.title, total: plan.slides.length, fields, language: brief.language, deckType: brief.deckType, subject: brief.subject, references: references.map((r) => ({ n: r.n, text: r.text, kind: r.kind, count: r.sourceIds.length })), credits };
+  const ctxBase = { theme, deckIcons, heroPhoto, heroStat: undefined /* v6: a stat on the cover repeats a later slide; the cover takes art instead */, deckTitle: brief.title, total: plan.slides.length, fields, language: brief.language, deckType: brief.deckType, subject: brief.subject, references: references.map((r) => ({ n: r.n, text: r.text, kind: r.kind, count: r.sourceIds.length })), credits };
   (deck as any).v5.ctx = ctxBase;
 
   const slides = new Map<number, SlideDesign>();
@@ -259,7 +297,7 @@ export async function generateDeckV5(req: V3Request, opts: V5Options = {}): Prom
         slideEvt({ n: ps.n, state: "building", status: "Checking text fits and contrast" });
         const insp = await inspectSlide(deck, ps.n, html, renderDir, ps.role);
         const issues = insp.issues.filter((i) => i.severity !== "low");
-        const sd: SlideDesign = { n: ps.n, html, notes: ps.notes || "", provider: "engine", model: `v5:${c.template}`, qa: { domIssues: insp.issues, autoFixes: [...insp.autoFixes, ...trims] }, revisions: trims.length };
+        const sd: SlideDesign = { n: ps.n, html, notes: ps.notes || "", provider: "engine", model: `${ENG}:${c.template}`, qa: { domIssues: insp.issues, autoFixes: [...insp.autoFixes, ...trims] }, revisions: trims.length };
         // the filled template slots, kept so a later edit re-fills slots and re-renders instead of free-form HTML
         (sd as any).v5 = { content, logo: ctx.logo, logoAsset: ctx.logoAsset };
         slides.set(ps.n, sd);
@@ -291,7 +329,7 @@ export async function generateDeckV5(req: V3Request, opts: V5Options = {}): Prom
                   const v2 = await visionReview(insp2.screenshot, os, insp2.issues, brief.title).catch(() => null);
                   if (v2 && v2.score > v.score && !visionCut) {
                     sd.html = r2.html;
-                    sd.model = `v5:${alt}`;
+                    sd.model = `${ENG}:${alt}`;
                     (sd as any).v5 = { ...(sd as any).v5, content: r2.content };
                     sd.qa = { domIssues: insp2.issues, autoFixes: [...insp2.autoFixes, ...r2.trims, `layout ${c.template} → ${alt} (vision ${v.score} → ${v2.score})`], visionScore: v2.score, visionIssues: v2.issues };
                     st.vision = v2.score;
@@ -329,7 +367,7 @@ export async function generateDeckV5(req: V3Request, opts: V5Options = {}): Prom
   if (ctxStats) {
     deck.calls = ctxStats.slice();
     deck.usage = usageSummary(deck.calls);
-    console.log(`[v5/usage] deck ${deck.id}: ${usageLine(deck.usage)}`);
+    console.log(`[${ENG}/usage] deck ${deck.id}: ${usageLine(deck.usage)}`);
     emit("Done", 99, "Owner", `AI usage: ${usageLine(deck.usage)}`);
   }
   timings.total = Math.round((Date.now() - t0) / 1000);
@@ -344,6 +382,9 @@ export async function generateDeckV5(req: V3Request, opts: V5Options = {}): Prom
 /** render → fit; if text still overflows at the type floor, trim the lowest-priority content and fit again */
 export async function renderFitted(deck: Deck, c0: SlideContent, ctx: RenderCtx, renderDir: string, status: (s: string) => void): Promise<{ html: string; fit: FitResult; trims: string[]; content: SlideContent }> {
   let c: SlideContent = JSON.parse(JSON.stringify(c0));
+  // engine v6 flowchart: drawn once as SVG before the template renders (stored in the slots, so edits keep it)
+  if (c.template === "flowchart") c = await prepareFlowchart(c, deck.design);
+  if (c.template === "chart-trend" || c.template === "donut") c = prepareChart(c);
   const trims: string[] = [];
   let html = renderSlide(c, ctx);
   let fit = await fitSlide(deck as any, ctx.n, html, renderDir);
@@ -371,7 +412,7 @@ export async function renderFitted(deck: Deck, c0: SlideContent, ctx: RenderCtx,
       } else {
         const v = longest.get();
         const first = v.match(/^(.{20,}?[.!?।])\s/);
-        const nv = first && first[1].length < v.length * 0.85 ? first[1] : v.slice(0, Math.round(v.length * 0.75)).replace(/[\s,;:–—-]+\S*$/, "") + "…";
+        const nv = first && first[1].length < v.length * 0.85 ? first[1] : clamp(v, Math.round(v.length * 0.75));
         longest.set(nv);
         trims.push(`shortened “${v.slice(0, 24)}…”`);
       }
@@ -448,6 +489,8 @@ async function vetPhotos(assets: Asset[], slides: OutlineSlide[], dir: string): 
     const sheet = await sharp({ create: { width: W, height: H, channels: 3, background: "#ffffff" } }).composite([...tiles, { input: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">${labels}</svg>`), left: 0, top: 0 }]).jpeg({ quality: 75 }).toBuffer();
     const lines = list.map((a, i) => {
       const s = slides.find((x) => a.forSlides.includes(x.n));
+      // a cover photo only has to evoke the topic (a sunlit leaf for photosynthesis), not show a slide's detail
+      if (s?.n === 1) return `${i + 1}. TITLE COVER of the deck "${s?.title || "?"}" — judge it as a cover photo: keep it if it is a clear, attractive photo that evokes this topic (searched as "${s?.visual.query || ""}"); it need not show any detail of the topic`;
       return `${i + 1}. slide "${s?.title || "?"}" (message: ${(s?.keyMessage || "-").slice(0, 120)}) — photo searched as "${s?.visual.query || ""}"`;
     });
     const vetMsgs = [{ role: "user", content: [{ type: "text", text: `Each numbered picture was chosen for the slide listed below it. Be strict — a slide with no picture is better than a wrong one.\nREJECT a picture when it: is a product/brand/gadget shot or advert; is mainly a chart, diagram, map, document, screenshot or text; is blurry, tiny, a logo or clip-art; or does not clearly show the slide's subject.\n${lines.join("\n")}\nReply ONLY JSON: {"reject":[numbers],"why":{"n":"reason"}}` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${sheet.toString("base64")}` } }] }];

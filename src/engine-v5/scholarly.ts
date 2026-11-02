@@ -9,7 +9,7 @@
  * so the planner can build slides on papers first and the references slide is not an encyclopedia list.
  */
 import { chatJson } from "../engine-v3/llm";
-import { crossref } from "../engine-v3/research/sources";
+import { crossref, semanticScholar } from "../engine-v3/research/sources";
 import type { Brief, ResearchPack, Source } from "../engine-v3/types";
 import { FACTS_SYSTEM, scholarlySources } from "../engine-v4/deepen";
 
@@ -52,13 +52,17 @@ export async function boostScholarly(brief: Brief, pack: ResearchPack, topic: st
   if (papers.length >= 3) return { ...pack, sources, facts };
   // 2. more papers
   try {
-    const [a, b] = await Promise.all([
+    // three free indexes side by side (OpenAlex polite pool, Crossref, Semantic Scholar) so one slow or empty index
+    // does not decide how many papers a deck gets
+    const q = String(topic).replace(/[?:!]/g, " ");
+    const [a, b, c2] = await Promise.all([
       scholarlySources(brief, topic, sources, brief.researchQueries.slice(1, 4)).catch(() => [] as Cand[]),
-      crossref(String(topic).replace(/[?:!]/g, " "), 4).catch(() => [] as Cand[]),
+      crossref(q, 4).catch(() => [] as Cand[]),
+      semanticScholar(q, 4).catch(() => [] as Cand[]),
     ]);
     const seen = new Set(sources.map((s) => s.title.toLowerCase().replace(/[^a-z0-9]/g, "")));
     const cands: Cand[] = [];
-    for (const c of [...a, ...b]) {
+    for (const c of [...a, ...b, ...c2]) {
       const k = c.title.toLowerCase().replace(/[^a-z0-9]/g, "");
       if (!c.title || seen.has(k) || String(c.text || "").length < 200) continue;
       seen.add(k);
@@ -80,6 +84,15 @@ export async function boostScholarly(brief: Brief, pack: ResearchPack, topic: st
       .filter((f: any) => f?.text)
       .map((f: any) => ({ id: `F${++next}`, text: String(f.text), sources: (Array.isArray(f.sources) ? f.sources : [f.sources]).map(String).filter((x: string) => ids.has(x)), kind: f.kind }))
       .filter((f: any) => f.sources.length);
+    if (!nf.length) {
+      // the fact writer failed (a 429 or an empty answer): each paper still gives its own first finding, so a real
+      // paper is not lost to a busy model
+      for (const s of fresh) {
+        const first = String(s.text || "").replace(/\s+/g, " ").match(/^(.{60,260}?[.!?])\s/);
+        if (first) nf.push({ id: `F${++next}`, text: first[1], sources: [s.id], kind: "finding" });
+      }
+      log(`paper facts: model gave none, used each paper's own first finding (${nf.length})`);
+    }
     const used = new Set(nf.flatMap((f: any) => f.sources));
     const keepNew = fresh.filter((s) => used.has(s.id));
     if (keepNew.length) log(`papers: +${keepNew.length} (${keepNew.map((s) => `${s.title.slice(0, 60)}${s.year ? `, ${s.year}` : ""}`).join(" | ")}), +${nf.length} cited facts`);

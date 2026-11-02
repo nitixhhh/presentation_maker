@@ -191,6 +191,8 @@ export default function DeckView({ deck, me, onReload }: { deck: DeckSummary; me
         </button>
       </div>
 
+      {(deck.engine === "v6" || deck.engine === "v5") && <ChatEdit deck={deck} current={i} onDone={onReload} locked={locked} />}
+
       <div className="flex gap-1 rounded-full bg-[rgba(29,25,19,.06)] p-1">
         {(
           [
@@ -268,6 +270,79 @@ function LockedNote({ text }: { text: string }) {
     <p className="panel flex gap-2.5 rounded-[var(--r-lg)] p-5 text-[14px] leading-relaxed text-[var(--muted)]">
       <Lock className="mt-0.5 h-4 w-4 shrink-0" /> {text}
     </p>
+  );
+}
+
+/** Engine v5/v6: one line under the deck — "make slide 3 a timeline" — the slide's slots are re-filled and re-drawn. */
+function ChatEdit({ deck, current, onDone, locked }: { deck: DeckSummary; current: number; onDone: () => void; locked: boolean }) {
+  const [text, setText] = useState("");
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const { job } = useJob(jobId);
+  const left = Math.max(0, (deck.edits?.free ?? 2) - (deck.edits?.used ?? 0));
+  const m = text.match(/(?:slide|स्लाइड|slides?\s*no\.?)\s*(\d{1,2})/i);
+  const target = m ? Number(m[1]) : deck.slides[current]?.n || 1;
+  const valid = deck.slides.some((s) => s.n === target);
+
+  useEffect(() => {
+    if (job?.status === "done") {
+      setDone(`Slide ${target} is updated.`);
+      setJobId(null);
+      setText("");
+      onDone();
+    }
+    if (job?.status === "failed") {
+      setErr(job.error || "The change failed. Your slide is unchanged; the edit was not counted.");
+      setJobId(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.status, job?.error, onDone]);
+
+  const send = async () => {
+    setErr(null);
+    setDone(null);
+    const r = await api(`/api/v3/deck/${deck.deckId}/edit`, { method: "POST", body: JSON.stringify({ n: target, instruction: text.trim() }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return setErr(d.error || "Could not start the change.");
+    setJobId(d.job.id);
+  };
+
+  if (locked) return null;
+  return (
+    <div className="panel rounded-[var(--r-lg)] p-3">
+      {jobId ? (
+        <p className="flex items-center gap-2 px-1 py-1.5 text-[14px] text-[var(--muted)]">
+          <Loader2 className="h-4 w-4 animate-spin text-[var(--accent)]" /> Changing slide {target}: {job?.progress.step || "re-writing it"}
+        </p>
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (valid && left && text.trim().length >= 4) send();
+          }}
+          className="flex items-end gap-2"
+        >
+          <label className="min-w-0 flex-1">
+            <span className="sr-only">Ask for a change</span>
+            <textarea
+              value={text}
+              rows={1}
+              onChange={(e) => setText(e.target.value.slice(0, 500))}
+              placeholder={`e.g. “make slide ${Math.min(3, deck.slides.length)} a timeline”`}
+              className="field max-h-32 resize-none !py-2.5 text-[15px]"
+            />
+          </label>
+          <button type="submit" disabled={!valid || !left || text.trim().length < 4} className="btn btn-ink btn-sm shrink-0 !px-4">
+            Send
+          </button>
+        </form>
+      )}
+      <p className="mt-1.5 px-1 text-[12.5px] text-[var(--muted)]">
+        {done || err || (valid ? `Changes slide ${target}: ${deck.slides.find((s) => s.n === target)?.title || ""}`.slice(0, 90) : `There is no slide ${target}.`)}
+        {!err && !done ? ` · ${left} free change${left === 1 ? "" : "s"} left` : ""}
+      </p>
+    </div>
   );
 }
 

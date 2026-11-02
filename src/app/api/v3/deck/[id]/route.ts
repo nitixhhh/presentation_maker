@@ -23,6 +23,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const owner = deck.ownerKey || ownerKey;
     const body = {
       ...sum,
+      engine: (deck as any).engine || "v3",
       locked: !unlocked,
       references: unlocked ? sum.references : [],
       slides: sum.slides.map((s) => ({ ...s, image: `${s.image}?t=${t}`, url: unlocked ? `${s.url}?t=${t}` : null, notes: unlocked ? s.notes : undefined })),

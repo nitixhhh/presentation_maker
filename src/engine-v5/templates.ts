@@ -34,6 +34,12 @@ export interface SlideContent {
   notes?: string;
   /** reference numbers cited on this slide (footer "Sources: [2], [5]") */
   cites?: number[];
+  /** engine v6: the story beat (question, context, evidence, mechanism, implication, counterpoint, answer) */
+  beat?: string;
+  /** engine v6 flowchart: nodes + edges (the engine draws it; the model never writes diagram code) */
+  flow?: { nodes: { id: string; label: string; type?: string }[]; edges: { from: string; to: string; label?: string }[] };
+  /** engine-drawn SVG for this slide (flowchart), made before render */
+  svg?: string;
 }
 
 export interface RenderCtx {
@@ -47,6 +53,8 @@ export interface RenderCtx {
   /** for the engine-built references slide */
   references?: { n: number; text: string; kind?: string; count?: number }[];
   credits?: string[];
+  /** engine v6: the deck's headline number, shown on a title slide that has no photo */
+  heroStat?: { value: string; label: string };
   /** a few topic icons from the deck (art panel of hero slides without a photo) */
   deckIcons?: string[];
   /** the title slide's photo, echoed on the agenda sidebar and the closing slide */
@@ -68,6 +76,8 @@ export interface TemplateDef {
   minItems?: number;
   maxItems?: number;
   render: (c: SlideContent, x: RenderCtx) => string;
+  /** engine v6 only (not in the v5 catalog) */
+  v6?: boolean;
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────
@@ -78,6 +88,15 @@ const icbox = (name?: string, fallback?: string) => `<div class="v5-icbox">${ic(
 const items = (c: SlideContent, max = 8) => (c.items || []).filter((i) => i && (i.title || i.text || i.value)).slice(0, max);
 const ARROW = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>`;
 const QMARK = `<svg class="v5-qmark" viewBox="0 0 84 64" fill="currentColor"><path d="M0 64V38C0 16 11 3 33 0l3 9C24 13 18 21 17 32h16v32H0zm48 0V38c0-22 11-35 33-38l3 9c-12 4-18 12-19 23h16v32H48z"/></svg>`;
+
+/** a hub's centre words when the plan gave none: the opening noun phrase of the title, whole words, no ellipsis */
+export function coreLabel(t: string, max = 22): string {
+  const words = String(t || "").replace(/\s*[:—–|-]\s.*$/, "").trim().split(/\s+/);
+  let out = "";
+  for (const w of words) { if ((out + " " + w).trim().length > max) break; out = (out + " " + w).trim(); }
+  out = out.replace(/\s+(and|or|the|a|an|of|to|in|for|with|by|is|are|builds?|drives?|makes?|shapes?)$/i, "");
+  return out || words[0] || "";
+}
 
 function shortTitle(t: string): string {
   const s = String(t || "").replace(/\s*[:—–|-]\s.*$/, "").trim();
@@ -117,6 +136,22 @@ export function decor(t: Theme, mode: "hero" | "content"): string {
       return hero
         ? `<div class="v5-decor"><div style="right:90px;top:90px;width:260px;height:260px;border-radius:40px;transform:rotate(18deg);background:linear-gradient(135deg,${A},${B});opacity:.9"></div><div style="right:290px;top:310px;width:120px;height:120px;border-radius:28px;transform:rotate(-12deg);border:3px solid color-mix(in srgb,#fff 50%,transparent)"></div></div>`
         : `<div class="v5-decor"><div style="right:-220px;top:-260px;width:620px;height:520px;background:radial-gradient(closest-side,color-mix(in srgb,${P} 16%,transparent),transparent),radial-gradient(closest-side at 30% 70%,color-mix(in srgb,${B} 10%,transparent),transparent)"></div></div>`;
+    case "dots":
+      return hero
+        ? `<div class="v5-decor"><div style="right:0;top:0;width:560px;height:720px;background-image:radial-gradient(color-mix(in srgb,${A} 70%,transparent) 2.2px,transparent 2.6px);background-size:30px 30px;mask-image:linear-gradient(115deg,transparent 25%,#000 85%);opacity:.75"></div><div style="right:120px;bottom:110px;width:150px;height:150px;border-radius:50%;background:${P};opacity:.9"></div></div>`
+        : `<div class="v5-decor"><div style="right:0;top:0;width:260px;height:200px;background-image:radial-gradient(color-mix(in srgb,${P} 45%,transparent) 1.8px,transparent 2.2px);background-size:22px 22px;mask-image:linear-gradient(225deg,#000 10%,transparent 80%);opacity:.7"></div></div>`;
+    case "waves":
+      return hero
+        ? `<div class="v5-decor"><svg style="left:0;right:0;bottom:0;width:1280px;height:300px" viewBox="0 0 1280 300" preserveAspectRatio="none"><path d="M0,190 C220,120 420,260 680,190 C900,130 1080,200 1280,150 L1280,300 L0,300 Z" fill="color-mix(in srgb,${A} 30%,transparent)"/><path d="M0,240 C260,190 470,290 720,240 C960,195 1120,250 1280,215 L1280,300 L0,300 Z" fill="color-mix(in srgb,${P} 45%,transparent)"/></svg></div>`
+        : `<div class="v5-decor"><svg style="left:0;right:0;bottom:0;width:1280px;height:70px;opacity:.55" viewBox="0 0 1280 70" preserveAspectRatio="none"><path d="M0,40 C260,10 470,62 720,36 C960,12 1120,44 1280,26 L1280,70 L0,70 Z" fill="color-mix(in srgb,${P} 18%,transparent)"/></svg></div>`;
+    case "corner":
+      return hero
+        ? `<div class="v5-decor"><div style="right:-180px;top:-180px;width:560px;height:560px;border-radius:50%;background:${A};opacity:.9"></div><div style="right:-60px;top:-60px;width:320px;height:320px;border-radius:50%;background:${P}"></div></div>`
+        : `<div class="v5-decor"><div style="right:-90px;top:-90px;width:180px;height:180px;border-radius:50%;background:${A};opacity:.16"></div><div style="left:0;bottom:0;width:70px;height:6px;background:${A}"></div></div>`;
+    case "diagonal":
+      return hero
+        ? `<div class="v5-decor"><div style="right:-120px;top:-40px;width:520px;height:820px;transform:rotate(14deg);background:repeating-linear-gradient(90deg,color-mix(in srgb,${A} 55%,transparent) 0 14px,transparent 14px 40px);opacity:.55"></div></div>`
+        : `<div class="v5-decor"><div style="right:-40px;top:-30px;width:150px;height:140px;transform:rotate(14deg);background:repeating-linear-gradient(90deg,color-mix(in srgb,${P} 30%,transparent) 0 6px,transparent 6px 18px);opacity:.6"></div></div>`;
     case "band":
     default:
       return hero ? `<div class="v5-decor"><div style="left:0;top:0;bottom:0;width:18px;background:${A}"></div></div>` : `<div class="v5-decor"><div style="left:0;top:0;bottom:0;width:10px;background:${P}"></div></div>`;
@@ -148,6 +183,31 @@ function artPanel(icons: string[], style = "right:70px;top:110px"): string {
   <div style="position:absolute;left:115px;top:115px;width:190px;height:190px;color:var(--on-primary);display:flex;align-items:center;justify-content:center"><i data-icon="${esc(icons[0] || "sparkles")}" style="width:150px;height:150px;--ic-size:150px"></i></div>
   ${icons.slice(1, 3).map((n, k) => `<div class="v5-card" style="position:absolute;${k ? "right:0;bottom:30px" : "left:0;bottom:70px"};width:104px;height:104px;padding:0;align-items:center;justify-content:center;border-radius:28px;background:var(--surface);color:var(--primary)"><i data-icon="${esc(n)}" style="width:52px;height:52px"></i></div>`).join("")}
 </div>`;
+}
+
+/** engine v6 title art without a photo: the deck's headline number on a colour block (data-led, like an
+ *  editorial cover), or a calm geometric composition in the palette when the deck has no number */
+function artPanelV6(x: RenderCtx): string {
+  const st = x.heroStat;
+  if (st?.value) {
+    const v = esc(st.value).slice(0, 10);
+    const big = v.length <= 4 ? 150 : v.length <= 6 ? 118 : 92;
+    return `<div class="v6-cover" style="position:absolute;right:64px;top:64px;bottom:64px;width:420px;z-index:1;border-radius:calc(var(--radius) + 10px);background:var(--cover-bg,linear-gradient(160deg,var(--primary),color-mix(in srgb,var(--primary) 62%,#000)));color:var(--cover-ink,var(--on-primary));padding:46px 44px;display:flex;flex-direction:column;justify-content:flex-end;gap:16px;overflow:hidden">
+  <div style="position:absolute;right:-90px;top:-90px;width:300px;height:300px;border-radius:50%;border:34px solid var(--accent);opacity:.9"></div>
+  <div style="position:absolute;right:70px;top:150px;width:70px;height:70px;border-radius:50%;background:var(--accent2)"></div>
+  <b style="font-family:var(--font-heading);font-weight:800;font-size:${big}px;line-height:.95;letter-spacing:-.02em;position:relative">${v}</b>
+  <span style="font-size:24px;line-height:1.3;font-weight:600;position:relative;max-width:330px">${esc(st.label).slice(0, 80)}</span>
+</div>`;
+  }
+  // calm rings + one solid disc in the hero's own ink (white on dark heroes, the primary on light ones)
+  return `<svg class="v6-art" viewBox="0 0 460 560" style="position:absolute;right:40px;top:80px;width:460px;height:560px;z-index:1;overflow:visible" aria-hidden="true">
+  <circle cx="270" cy="270" r="230" fill="var(--art-ink)" fill-opacity=".06"/>
+  <circle cx="270" cy="270" r="230" fill="none" stroke="var(--art-ink)" stroke-opacity=".32" stroke-width="2"/>
+  <circle cx="270" cy="270" r="165" fill="none" stroke="var(--art-ink)" stroke-opacity=".22" stroke-width="2" stroke-dasharray="3 9"/>
+  <circle cx="320" cy="330" r="112" fill="var(--hero-accent,var(--accent))"/>
+  <circle cx="170" cy="170" r="30" fill="var(--art-ink)" fill-opacity=".85"/>
+  <circle cx="410" cy="120" r="9" fill="var(--hero-accent,var(--accent))"/>
+</svg>`;
 }
 
 function logoEl(x: RenderCtx): string {
@@ -203,7 +263,7 @@ export const TEMPLATES: TemplateDef[] = [
       const icons = [...(c.items || []).map((i) => i && i.icon), ...(x.deckIcons || [])].filter((v) => v && !/(^|:)(info|circle|help-circle|circle-help|question|check|x|star|sparkles)$/.test(String(v))).filter((v, k, a) => a.indexOf(v) === k).slice(0, 3) as string[];
       const art = c.photo
         ? `<div class="v5-photo" style="position:absolute;right:56px;top:56px;bottom:56px;width:430px;border-radius:calc(var(--radius) + 8px);z-index:1">${`<img src="asset:${esc(c.photo)}" alt="">`}</div>`
-        : artPanel(icons);
+        : x.theme.v6 ? artPanelV6(x) : artPanel(icons);
       return wrap("title-split", `${art}<div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:24px;max-width:650px" data-fit-box>
   ${logoEl(x)}<div class="v5-eyebrow">${esc(c.eyebrow || x.deckType || "Presentation")}</div>
   <h1 class="v5-hero-title" data-fit-title>${esc(c.title)}</h1>
@@ -399,7 +459,7 @@ ${people(x) ? `<div style="flex:none;border-top:1.5px solid color-mix(in srgb,va
   {
     id: "cycle", family: "diagram", photo: "none", minItems: 3, maxItems: 6,
     when: "A repeating loop (life cycle, water cycle, feedback loop).",
-    slots: `title (≤ 70 chars), lede (≤ 140 chars: what the loop shows), center (≤ 18 chars, the loop's name), items 3–6 in loop order [{icon, title ≤ 20 chars, text ≤ 40 chars optional}]`,
+    slots: `title (≤ 70 chars), lede (≤ 140 chars: what the loop shows), center (≤ 18 chars, the loop's name), items 3–6 in loop order [{icon, title ≤ 20 chars, text ≤ 60 chars optional}]`,
     render: (c, x) => {
       const its = items(c, 6);
       const n = Math.max(1, its.length);
@@ -416,7 +476,7 @@ ${people(x) ? `<div style="flex:none;border-top:1.5px solid color-mix(in srgb,va
   <div class="v5-cyc" style="flex:1;min-width:0">
     <div class="v5-cyc-ring" style="left:${cw / 2}px;right:${cw / 2}px;top:${chh / 2}px;bottom:${chh / 2}px"></div>
     ${arrows}
-    <div class="v5-cyc-core"><i data-icon="lucide:refresh-cw" style="width:44px;height:44px"></i>${c.center ? `<span>${esc(c.center)}</span>` : ""}</div>
+    ${n === 3 ? "" : `<div class="v5-cyc-core"><i data-icon="lucide:refresh-cw" style="width:44px;height:44px"></i>${c.center ? `<span>${esc(c.center)}</span>` : ""}</div>`}
     ${nodes}
   </div>
 </div>`, c, x);
@@ -432,7 +492,7 @@ ${people(x) ? `<div style="flex:none;border-top:1.5px solid color-mix(in srgb,va
       const L = its.slice(0, k), R = its.slice(k);
       const card = (it: SlotItem, side: "l" | "r") => `<div class="v5-card v5-hub-card v5-hub-${side}" data-fit-box style="flex-direction:row;align-items:center;gap:calc(var(--s) * 18px);padding:calc(var(--s) * 18px) calc(var(--s) * 22px)">${icbox(it.icon)}<div style="display:flex;flex-direction:column;gap:4px;min-width:0"><h3 class="v5-h3" style="font-size:max(21px,calc(var(--s) * 24px))">${esc(it.title)}</h3>${it.text ? `<p class="v5-p">${esc(it.text)}</p>` : ""}</div></div>`;
       const col = (arr: SlotItem[], side: "l" | "r") => `<div class="v5-hub-col v5-hub-col-${side}${arr.length === 1 ? " v5-hub-one" : ""}" style="--n:${arr.length}">${arr.map((it) => card(it, side)).join("")}</div>`;
-      return wrap("hub", `${head(c, x)}<div class="v5-body"><div class="v5-hub">${col(L, "l")}<div class="v5-hub-mid"><div class="v5-hub-core"><span>${esc(c.center || shortTitle(c.title))}</span></div></div>${R.length ? col(R, "r") : "<div></div>"}</div></div>`, c, x);
+      return wrap("hub", `${head(c, x)}<div class="v5-body"><div class="v5-hub">${col(L, "l")}<div class="v5-hub-mid"><div class="v5-hub-core"><span>${esc(c.center || coreLabel(c.title))}</span></div></div>${R.length ? col(R, "r") : "<div></div>"}</div></div>`, c, x);
     },
   },
   {
@@ -615,14 +675,66 @@ ${people(x) ? `<div style="flex:none;border-top:1.5px solid color-mix(in srgb,va
 </div>`, c, x);
     },
   },
+  // ── engine v6: data and diagram layouts drawn by the v3 diagram engine in the deck's own palette ──
+  {
+    id: "chart-trend", family: "data", photo: "none", v6: true,
+    when: "A GROWTH / TREND chart: one real number changing over time (years) or across 4–10 categories, shown big across the slide with the insight called out. Only real data from the facts.",
+    slots: `title (action title ≤ 70 chars stating what the trend shows), chart {kind line|bars, unit (≤ 6 chars, e.g. "%", "$bn"), items 4–10 [{label ≤ 12 chars (year or category), value number}]}, takeaway (≤ 110 chars: the insight), stat {value ≤ 10 chars, label ≤ 40 chars} optional: the headline change (e.g. "+38%" "since 1980")`,
+    render: (c, x) => {
+      const ch = c.chart || { kind: "line", items: [] };
+      const kind = ch.kind === "bars" ? "bars" : "line";
+      const list: SlotItem[] = ch.items.slice(0, 10).map((i) => ({ title: i.label, value: String(i.value) }));
+      const unit = ch.unit ? ` data-unit="${esc(ch.unit)}"` : "";
+      const st = c.stat;
+      return wrap("chart-trend", `${head(c, x, { lede: false })}<div class="v5-body" style="gap:calc(var(--s) * 22px)">
+  <div class="v5-card" style="flex:1.75;min-width:0;padding:calc(var(--s) * 14px) calc(var(--s) * 16px) 8px">${c.svg ? `<figure class="v6-chartbox" style="margin:0;width:100%;height:100%">${c.svg}</figure>` : `<div style="position:relative;width:100%;height:100%;overflow:hidden">${figure(kind, list, `${unit} data-size="24"`, "position:relative;width:calc(100% - 90px);height:100%;margin:0 45px")}</div>`}</div>
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:calc(var(--s) * 18px);justify-content:center" data-fit-box>
+    ${st?.value ? `<div class="v5-trend-stat"><b>${esc(st.value)}</b><span>${esc(st.label || "")}</span></div>` : ""}
+    <p class="v5-trend-insight">${esc(c.takeaway || c.lede || "")}</p>
+  </div>
+</div>`, c, x);
+    },
+  },
+  {
+    id: "donut", family: "data", photo: "none", v6: true,
+    when: "SHARES OF A WHOLE: 2–6 real parts that add up (e.g. who owns what share of wealth, energy mix, budget split). Only real data from the facts.",
+    slots: `title (action title ≤ 70 chars), chart {kind donut, unit (e.g. "%"), items 2–6 [{label ≤ 22 chars, value number}]}, takeaway (≤ 140 chars: what the split means), lede optional (≤ 90 chars context)`,
+    render: (c, x) => {
+      const ch = c.chart || { kind: "donut", items: [] };
+      const list: SlotItem[] = ch.items.slice(0, 6).map((i) => ({ title: i.label, value: String(i.value) }));
+      const unit = ch.unit ? ` data-unit="${esc(ch.unit)}"` : "";
+      return wrap("donut", `${head(c, x, { lede: false })}<div class="v5-body">
+  <div class="v5-card" style="flex:1.55;min-width:0;padding:calc(var(--s) * 16px) calc(var(--s) * 20px)">${c.svg ? `<figure class="v6-chartbox" style="margin:0;width:100%;height:100%">${c.svg}</figure>` : figure("donut", list, `${unit} data-size="25"`)}</div>
+  <div class="v5-panel v5-panel-primary" style="flex:1;justify-content:center;gap:calc(var(--s) * 16px)" data-fit-box>
+    <div style="color:var(--on-primary)">${ic("pie-chart")}</div>
+    ${c.lede ? `<p class="v5-p" style="color:var(--on-primary);opacity:.92">${esc(c.lede)}</p>` : ""}
+    <p class="v5-statement" style="font-size:max(22px,calc(var(--s) * 28px));color:var(--on-primary)">${esc(c.takeaway || "")}</p>
+  </div>
+</div>`, c, x);
+    },
+  },
+  {
+    id: "flowchart", family: "diagram", photo: "none", v6: true,
+    when: "A FLOWCHART with a decision or branches: cause → effect chains that split, a decision process (yes/no), how one thing leads to two outcomes. 4–8 boxes.",
+    slots: `title (action title ≤ 70 chars), flow {nodes 4–8 [{id "a".."h", label ≤ 28 chars, type step|decision|end}], edges [{from id, to id, label ≤ 12 chars optional (e.g. "yes", "no", "raises")}]}, takeaway optional (≤ 110 chars)`,
+    render: (c, x) => {
+      const nodes = c.flow?.nodes || [];
+      // the engine draws the chart as SVG before render (renderFitted); without it the boxes become a flow diagram
+      const body = c.svg
+        ? `<div class="v5-card" style="flex:1;min-height:0;padding:calc(var(--s) * 16px);display:flex;align-items:center;justify-content:center"><figure class="v6-flowchart" style="margin:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center">${c.svg}</figure></div>`
+        : `<div style="flex:1;min-width:0">${figure("flow", nodes.slice(0, 6).map((n) => ({ title: n.label })))}</div>`;
+      return wrap("flowchart", `${head(c, x, { lede: false })}<div class="v5-body" style="flex-direction:column;gap:calc(var(--s) * 14px)">${body}${c.takeaway ? `<p class="v5-trend-insight" style="flex:none" data-fit-box>${esc(c.takeaway)}</p>` : ""}</div>`, c, x);
+    },
+  },
   {
     id: "closing", family: "closing", photo: "none",
     when: "Last slide: thank you / questions.",
-    slots: `title (e.g. "Thank you"), lede (≤ 90 chars, e.g. an invitation for questions or the one thing to remember)`,
-    render: (c, x) => wrap("closing", `${x.heroPhoto ? `<div class="v5-photo" style="position:absolute;right:80px;top:100px;width:440px;height:500px;z-index:1"><img src="asset:${esc(x.heroPhoto)}" alt=""></div>` : artPanel([...(x.deckIcons || [])].slice(0, 3), "right:80px;top:110px")}<div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:26px;max-width:620px" data-fit-box>
+    slots: `title (e.g. "Thank you"), lede (≤ 90 chars, e.g. an invitation for questions or the one thing to remember), items optional 3 key takeaways [{icon, title ≤ 80 chars}]`,
+    render: (c, x) => wrap("closing", `${x.heroPhoto && !x.theme.v6 ? `<div class="v5-photo" style="position:absolute;right:80px;top:100px;width:440px;height:500px;z-index:1"><img src="asset:${esc(x.heroPhoto)}" alt=""></div>` : x.theme.v6 ? artPanelV6({ ...x, heroStat: undefined }) : artPanel([...(x.deckIcons || [])].slice(0, 3), "right:80px;top:110px")}<div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:${items(c, 3).length ? 18 : 26}px;max-width:620px" data-fit-box>
   ${logoEl(x)}<div class="v5-eyebrow">${esc(c.eyebrow || shortTitle(x.deckTitle))}</div>
-  <h2 class="v5-hero-title" data-fit-title style="font-size:calc(var(--ts) * 96px)">${esc(c.title)}</h2>
-  ${c.lede ? `<p class="v5-hero-sub">${esc(c.lede)}</p>` : ""}
+  <h2 class="v5-hero-title" data-fit-title style="font-size:calc(var(--ts) * ${items(c, 3).length ? 72 : 96}px)">${esc(c.title)}</h2>
+  ${c.lede ? `<p class="v5-hero-sub"${items(c, 3).length ? ` style="font-size:min(28px,max(22px,calc(var(--s) * 24px)))"` : ""}>${esc(c.lede)}</p>` : ""}
+  ${items(c, 3).length ? `<div class="v5-recap">${items(c, 3).map((it, k) => `<div class="v5-recap-row"><span class="v5-recap-n">${k + 1}</span><span class="v5-recap-t">${esc(it.title || it.text)}</span></div>`).join("")}</div>` : ""}
   ${x.fields.find((f) => /presented/i.test(f.label)) ? `<p class="v5-hero-sub" style="font-size:22px;opacity:.9">${esc(x.fields.find((f) => /presented/i.test(f.label))!.value)}</p>` : ""}
 </div>`, c, x, { hero: true, noFoot: true }),
   },
@@ -632,7 +744,7 @@ export function templateById(id: string): TemplateDef | undefined {
   return TEMPLATES.find((t) => t.id === id);
 }
 
-/** the catalog as the planner reads it (one line per template) */
-export function catalogText(): string {
-  return TEMPLATES.map((t) => `- ${t.id} [${t.photo === "required" ? "needs photo" : t.photo === "optional" ? "photo optional" : "no photo"}] — ${t.when} SLOTS: ${t.slots}`).join("\n");
+/** the catalog as the planner reads it (one line per template); v6-only layouts are left out for engine v5 */
+export function catalogText(engine: "v5" | "v6" = "v5"): string {
+  return TEMPLATES.filter((t) => engine === "v6" || !t.v6).map((t) => `- ${t.id} [${t.photo === "required" ? "needs photo" : t.photo === "optional" ? "photo optional" : "no photo"}] — ${t.when} SLOTS: ${t.slots}`).join("\n");
 }
