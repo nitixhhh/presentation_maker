@@ -1,5 +1,5 @@
 /**
- * Engine v6 jobs: the PLAN step (a job that ends with outline cards + three styles + their previews) and the deck
+ * Advanced plan (engine v6) jobs: the PLAN step (a job that ends with outline cards + three styles + their previews) and the deck
  * job made from an approved plan. Everything the deck job needs (brief, research, planned slots, style tokens)
  * travels inside the job's request, so it survives a restart and a sleeping free server.
  */
@@ -16,6 +16,7 @@ import { renderStylePreviews, previewSlideOf } from "@/engine-v6/preview";
 import { presenterFields } from "@/engine-v3/privacy";
 import { llmContext } from "@/engine-v3/llm";
 import type { V6Input } from "@/engine-v5/pipeline";
+import { tierOfEngine } from "../plans";
 
 const planDir = (jobId: string) => path.join(DATA_ROOT, "plans", jobId.replace(/[^a-z0-9-]/gi, ""));
 
@@ -72,7 +73,7 @@ export async function runPlanJob(job: JobRecord, save: () => void) {
   (data as any).planCalls = calls.length;
   (data as any).planUsage = calls.reduce((m: Record<string, number>, c: any) => ((m[c.role] = (m[c.role] || 0) + 1), m), {});
   job.request.v6 = { stage: "plan", data };
-  job.progress.plan = { cards: cardsOf(data), styles: styleSummaries(job.id, data, files), previewSlide: previewSlideOf(data.slides)?.n };
+  job.progress.plan = { cards: cardsOf(data), styles: styleSummaries(job.id, data, files), previewSlide: previewSlideOf(data.slides)?.n, defaultImages: tierOfEngine("v6")?.defaultImages };
 }
 
 async function ownedPlanJob(jobId: string, ownerKey: string): Promise<JobRecord | null> {

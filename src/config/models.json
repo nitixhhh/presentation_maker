@@ -860,6 +860,6 @@
       "nvidia:nvidia/nemotron-3-ultra-550b-a55b"
     ],
     "_revisionComment": "Revision/polish passes (designer.reviseSlide, pass 'revision'): while more than V3_GEMINI_DRAFT_RESERVE (default 30) Gemini Flash calls are left today they use the normal design chain; below that they start at revisionBackups (Nemotron 3.5 Super VL when ALLOW_NVIDIA_PRODUCTION=true, then Mistral Large 4, DeepSeek-V3.1, GLM-4.7-Flash, Nemotron 3 Ultra) and Gemini follows them, so the last Gemini calls go to first drafts. Same number of design calls and polish passes; only the model order changes. V3_REVISION_ROUTE=gemini-first turns this off, =backup-first always uses backups first.",
-    "_v4Comment": "engine-v4 (1 Nov 2026 tool-calling test): planner + per-slide designer agents use OpenAI-style tool calls. Super VL 100% valid tool calls (~8 requests/slide); backups Lightning -> Muse Glimmer -> Ultra -> Super VL :free on OpenRouter. Avoid MiniMax, gpt-oss-20b, Groq Qwen, Mistral, SambaNova for tool loops. groq gpt-oss-120b is the last-resort agent route (94% valid tool calls)."
+    "_agentComment": "Roles \"planner\" (Standard/Advanced slide planner) and \"agent\" (Standard/Advanced photo vet, vision) came from the retired engine-v4 tests on 1 Nov 2026: Nemotron 3.5 Super VL first, then Lightning -> Muse Glimmer -> Ultra -> Super VL :free on OpenRouter; groq gpt-oss-120b is the last resort."
   }
 }

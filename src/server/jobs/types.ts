@@ -13,10 +13,10 @@ export interface JobProgress {
   notice?: string;
   noticeAt?: number;
   log: { t: string; agent: string; msg: string }[]; // last ~40 lines
-  /** engine v4: live slide-by-slide state (each slide appears the moment its designer agent submits it) */
+  /** Standard/Advanced: live slide-by-slide state (each slide appears the moment it is rendered) */
   live?: LiveDeck;
   /** engine v6 plan step: the outline cards and the three styles made for this topic (with preview images) */
-  plan?: { cards: any[]; styles: { id: string; name: string; why: string; dark: boolean; palette: Record<string, string>; font: string; previews: string[] }[]; previewSlide?: number };
+  plan?: { cards: any[]; styles: { id: string; name: string; why: string; dark: boolean; palette: Record<string, string>; font: string; previews: string[] }[]; previewSlide?: number; defaultImages?: "real" | "ai" | "none" };
 }
 
 export interface LiveSlide {
@@ -32,7 +32,7 @@ export interface LiveSlide {
 }
 
 export interface LiveDeck {
-  engine: "v4" | "v5" | "v6";
+  engine: "v5" | "v6";
   slides: LiveSlide[];
 }
 
@@ -62,7 +62,7 @@ export interface JobRecord {
 export interface JobView extends Omit<JobRecord, "ownerKey" | "userId" | "request"> {
   topic: string;
   slideCount?: number;
-  engine?: "v3" | "v4" | "v5" | "v6";
+  engine?: "v3" | "v5" | "v6";
   /** engine v6: "plan" while this job is the plan step */
   stage?: "plan" | "deck";
   queuePosition?: number; // 1 = next to start

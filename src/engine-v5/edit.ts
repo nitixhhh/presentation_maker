@@ -10,7 +10,7 @@ import { inspectSlide } from "../engine-v3/qa/inspect";
 import { chatJson } from "../engine-v3/llm";
 import { deckDir, saveDeck } from "../engine-v3/store";
 import type { Deck } from "../engine-v3/types";
-import { previewFile } from "../engine-v4/pipeline";
+import { previewFile } from "../engine-common/live";
 import { factsBlock, normalizeOne, resolveIcons } from "./planner";
 import { TEMPLATES, templateById, type RenderCtx, type SlideContent } from "./templates";
 import { renderFitted } from "./pipeline";

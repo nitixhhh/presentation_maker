@@ -5,7 +5,7 @@ import { api } from "@/lib/client/auth";
 import type { JobView, PlanCard, PlanInfo, PlanStyle } from "./types";
 
 /**
- * Engine v6, phone-first: PLAN (editable outline cards) → STYLE ("Surprise me" or three looks made for this topic,
+ * Advanced plan (engine v6), phone-first: PLAN (editable outline cards) → STYLE ("Surprise me" or three looks made for this topic,
  * each shown as this deck's own title slide + one content slide) → Generate. Nothing is designed before approval.
  */
 const BEAT: Record<string, string> = { question: "Question", context: "Context", evidence: "Evidence", mechanism: "How it works", implication: "Implications", counterpoint: "Other side", answer: "Answer" };
@@ -17,7 +17,7 @@ export default function PlanFlow({ job, onStarted }: { job: JobView; onStarted: 
   const [styles, setStyles] = useState<PlanStyle[]>(plan.styles);
   const [mode, setMode] = useState<"surprise" | "choose">("surprise");
   const [styleId, setStyleId] = useState<string | null>(plan.styles[0]?.id || null);
-  const [images, setImages] = useState<"real" | "ai" | "none">("real");
+  const [images, setImages] = useState<"real" | "ai" | "none">(plan.defaultImages || "real");
   const [busy, setBusy] = useState<"" | "more" | "go">("");
   const [err, setErr] = useState<string | null>(null);
   const [open, setOpen] = useState<number | null>(null);

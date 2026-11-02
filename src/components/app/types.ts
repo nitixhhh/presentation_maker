@@ -13,7 +13,7 @@ export interface JobView {
   startedAt?: string;
   finishedAt?: string;
   progress: { stage: JobStage; step: string; percent: number; details?: string; notice?: string; log: { t: string; agent: string; msg: string }[]; live?: LiveDeck; plan?: PlanInfo };
-  engine?: "v3" | "v4" | "v5" | "v6";
+  engine?: "v3" | "v5" | "v6";
   /** engine v6: "plan" while this job is the plan step */
   stage?: "plan" | "deck";
   queuePosition?: number;
@@ -43,7 +43,7 @@ export interface DeckSummary {
   engine?: string;
 }
 
-/** engine v4: slides appear one by one while the deck is being made */
+/** Standard/Advanced: slides appear one by one while the deck is being made */
 export interface LiveSlide {
   n: number;
   title: string;
@@ -53,7 +53,7 @@ export interface LiveSlide {
   image?: string;
 }
 export interface LiveDeck {
-  engine: "v4" | "v5" | "v6";
+  engine: "v5" | "v6";
   slides: LiveSlide[];
 }
 
@@ -80,4 +80,6 @@ export interface PlanInfo {
   cards: PlanCard[];
   styles: PlanStyle[];
   previewSlide?: number;
+  /** image choice preselected by the plan (Advanced: AI images) */
+  defaultImages?: "real" | "ai" | "none";
 }

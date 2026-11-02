@@ -7,11 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test src/engine-v3/llm.test.ts src/engine-v3/fixes.test.ts src/engine-v3/quickfixes.test.ts src/server/keepAlive.test.ts src/engine-v3/render/geometry.test.ts src/server/access.test.ts src/lib/client/store.test.ts src/engine-v4/v4.test.ts src/engine-v4/finalize.test.ts src/engine-v4/icons/icons.test.ts src/engine-v5/v5.test.ts src/engine-v6/v6.test.ts"
+    "test": "tsx --test src/engine-v3/llm.test.ts src/engine-v3/fixes.test.ts src/engine-v3/quickfixes.test.ts src/engine-v3/render/geometry.test.ts src/engine-common/finalize.test.ts src/engine-common/icons/icons.test.ts src/engine-v5/v5.test.ts src/engine-v6/v6.test.ts src/server/keepAlive.test.ts src/server/access.test.ts src/server/plans.test.ts src/lib/client/store.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
-    "echarts": "^6.1.0",
     "lucide-react": "^1.63.0",
     "mermaid": "^11.17.2",
     "next": "16.4.3",
@@ -20,8 +19,7 @@
     "pptxgenjs": "^4.0.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "sharp": "^0.35.5",
-    "zod": "^4.6.7"
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",

@@ -9,6 +9,9 @@
  * newest job so the app can reopen it.
  */
 
+/** the plan picked on this phone (an engine id: v3 | v5 | v6) */
+export const PLAN_KEY = "dc_plan";
+
 export interface SavedJob {
   id: string;
   topic: string;
@@ -36,10 +39,6 @@ export function ownerScope(userId?: string | null): string {
 export function setJobsOwner(userId?: string | null) {
   owner = ownerScope(userId);
   migrateLegacy();
-}
-
-export function jobsOwner(): string {
-  return owner;
 }
 
 function migrateLegacy() {
@@ -113,6 +112,3 @@ export function clearJobs(who: string) {
   } catch {}
 }
 
-export function apiHeaders(extra: Record<string, string> = {}): Record<string, string> {
-  return { "Content-Type": "application/json", "x-client-id": clientId(), ...extra };
-}

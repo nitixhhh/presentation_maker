@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { ChevronDown, ArrowRight, Loader2 } from "lucide-react";
 import Select from "@/components/ui/Select";
 import { useRef } from "react";
-import { clientId } from "@/lib/client/store";
+import { clientId, PLAN_KEY } from "@/lib/client/store";
 
 export interface CreateRequest {
   topic: string;
@@ -15,8 +15,8 @@ export interface CreateRequest {
   logoId?: string;
   presenter: { names: string; rollNo: string; department: string; institute: string; guide: string; course: string };
   ageConfirmed?: boolean;
-  /** owner only: which engine makes the deck (the server ignores it for everyone else) */
-  engine?: "v3" | "v4" | "v5" | "v6";
+  /** the chosen plan's engine (the server ignores it unless plans are open to this visitor) */
+  engine?: "v3" | "v5" | "v6";
 }
 
 const EMPTY: CreateRequest = {
@@ -37,19 +37,28 @@ const SLIDES = [6, 8, 10, 12, 15, 18, 20];
 export const field = "field";
 const label = "label";
 
-export const ENGINE_KEY = "dc_engine_v4";
+const OLD_ENGINE_KEY = "dc_engine_v4";
 
-export default function CreateForm({ onSubmit, busy, error, canChooseEngine = false, engineDefault = "v3" }: { onSubmit: (r: CreateRequest) => void; busy: boolean; error: string | null; canChooseEngine?: boolean; engineDefault?: "v3" | "v4" | "v5" | "v6" }) {
+/** a plan as /api/me describes it (only sent to visitors who may choose) */
+export interface PlanOption {
+  id: string;
+  engine: "v3" | "v5" | "v6";
+  name: string;
+  tagline: string;
+  approxTime: string;
+}
+
+export default function CreateForm({ onSubmit, busy, error, plans = [], plansPublic = false, engineDefault = "v3" }: { onSubmit: (r: CreateRequest) => void; busy: boolean; error: string | null; plans?: PlanOption[]; plansPublic?: boolean; engineDefault?: "v3" | "v5" | "v6" }) {
   const [r, setR] = useState<CreateRequest>(EMPTY);
-  // owner-only "New engine (beta)" switch, remembered on this phone
-  const [engine, setEngine] = useState<"v3" | "v4" | "v5" | "v6">(() => {
-    const saved = typeof window !== "undefined" ? localStorage.getItem(ENGINE_KEY) : null;
-    // older phones saved "1" (= the v4 switch on) / "0"
-    if (saved === "v3" || saved === "v4" || saved === "v5" || saved === "v6") return saved;
-    if (saved === "1") return "v4";
-    if (saved === "0") return "v3";
+  // plan picker (owner only until release), remembered on this phone
+  const [engine, setEngine] = useState<"v3" | "v5" | "v6">(() => {
+    const saved = typeof window !== "undefined" ? localStorage.getItem(PLAN_KEY) || localStorage.getItem(OLD_ENGINE_KEY) : null;
+    if (saved === "v3" || saved === "v5" || saved === "v6") return saved;
     return engineDefault;
   });
+  const canChoose = plans.length > 0;
+  const chosen = plans.find((p) => p.engine === engine) ? engine : engineDefault;
+  const defaultName = plans.find((p) => p.engine === engineDefault)?.name || "Basic";
   const [more, setMore] = useState(false);
   // Gemini API terms: users must be 18+. Asked once per phone, remembered in localStorage.
   const [ageOk, setAgeOk] = useState(() => typeof window !== "undefined" && localStorage.getItem(AGE_KEY) === "1");
@@ -86,7 +95,7 @@ export default function CreateForm({ onSubmit, busy, error, canChooseEngine = fa
           ageRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
           return;
         }
-        onSubmit({ ...r, ageConfirmed: true, ...(canChooseEngine ? { engine } : {}) });
+        onSubmit({ ...r, ageConfirmed: true, ...(canChoose ? { engine: chosen } : {}) });
       }}
       className="space-y-6"
     >
@@ -174,30 +183,33 @@ export default function CreateForm({ onSubmit, busy, error, canChooseEngine = fa
         </div>
       </div>
 
-      {canChooseEngine && (
+      {canChoose && (
         <div className="rounded-[var(--r-md)] border border-[var(--rule)] bg-[rgba(255,253,248,.7)] px-4 py-3.5">
-          <span className="block text-[15px] font-medium text-[var(--ink)]">Engine</span>
-          <span className="mb-2.5 block text-[12.5px] text-[var(--muted)]">Only you see this choice. Classic is what every user gets.</span>
-          <div role="radiogroup" aria-label="Engine" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {([
-              ["v3", "Classic", "v3"],
-              ["v6", "Plan + style", "v6 beta"],
-              ["v5", "Templates", "v5 beta"],
-              ["v4", "Agents", "v4 beta"],
-            ] as const).map(([id, name, tag]) => (
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="block text-[15px] font-medium text-[var(--ink)]">Plan</span>
+            <a href="/plans" className="text-[13px] font-medium text-[var(--ink)] underline decoration-[var(--rule)] underline-offset-[3px]">
+              See example slides
+            </a>
+          </div>
+          <span className="mb-2.5 block text-[12.5px] text-[var(--muted)]">{plansPublic ? "Pick how your deck is made." : `Only you see this choice. Everyone else gets ${defaultName}.`}</span>
+          <div role="radiogroup" aria-label="Plan" className="grid gap-2">
+            {plans.map((p) => (
               <button
-                key={id}
+                key={p.id}
                 type="button"
                 role="radio"
-                aria-checked={engine === id}
+                aria-checked={chosen === p.engine}
                 onClick={() => {
-                  setEngine(id);
-                  localStorage.setItem(ENGINE_KEY, id);
+                  setEngine(p.engine);
+                  localStorage.setItem(PLAN_KEY, p.engine);
                 }}
-                className={`rounded-[10px] border px-2 py-2.5 text-center transition-colors ${engine === id ? "border-[var(--ink)] bg-[var(--ink)] text-[var(--paper,#fffdf8)]" : "border-[var(--rule)] text-[var(--ink)]"}`}
+                className={`rounded-[12px] border px-3.5 py-3 text-left transition-colors ${chosen === p.engine ? "border-[var(--ink)] bg-[var(--ink)] text-[var(--paper,#fffdf8)]" : "border-[var(--rule)] text-[var(--ink)]"}`}
               >
-                <span className="block text-[14px] font-medium">{name}</span>
-                <span className="block text-[11.5px] opacity-75">{tag}</span>
+                <span className="flex items-baseline justify-between gap-3">
+                  <span className="text-[15px] font-semibold">{p.name}</span>
+                  <span className="shrink-0 text-[12px] opacity-75">{p.approxTime}</span>
+                </span>
+                <span className="mt-0.5 block text-[13px] leading-snug opacity-80">{p.tagline}</span>
               </button>
             ))}
           </div>

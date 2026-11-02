@@ -11,7 +11,7 @@
 import { chatJson } from "../engine-v3/llm";
 import { crossref, semanticScholar } from "../engine-v3/research/sources";
 import type { Brief, ResearchPack, Source } from "../engine-v3/types";
-import { FACTS_SYSTEM, scholarlySources } from "../engine-v4/deepen";
+import { FACTS_SYSTEM, scholarlySources } from "../engine-common/deepen";
 
 type Cand = Omit<Source, "id"> & { id?: string };
 

@@ -10,7 +10,7 @@ pinned: false
 
 # DeckCraft AI
 
-Researched, designed presentations for Indian college students. Type a topic, and the engine:
+Researched, designed presentations for Indian college students. Three engines, one per plan (see **Three plans** below). Type a topic, and the Basic engine:
 
 1. researches real sources (Wikipedia, Crossref, OpenAlex, arXiv …) and writes cited facts,
 2. plans the story slide by slide,
@@ -19,6 +19,48 @@ Researched, designed presentations for Indian college students. Type a topic, an
 5. exports a PDF, an editable PowerPoint and speaker notes.
 
 The student sees a watermarked preview first and pays only if they like it (₹39 a deck, ₹149 for 5, first deck ₹9).
+
+## Three plans, three engines
+
+DeckCraft has exactly three engines. Each one is a plan (tier) a student can pick at release. All future engine work happens inside these three folders.
+
+| Plan | Engine | Folder | What it does | Time per deck* | AI calls* |
+|---|---|---|---|---|---|
+| **Basic** | v3 | `src/engine-v3` | AI designs every slide one at a time (own palette per topic, drawn diagrams), renders it in Chromium, checks and fixes it | ~9–13 min | 70–90 |
+| **Standard** | v5 | `src/engine-v5` | One planner call fills 30 designer-made layouts; code renders, fits and checks every slide; peer-reviewed papers; photo vet | ~2.5–3 min | 12–15 |
+| **Advanced** | v6 | `src/engine-v6` (+ v5 layouts) | Plan first (editable outline cards) → approve → a style generated for the topic ("Surprise me" or 3 looks) → drawn charts/flowcharts → AI images preselected → chat edit | ~2–4.5 min | ~18 |
+
+\*Measured on the free models, Nov 2026, 8–10 slides.
+
+The plan registry (names, one-line descriptions, times, price placeholders, example slides) is **`src/server/plans.ts`**. Which engine a deck gets is decided in **`src/server/engineChoice.ts`**.
+
+### Who sees what
+
+* Every visitor gets `ENGINE_DEFAULT` (v3 = Basic unless set; it also accepts `basic` / `standard` / `advanced`).
+* The owner (`OWNER_USER_IDS` and/or `OWNER_EMAILS`) sees the plan picker on the create form and the **`/plans`** page: each plan's name, what it does, time per deck, price placeholder, and 6 real slides it made (`public/plans/<plan>/*.webp`).
+* **Release switch: `PLANS_PUBLIC=true`.** The picker and `/plans` then show for everyone, and anyone may pick a plan. Until then `/plans` and `/api/plans` answer 404 to everyone but the owner.
+* Prices are placeholders ("Price coming soon"). Set `PLAN_PRICE_BASIC`, `PLAN_PRICE_STANDARD`, `PLAN_PRICE_ADVANCED` (any text, e.g. `Rs 49 a deck`) or fill `price` in `src/server/plans.ts`. No payment is tied to a plan yet; the existing per-deck pricing is unchanged.
+
+To switch tiers for everyone without code: set `ENGINE_DEFAULT` on the host. To change a plan's example slides: replace the files in `public/plans/<plan>/` (960×540 WebP) and their alt text in `plans.ts`.
+
+### Folder map
+
+```
+src/
+  app/                 Next.js pages + API routes (/create, /plans, /api/v3/*, /api/plans, /api/me, /api/pay/*)
+  components/app/      create form (plan picker), live progress, Advanced plan flow (PlanFlow), deck view + chat edit
+  components/plans/    /plans page
+  server/              jobs queue (jobs/manager.ts, jobs/v6.ts), plans.ts, engineChoice.ts, auth, storage, payments
+  engine-v3/           Basic engine — and the shared core every engine uses: LLM router (llm.ts), research,
+                       store, HTML render + DOM checks, PDF/PPTX/PNG exports, privacy placeholders
+  engine-v5/           Standard engine: templates, themes, planner, fit, citations, photo vet
+  engine-v6/           Advanced engine: plan step, generated style + WCAG contrast, charts, flowcharts, previews
+  engine-common/       pieces shared by Standard and Advanced: icon library, deeper research, placeholder gate,
+                       live slide events, Mermaid fallback, photo rules
+  config/models.json   free model routes per role
+```
+
+The retired v4 (Agents) engine lives on the `engine-v4` branch. Decks it already saved still open, edit and download.
 
 ---
 
@@ -136,7 +178,7 @@ How it works: the server creates a Razorpay order for the exact price → Razorp
 * **Unlock:** pay once (or use a credit) → clean PDF, editable PPTX, speaker notes (in the PPTX notes and as a separate PDF), full-screen present, and **2 free edits**: pick a slide, say what to change, the designer redoes that slide.
 * **Invite:** each account has a referral link; a friend who signs up with it gives them a free deck credit.
 
-## How a deck is made (`src/engine-v3`)
+## How a Basic deck is made (`src/engine-v3`)
 
 brief → research (cited facts, cached 7 days per topic) → outline → **image director** (AI chooses real photo vs AI image vs none per slide and writes one style prompt for all AI images of the deck) → photos (Wikimedia Commons / Openverse, a vision model picks the best; credits kept) + AI images (Cloudflare Flux; never charts, text or data) → art director (palette, fonts, motif, per-slide direction) → **designer AI per slide** with 2–3 example slides from the recipe library as inspiration → Chromium render → DOM checks (overflow, overlap, contrast, invented numbers) → vision check when something looks wrong → revise → exports.
 

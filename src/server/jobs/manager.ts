@@ -14,10 +14,10 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { generateDeckV3 } from "@/engine-v3/pipeline";
-import { generateDeckV4, type V4Options } from "@/engine-v4/pipeline";
+import type { LiveOptions } from "@/engine-common/live";
 import { generateDeckV5 } from "@/engine-v5/pipeline";
 import { runPlanJob, deckInputV6 } from "./v6";
-import { finalizePlaceholders, assertNoPlaceholdersInPptx } from "@/engine-v4/finalize";
+import { finalizePlaceholders, assertNoPlaceholdersInPptx } from "@/engine-common/finalize";
 import { deckToken } from "../deckAuth";
 import { llmContext, type CallStat } from "@/engine-v3/llm";
 import { deckDir, loadDeck, saveDeck } from "@/engine-v3/store";
@@ -153,7 +153,7 @@ function remainingSeconds(j: JobRecord): number {
 export function viewOf(j: JobRecord): JobView {
   const { ownerKey: _o, userId: _u, request, routes: _r, ...rest } = j;
   const v: JobView = { ...rest, topic: request.topic, slideCount: request.slideCount, engine: request.engine || "v3", ...(request.v6?.stage ? { stage: request.v6.stage } : {}) };
-  // engine v4 live slides: signed preview links for the slides already made (the job view only reaches the job's owner)
+  // live slides (Standard/Advanced): signed preview links for the slides already made (the job view only reaches the job's owner)
   if (v.progress?.live && j.deckId) {
     let t = "";
     try {
@@ -258,9 +258,9 @@ async function run(job: JobRecord) {
       job.deckId = id;
       persist(job, true);
     };
-    const eng = job.request.engine === "v6" ? "v6" : job.request.engine === "v5" ? "v5" : job.request.engine === "v4" ? "v4" : "v3";
-    // engines v4 and v5 share the live slide-by-slide UI (each slide is shown the moment it is ready)
-    const liveOpts = (eng: "v4" | "v5" | "v6"): V4Options => ({
+    const eng = job.request.engine === "v6" ? "v6" : job.request.engine === "v5" ? "v5" : "v3";
+    // Standard (v5) and Advanced (v6) share the live slide-by-slide UI (each slide is shown the moment it is ready)
+    const liveOpts = (eng: "v5" | "v6"): LiveOptions => ({
             visionMode: job.visionMode,
             onProgress,
             onDeckId,
@@ -288,8 +288,6 @@ async function run(job: JobRecord) {
         ? deckInputV6(job, (m) => onProgress({ step: "Planning the story", percent: 26, log: { agent: "Planner", action: m, timestamp: new Date().toLocaleTimeString() } })).then((v6) => generateDeckV5(job.request, { ...liveOpts("v6"), v6 }))
         : eng === "v5"
         ? generateDeckV5(job.request, liveOpts("v5"))
-        : eng === "v4"
-        ? generateDeckV4(job.request, liveOpts("v4"))
         : generateDeckV3(job.request, { visionMode: job.visionMode, onProgress, onDeckId })
     );
     job.deckId = deck.id;
@@ -372,22 +370,26 @@ export function exportPath(deckId: string, format: "pdf" | "pptx" | "notes") {
   return path.join(deckDir(deckId), "exports", `deck.${format}`);
 }
 
+/** decks whose slides carry {{P1}} presenter placeholders until export ("v4" = decks saved before that engine was retired) */
+const TEMPLATE_ENGINES = new Set(["v4", "v5", "v6"]);
+
 export async function buildExports(deckId: string) {
   const deck = loadDeck(deckId);
   if (!deck) throw new Error("deck missing after generation");
   fs.mkdirSync(path.join(deckDir(deckId), "exports"), { recursive: true });
-  // engine v4: hard final gate — real presenter details, empty detail rows removed, no "{{" in any exported slide
-  if ((deck as any).engine === "v4" || (deck as any).engine === "v5" || (deck as any).engine === "v6") {
+  // template engines (and decks saved by the retired v4): hard final gate — real presenter details, empty detail rows removed, no "{{" in any exported slide
+  const gated = TEMPLATE_ENGINES.has(String((deck as any).engine));
+  if (gated) {
     const fixed = finalizePlaceholders(deck);
     if (fixed.length) {
-      console.log(`[v4/export] deck ${deckId}: placeholder gate fixed ${fixed.join("; ")}`);
+      console.log(`[export] deck ${deckId}: placeholder gate fixed ${fixed.join("; ")}`);
       saveDeck(deck);
     }
   }
   // LOW_MEMORY (512 MB hosts): PDF then PPTX one after the other instead of both at once
   const lowMem = process.env.LOW_MEMORY === "true";
   const [pdf, pptx] = lowMem ? [await exportPdf(deck), await exportPptx(deck)] : await Promise.all([exportPdf(deck), exportPptx(deck)]);
-  if ((deck as any).engine === "v4" || (deck as any).engine === "v5" || (deck as any).engine === "v6") await assertNoPlaceholdersInPptx(pptx, deckId);
+  if (gated) await assertNoPlaceholdersInPptx(pptx, deckId);
   fs.writeFileSync(exportPath(deckId, "pdf"), pdf);
   fs.writeFileSync(exportPath(deckId, "pptx"), pptx);
   await buildPreviews(deckId);

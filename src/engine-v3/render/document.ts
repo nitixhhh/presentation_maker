@@ -2,7 +2,7 @@
 import type { Deck, DesignSystem } from "../types";
 import { COMPONENTS_CSS, COMPONENTS_JS } from "./components";
 import { deckLogo, logoCornerHtml, stripEngineLogo } from "../assets/logo";
-import { expandIcons, ICON_CSS } from "../../engine-v4/iconRender";
+import { expandIcons, ICON_CSS } from "../../engine-common/iconRender";
 
 export function resolveAssets(html: string, assetBase: string, deck: Pick<Deck, "assets">): string {
   return html.replace(/asset:([a-z0-9_-]+)/gi, (m, id) => {
@@ -13,16 +13,13 @@ export function resolveAssets(html: string, assetBase: string, deck: Pick<Deck, 
 
 export function slideDocument(design: DesignSystem, innerHtml: string, opts: { assetBase: string; deck: Pick<Deck, "assets">; n?: number; extraHead?: string }): string {
   let body = resolveAssets(stripEngineLogo(innerHtml), opts.assetBase, opts.deck);
-  // engine v4 icon placeholders (<i data-icon="lucide:cpu">) → real inline SVG (no-op for slides without icons)
+  // icon placeholders (<i data-icon="lucide:cpu">) → real inline SVG (no-op for slides without icons)
   const iconCss = /data-icon\s*=/.test(body) ? ICON_CSS : "";
   if (iconCss) body = expandIcons(body).html;
   // the institution logo: designed into the title/closing slide; every other slide gets the same small corner logo
   const logo = opts.deck.assets ? deckLogo(opts.deck as { assets: any[] }) : undefined;
   if (logo && opts.n != null && !logo.forSlides.includes(opts.n)) body += `\n${logoCornerHtml(`${opts.assetBase}${logo.file}`)}`;
-  // engine v4 decks get a few stricter DOM checks (domScripts reads this flag); v3 decks render exactly as before
-  const v4 = (opts.deck as any).engine === "v4";
-  const role = v4 && opts.n != null ? String(((opts.deck as any).outline?.slides || []).find((s: any) => s.n === opts.n)?.role || "").replace(/[^a-z-]/gi, "") : "";
-  return `<!DOCTYPE html><html${v4 ? ` data-engine="v4"${role ? ` data-role="${role}"` : ""}` : ""}><head><meta charset="utf-8"><meta name="viewport" content="width=1280">
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=1280">
 ${design.fontLink}
 <style>${design.css}${COMPONENTS_CSS}${iconCss}</style>${opts.extraHead || ""}
 </head><body><section class="slide" data-n="${opts.n ?? ""}">

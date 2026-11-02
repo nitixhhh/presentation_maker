@@ -10,7 +10,7 @@ import path from "path";
 import sharp from "sharp";
 import { runBrief } from "../engine-v3/agents/brief";
 import { runResearch } from "../engine-v3/agents/research";
-import { deepenResearch } from "../engine-v4/deepen";
+import { deepenResearch } from "../engine-common/deepen";
 import { addLogoAsset, logoSlides } from "../engine-v3/assets/logo";
 import { sourceImages } from "../engine-v3/assets/images";
 import { inspectSlide } from "../engine-v3/qa/inspect";
@@ -22,8 +22,8 @@ import { assetDir, deckDir, newDeckId, saveDeck } from "../engine-v3/store";
 import { availableProviders, chatJson, llmContext, usageSummary, usageLine } from "../engine-v3/llm";
 import { presenterFields } from "../engine-v3/privacy";
 import type { Asset, Brief, Deck, OutlineSlide, ResearchPack, SlideDesign, V3Request } from "../engine-v3/types";
-import { isProductShot } from "../engine-v4/photoRules";
-import { previewFile, type LiveSlideEvent, type V4Options } from "../engine-v4/pipeline";
+import { isProductShot } from "../engine-common/photoRules";
+import { previewFile, type LiveSlideEvent, type LiveOptions } from "../engine-common/live";
 import { growSlide, runPlannerV5, clamp, type PlannedSlide } from "./planner";
 import { pickTheme, themeDesignSystem } from "./themes";
 import { renderSlide, NO_PHOTO } from "./render";
@@ -43,7 +43,7 @@ export interface V6Input {
   /** owner's log line: how the plan / style were chosen */
   note?: string;
 }
-export type V5Options = V4Options & { v6?: V6Input };
+export type V5Options = LiveOptions & { v6?: V6Input };
 
 async function writePreview(deckId: string, n: number, shot: Buffer) {
   const f = previewFile(deckId, n);

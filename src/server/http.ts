@@ -1,13 +1,5 @@
 import type { V3Request } from "@/engine-v3/types";
 
-/** Anonymous browser key (random id kept in the browser's localStorage). */
-export function ownerKeyOf(req: Request): string {
-  const k = req.headers.get("x-client-id") || "";
-  if (/^[a-z0-9-]{8,64}$/i.test(k)) return `c:${k}`;
-  const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "anon";
-  return `ip:${ip}`;
-}
-
 const clip = (v: unknown, n: number) => (typeof v === "string" ? v.trim().slice(0, n) : undefined);
 
 /** Server-side validation of a generation request (never trust the client). */

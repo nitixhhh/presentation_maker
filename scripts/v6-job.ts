@@ -1,10 +1,7 @@
 /**
- * Engine v6 — PLAN job → (optional card edits) → approve with a style → deck job, through the same manager code the
+ * Advanced plan (engine v6) — PLAN job → (optional card edits) → approve with a style → deck job, through the same manager code the
  * server runs.  npx tsx scripts/v6-job.ts '<json body>' <outDir>   env STYLE=0|1|2|surprise, EDIT=1 (edit cards)
- * Engine v4 — one deck through the SAME code path the live server runs for POST /api/v3/jobs (request validation,
- * owner engine choice, job manager → generateDeckV4 → buildExports), with local storage. Then proves the exports:
- * no "{{" in any slide HTML, PPTX slide XML or PDF text, and the filled presenter details present.
- *   npx tsx scripts/v4-job.ts '<json body>' <outDir>
+ * Then proves the exports: no "{{" in any slide HTML, PPTX slide XML or PDF text, and the filled presenter details present.
  */
 import fs from "fs";
 import path from "path";
@@ -20,7 +17,7 @@ import { closeBrowser } from "../src/engine-v3/render/browser";
 
 (async () => {
   const body = JSON.parse(process.argv[2]);
-  const out = process.argv[3] || "/tmp/v4job";
+  const out = process.argv[3] || "/tmp/deckjob";
   fs.mkdirSync(out, { recursive: true });
   const owner = { id: (process.env.OWNER_USER_IDS || "").split(",")[0] };
   const parsed = parseV3Request(body);
@@ -29,7 +26,7 @@ import { closeBrowser } from "../src/engine-v3/render/browser";
   console.log("engine:", parsed.value.engine, "presenter:", JSON.stringify(parsed.value.presenter));
   const t0 = Date.now();
   parsed.value.v6 = { stage: "plan" };
-  const planJob: any = await createJob(parsed.value, "c:local-v4-test", owner.id);
+  const planJob: any = await createJob(parsed.value, "c:local-test", owner.id);
   let pv: any = planJob;
   for (;;) {
     await new Promise((r) => setTimeout(r, 3000));
@@ -56,7 +53,7 @@ import { closeBrowser } from "../src/engine-v3/render/browser";
   }
   const st = process.env.STYLE || "surprise";
   const styleId = st === "surprise" ? null : pv.progress.plan.styles[Number(st)]?.id;
-  const ap = await approvePlan(planJob.id, owner.id ? `u:${owner.id}` : "c:local-v4-test", owner.id, { cards, styleId, imageMode: body.imageMode });
+  const ap = await approvePlan(planJob.id, owner.id ? `u:${owner.id}` : "c:local-test", owner.id, { cards, styleId, imageMode: body.imageMode });
   if (!ap.job) throw new Error(`approve failed: ${ap.error}`);
   const job: any = ap.job;
   let v: any = job;
@@ -103,7 +100,7 @@ import { closeBrowser } from "../src/engine-v3/render/browser";
   const calls = deck.calls || [];
   const byRole: Record<string, number> = {};
   for (const c of calls) byRole[c.role] = (byRole[c.role] || 0) + 1;
-  const stats = { deckId: deck.id, jobId: job.id, seconds: secs, planSeconds: planSecs, planCalls: rec.request.v6.data.planCalls, v6: deck.v6, firstSlideReadyAt: Math.min(...Object.values(firstReady)), readyAt: firstReady, aiCalls: calls.length, failed: calls.filter((c: any) => !c.ok).length, byRole, usage: deck.usage, v4: deck.v4, v5: deck.v5, review: deck.review, references: deck.references.map((r: any) => r.text), proof, log: deck.log.slice(-60).map((l: any) => `${l.agent}: ${l.msg}`) };
+  const stats = { deckId: deck.id, jobId: job.id, seconds: secs, planSeconds: planSecs, planCalls: rec.request.v6.data.planCalls, v6: deck.v6, firstSlideReadyAt: Math.min(...Object.values(firstReady)), readyAt: firstReady, aiCalls: calls.length, failed: calls.filter((c: any) => !c.ok).length, byRole, usage: deck.usage, v5: deck.v5, review: deck.review, references: deck.references.map((r: any) => r.text), proof, log: deck.log.slice(-60).map((l: any) => `${l.agent}: ${l.msg}`) };
   fs.writeFileSync(path.join(out, "stats.json"), JSON.stringify(stats, null, 2));
   console.log(`DONE ${secs}s, ${calls.length} AI calls, deck ${deck.id}`);
   await closeBrowser();

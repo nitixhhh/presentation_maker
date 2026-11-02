@@ -38,8 +38,6 @@ export type Role = "brief" | "research" | "outline" | "plan" | "art" | "design" 
 export const ROLES: Role[] = ["brief", "research", "outline", "plan", "art", "design", "vision", "planner", "agent"];
 /** roles where quality decides the deck: only "strong" models may serve them */
 export const STRONG_ROLES: Role[] = ["art", "design", "vision"];
-/** light roles: fast models first, Gemini quota saved for design */
-export const LIGHT_ROLES: Role[] = ["brief", "research", "outline", "plan"];
 
 export interface Route {
   provider: string;
@@ -50,20 +48,9 @@ export interface Route {
 
 export type ContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
 
-export interface ToolCall {
-  id: string;
-  type: "function";
-  function: { name: string; arguments: string };
-  /** provider extras (e.g. Gemini's thought signature) — echoed back unchanged */
-  [k: string]: any;
-}
-
 export interface Msg {
-  role: "system" | "user" | "assistant" | "tool";
+  role: "system" | "user" | "assistant";
   content: string | ContentPart[] | null;
-  /** engine v4 tool loop: the assistant's tool calls / the id a tool result answers */
-  tool_calls?: ToolCall[];
-  tool_call_id?: string;
   name?: string;
 }
 
@@ -73,9 +60,6 @@ export interface LlmResult {
   model: string;
   ms: number;
   waitedMs: number;
-  /** tool calls the model made (only when CallOpts.tools was given) */
-  toolCalls?: ToolCall[];
-  finishReason?: string;
 }
 
 interface Limits {
@@ -660,9 +644,6 @@ export interface CallOpts {
   reasoning?: "low" | "medium" | "high";
   /** stream tokens (default on; V3_STREAM=off disables) */
   stream?: boolean;
-  /** engine v4: OpenAI-style function tools; the reply may then be tool calls instead of text (non-streamed) */
-  tools?: any[];
-  toolChoice?: "auto" | "required" | "none";
   /**
    * "revision" = a polish/fix pass on a slide that already has a first draft. When Gemini's daily quota runs
    * low, revisions start at the strong backups (Kimi, Mistral Large 4, DeepSeek, GLM) so the remaining Gemini
@@ -721,7 +702,6 @@ function estimateTokens(messages: Msg[]): number {
   for (const m of messages) {
     if (typeof m.content === "string") chars += m.content.length;
     else if (Array.isArray(m.content)) for (const p of m.content) p.type === "text" ? (chars += p.text.length) : images++;
-    if (m.tool_calls) chars += JSON.stringify(m.tool_calls).length;
   }
   return Math.ceil(chars / 3.3) + images * 1300 + 20 * messages.length;
 }
@@ -814,7 +794,7 @@ export async function chat(role: Role, messages: Msg[], opts: CallOpts = {}): Pr
     const t0 = Date.now();
     try {
       const res = await callOnce(r, key, messages, { ...opts, maxTokens: out });
-      if (opts.validate && !res.toolCalls?.length && !safeValidate(opts.validate, res.text)) {
+      if (opts.validate && !safeValidate(opts.validate, res.text)) {
         unusable++;
         throw new UnusableReplyError(`unusable reply (${res.text.length} chars, failed the ${role} check)`);
       }
@@ -824,7 +804,7 @@ export async function chat(role: Role, messages: Msg[], opts: CallOpts = {}): Pr
       const stat: CallStat = { role, provider: r.provider, model: r.model, ms: Date.now() - t0, waitedMs: t0 - tStart, ok: true, tokensIn: inTokens, tokensOut: res.usage ? res.usage - inTokens : undefined, at: new Date().toISOString() };
       ctx?.stats?.push(stat);
       pushRecent(stat);
-      return { text: res.text, provider: r.provider, model: r.model, ms: Date.now() - t0, waitedMs: t0 - tStart, toolCalls: res.toolCalls, finishReason: res.finishReason };
+      return { text: res.text, provider: r.provider, model: r.model, ms: Date.now() - t0, waitedMs: t0 - tStart };
     } catch (e: any) {
       const msg = redactSecrets(String(e?.message || e), key);
       // status code + provider's error body (never the key) in the server log, so host logs show WHY a route fails
@@ -875,7 +855,7 @@ export function schedulerState() {
   return { rows, recent: G.recent.slice(-60) };
 }
 
-async function callOnce(route: Route, apiKey: string, messages: Msg[], opts: CallOpts): Promise<{ text: string; usage?: number; toolCalls?: ToolCall[]; finishReason?: string }> {
+async function callOnce(route: Route, apiKey: string, messages: Msg[], opts: CallOpts): Promise<{ text: string; usage?: number }> {
   const baseUrl = baseUrlFor(route.provider)!;
   const body: any = {
     model: route.model,
@@ -883,12 +863,7 @@ async function callOnce(route: Route, apiKey: string, messages: Msg[], opts: Cal
     temperature: opts.temperature ?? 0.6,
     max_tokens: Math.min(opts.maxTokens ?? 4000, modelSpec(route.provider, route.model).maxOutput ?? Number.MAX_SAFE_INTEGER),
   };
-  const stream = opts.tools?.length ? false : opts.stream ?? process.env.V3_STREAM !== "off";
-  if (opts.tools?.length) {
-    body.tools = opts.tools;
-    body.tool_choice = opts.toolChoice || "auto";
-    if (route.provider !== "google") body.parallel_tool_calls = true;
-  }
+  const stream = opts.stream ?? process.env.V3_STREAM !== "off";
   if (stream) {
     body.stream = true;
     body.stream_options = { include_usage: true };
@@ -994,13 +969,6 @@ async function callOnce(route: Route, apiKey: string, messages: Msg[], opts: Cal
     }
     const json: any = await res.json();
     const choice = json.choices?.[0];
-    if (opts.tools?.length) {
-      // tool loop: a reply is tool calls and/or text; both may be present
-      const tcs: ToolCall[] = (choice?.message?.tool_calls || []).filter((t: any) => t?.function?.name).map((t: any, i: number) => ({ ...t, id: t.id || `call_${Date.now().toString(36)}_${i}`, type: "function", function: { name: String(t.function.name), arguments: typeof t.function.arguments === "string" ? t.function.arguments : JSON.stringify(t.function.arguments ?? {}) } }));
-      const txt = asText(choice?.message?.content ?? "");
-      if (!tcs.length && !txt.trim()) throw new Error(`empty completion (finish_reason=${choice?.finish_reason})`);
-      return { text: txt, usage: json.usage?.total_tokens, toolCalls: tcs, finishReason: choice?.finish_reason };
-    }
     let text: any = choice?.message?.content ?? json.result?.response ?? "";
     text = asText(text);
     if (!text || !String(text).trim())

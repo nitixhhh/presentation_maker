@@ -57,9 +57,6 @@ export function deckLogo(deck: { assets: Asset[] }): Asset | undefined {
 
 /** Corner logo box (slide px) — the designer is told to keep this corner free. */
 export const LOGO_CORNER = { right: 24, bottom: 18, maxW: 132, maxH: 40, pad: 5 };
-/** The corner the designer must keep clear on slides that carry the engine's corner logo. */
-export const LOGO_CORNER_ZONE = { x: 1100, y: 648 };
-
 /** Engine-placed small corner logo (bottom-right) for slides whose own layout does not carry the logo. */
 export function logoCornerHtml(src: string): string {
   const c = LOGO_CORNER;

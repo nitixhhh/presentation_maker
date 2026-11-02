@@ -273,75 +273,8 @@ texts.forEach(function(t){
 texts.forEach(function(t){
   var el = document.querySelector('[data-v3-text="'+t.id+'"]'); if (!el) return;
   var txt = el.innerText.trim();
-  if (t.words >= 7 && t.fontSize < 20 && !/^\s*\[\d+\]|https?:|doi|retrieved|wikipedia|credit|cc by|via wikimedia/i.test(txt)) issues.push({type:'small-body', severity: (t.fontSize < 17 || (document.documentElement.getAttribute('data-engine') === 'v4' && t.fontSize < 19.5)) ? 'high' : 'medium', detail:'Body text "' + txt.slice(0,40) + '" is ' + Math.round(t.fontSize) + 'px — use 22–28px for sentences so the back row can read it.'});
+  if (t.words >= 7 && t.fontSize < 20 && !/^\s*\[\d+\]|https?:|doi|retrieved|wikipedia|credit|cc by|via wikimedia/i.test(txt)) issues.push({type:'small-body', severity: t.fontSize < 17 ? 'high' : 'medium', detail:'Body text "' + txt.slice(0,40) + '" is ' + Math.round(t.fontSize) + 'px — use 22–28px for sentences so the back row can read it.'});
 });
-var V4 = document.documentElement.getAttribute('data-engine') === 'v4';
-var V4ROLE = document.documentElement.getAttribute('data-role') || '';
-// v4: captions and labels at least 18px (sources, credits, citations excepted)
-if (V4 && V4ROLE !== 'references') texts.forEach(function(t){
-  var el = document.querySelector('[data-v3-text="'+t.id+'"]'); if (!el || t.words >= 7) return;
-  var txt = el.innerText.trim(); if (txt.replace(/[^\p{L}\p{N}]/gu,'').length < 2 || /^\s*\[\d+|https?:|doi|retrieved|wikipedia|credit|source|cc by|wikimedia|nasa|©|^\d+\s*\/\s*\d+$/i.test(txt) || (t.opacity ?? 1) < 0.5) return;
-  if (t.fontSize < 17.5) issues.push({type:'small-caption', severity:'high', detail:'Label/caption "' + txt.slice(0,40) + '" is ' + Math.round(t.fontSize) + 'px — labels and captions need at least 18px (cut words instead of shrinking).'});
-  else if (t.words >= 3 && t.fontSize < 19.5) issues.push({type:'small-caption', severity:'medium', detail:'Card text "' + txt.slice(0,40) + '" is ' + Math.round(t.fontSize) + 'px — card sentences read best at 20–24px.'});
-});
-// v4: icons / badges / decorative SVG drawn over text (the DOM text checks only see text-on-text)
-if (V4) (function(){
-  var gfx = [];
-  SLIDE.querySelectorAll('svg, .ic, [data-icon], [data-ic-x]').forEach(function(g){
-    if (g.closest('figure.v3-diagram') || g.closest('.v4-mermaid') || g.closest('[class*="logo"]')) return;
-    if (g.tagName.toLowerCase() === 'svg' && g.parentElement && g.parentElement.closest('svg')) return;
-    if (g.tagName.toLowerCase() === 'svg' && g.querySelector('text')) return; // a diagram with its own labels
-    var cs = getComputedStyle(g); if (parseFloat(cs.opacity) < 0.35 || cs.visibility === 'hidden') return;
-    var r = g.getBoundingClientRect(); if (r.width < 12 || r.height < 12 || r.width * r.height > 1280*720*0.5) return;
-    // the badge around an icon is part of the graphic
-    var host = g; var p = g.parentElement;
-    while (p && p !== SLIDE && !(p.innerText || '').trim()) { var pr = p.getBoundingClientRect(); if (pr.width * pr.height > r.width * r.height * 9) break; host = p; p = p.parentElement; }
-    gfx.push({el: g, host: host, r: host.getBoundingClientRect()});
-  });
-  var seen = {};
-  gfx.forEach(function(g){ texts.forEach(function(t){ var te = document.querySelector('[data-v3-text="'+t.id+'"]'); if (!te || g.host.contains(te) || te.contains(g.host)) return;
-    var x0 = g.r.left - SR.left, y0 = g.r.top - SR.top; var ox = Math.min(x0 + g.r.width, t.x + t.w) - Math.max(x0, t.x), oy = Math.min(y0 + g.r.height, t.y + t.h) - Math.max(y0, t.y);
-    if (ox <= 4 || oy <= 4) return; var a = ox * oy; if (a < 0.12 * Math.min(g.r.width * g.r.height, t.w * t.h)) return;
-    var key = t.id; if (seen[key]) return; seen[key] = 1;
-    issues.push({type:'graphic-over-text', severity:'high', detail:'An icon/graphic at ' + Math.round(x0) + ',' + Math.round(y0) + ' (' + Math.round(g.r.width) + '×' + Math.round(g.r.height) + ') overlaps the text "' + te.innerText.trim().slice(0,40) + '" — move one of them (one flex/grid flow, no absolute boxes on top of each other) or drop the decoration.'}); }); });
-})();
-// v4: content that stops high up leaves the lower part of the slide empty
-if (V4 && /^(concept|comparison|process|timeline|data|case|summary|agenda|content|stats|definition|example|application|applications|advantages|limitations|history|overview)$/i.test(V4ROLE)) (function(){
-  var bottom = 0;
-  texts.forEach(function(t){ var el = document.querySelector('[data-v3-text="'+t.id+'"]'); if (!el) return; var tx = el.innerText.trim(); if (t.fontSize <= 18 && /source|credit|wikimedia|wikipedia|\[\d/i.test(tx)) return; bottom = Math.max(bottom, t.y + t.h); });
-  images.forEach(function(i){ if (i.w * i.h < 1280*720*0.6) bottom = Math.max(bottom, i.y + i.h); });
-  SLIDE.querySelectorAll('svg').forEach(function(sv){ if (sv.parentElement && sv.parentElement.closest('svg')) return; if (sv.closest('[class*="logo"]')) return; var r = sv.getBoundingClientRect(); if (r.width > 60 && r.width*r.height < 1280*720*0.6) bottom = Math.max(bottom, r.bottom - SR.top); });
-  SLIDE.querySelectorAll('*').forEach(function(el){ if (el.closest('svg') || el.closest('[class*="logo"]')) return; var cs = getComputedStyle(el); var bg = cs.backgroundColor || ''; if (!bg || /rgba?\(0, 0, 0, 0\)|transparent/.test(bg)) return; var r = el.getBoundingClientRect(); if (r.width < 120 || r.height < 60 || r.width*r.height > 1280*720*0.6) return; bottom = Math.max(bottom, r.bottom - SR.top); });
-  if (bottom > 0 && bottom < 480) issues.push({type:'bottom-empty', severity:'medium', detail:'The content stops at y=' + Math.round(bottom) + ' — the bottom ' + Math.round((720-bottom)/7.2) + '% of the slide is empty. Make the cards/visual taller and the type bigger so the content block reaches y≈620–660, or add substance from the brief.'});
-})();
-// word-per-line wrapping (a column squeezed so narrow that each line holds one or two words)
-if (V4) texts.forEach(function(t){
-  var el = document.querySelector('[data-v3-text="'+t.id+'"]'); if (!el || t.words < 6) return;
-  var lh = parseFloat(getComputedStyle(el).lineHeight); if (!(lh > 0)) lh = t.fontSize * 1.25;
-  var lines = Math.round(t.h / lh);
-  if (lines >= 3 && t.words / lines < 2.5) issues.push({type:'narrow-text', severity:'high', detail:'Text "' + el.innerText.trim().slice(0,40) + '" wraps to ' + lines + ' lines of 1–2 words (its box is only ' + Math.round(t.w) + 'px wide) — give the column more width or use fewer columns.'});
-});
-// big decorative numbers / words must not sit on photos or other text
-if (V4) (function(){
-  var imgs = images.map(function(i){return i;});
-  SLIDE.querySelectorAll('*').forEach(function(el){ if (el.children.length) return; var cs = getComputedStyle(el); if (parseFloat(cs.fontSize) < 90 || !el.textContent.trim()) return;
-    var r = el.getBoundingClientRect(); var x = r.left-SR.left, y = r.top-SR.top;
-    imgs.forEach(function(i){ var ox = Math.min(x+r.width, i.x+i.w) - Math.max(x, i.x), oy = Math.min(y+r.height, i.y+i.h) - Math.max(y, i.y);
-      if (ox > 20 && oy > 20 && ox*oy > 0.25*r.width*r.height) issues.push({type:'decor-overlap', severity:'medium', detail:'The big "' + el.textContent.trim().slice(0,12) + '" sits on top of a picture — move it off the photo or drop it.'}); });
-    texts.forEach(function(t){ var te = document.querySelector('[data-v3-text="'+t.id+'"]'); if (!te || te === el || te.contains(el) || el.contains(te) || t.fontSize >= 90) return;
-      var ox = Math.min(x+r.width, t.x+t.w) - Math.max(x, t.x), oy = Math.min(y+r.height, t.y+t.h) - Math.max(y, t.y);
-      if (ox > 12 && oy > 8) issues.push({type:'decor-overlap', severity:'medium', detail:'The big "' + el.textContent.trim().slice(0,12) + '" overlaps the text "' + te.innerText.trim().slice(0,30) + '" — move the decoration into free space or drop it.'}); }); });
-})();
-// v4: text hugging the slide edge, and headings running into panels
-if (V4) (function(){
-  texts.forEach(function(t){ var el = document.querySelector('[data-v3-text="'+t.id+'"]'); if (!el) return;
-    if (t.x < 36 || t.x + t.w > 1244 || t.y < 20 || t.y + t.h > 704) issues.push({type:'edge', severity: (t.x < 8 || t.x + t.w > 1272 || t.y + t.h > 716) ? 'high' : 'medium', detail:'Text "' + el.innerText.trim().slice(0,40) + '" sits at the slide edge (box ' + Math.round(t.x) + ',' + Math.round(t.y) + ' to ' + Math.round(t.x+t.w) + ',' + Math.round(t.y+t.h) + ') — keep text at least 56px inside the slide.'}); });
-  var panels = []; SLIDE.querySelectorAll('*').forEach(function(el){ if (el.closest('svg')) return; var cs = getComputedStyle(el); var r = el.getBoundingClientRect(); var a = r.width*r.height; if (a < 1280*720*0.02 || a > 1280*720*0.7) return;
-    var bg = cs.backgroundColor || ''; if (bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') return; panels.push({el: el, x: r.left-SR.left, y: r.top-SR.top, w: r.width, h: r.height}); });
-  SLIDE.querySelectorAll('h1,h2').forEach(function(hd){ var r = hd.getBoundingClientRect(); var x = r.left-SR.left, y = r.top-SR.top;
-    panels.forEach(function(p){ if (p.el.contains(hd) || hd.contains(p.el)) return; var ox = Math.min(x+r.width, p.x+p.w) - Math.max(x, p.x), oy = Math.min(y+r.height, p.y+p.h) - Math.max(y, p.y);
-      if (ox > 30 && oy > 6) issues.push({type:'title-overlap', severity:'high', detail:'The heading "' + hd.innerText.trim().slice(0,40) + '" runs into a panel below it — shorten the title, make it smaller, or move the panels down.'}); }); });
-})();
 // how much of the canvas carries content
 (function(){
   var g = 32, cells = {}, total = (1280/g)*(720/g);
@@ -349,13 +282,6 @@ if (V4) (function(){
   texts.forEach(function(t){ mark(t.x,t.y,t.w,t.h); });
   images.forEach(function(i){ mark(i.x,i.y,i.w,i.h); });
   SLIDE.querySelectorAll('svg').forEach(function(sv){ if (sv.parentElement && sv.parentElement.closest('svg')) return; var r = sv.getBoundingClientRect(); if (r.width*r.height < 1280*720*0.8) mark(r.left-SR.left, r.top-SR.top, r.width, r.height); });
-  // filled panels / cards / diagram nodes count as content too (a card is designed space, not an empty area)
-  if (V4) SLIDE.querySelectorAll('*').forEach(function(el){ if (el.closest('svg')) return; var r = el.getBoundingClientRect(); var a = r.width*r.height; if (a < 1280*720*0.01 || a > 1280*720*0.8) return;
-    var cs = getComputedStyle(el); if (cs.visibility === 'hidden' || parseFloat(cs.opacity) < 0.2) return;
-    var bg = cs.backgroundColor || ''; var m = bg.match(/rgba?\(([^)]+)\)/); var sl = bg.match(/\/\s*([\d.]+)\s*\)$/);
-    var alpha = m ? (m[1].split(',')[3] !== undefined ? parseFloat(m[1].split(',')[3]) : 1) : sl ? parseFloat(sl[1]) : (!bg || bg === 'transparent' ? 0 : 1);
-    var bordered = parseFloat(cs.borderTopWidth) >= 1 && parseFloat(cs.borderLeftWidth) >= 1 && cs.borderTopStyle !== 'none';
-    if (alpha > 0.06 || cs.backgroundImage !== 'none' || bordered) mark(r.left-SR.left, r.top-SR.top, r.width, r.height); });
   var cov = Object.keys(cells).length / total;
   if (cov < 0.03) issues.push({type:'blank', severity:'high', detail:'The slide renders (almost) empty — the markup is broken or the content is hidden. Output a complete, visible slide.'});
   else if (cov < 0.28) issues.push({type:'sparse', severity:'medium', detail:'Only about ' + Math.round(cov*100) + '% of the slide carries content — large areas look unfinished. Make the visual larger, enlarge type, or rebalance the composition.'});
@@ -400,8 +326,8 @@ return true; })()`;
 export const SHRINK_JS = String.raw`(function(ids){
 var changed = [];
 ids.forEach(function(id){ var el = document.querySelector('[data-v3-text="'+id+'"]'); if(!el) return;
-  var fs = parseFloat(getComputedStyle(el).fontSize); var v4 = document.documentElement.getAttribute('data-engine') === 'v4';
-  var min = /^H[1-3]$/.test(el.tagName) ? (v4 ? 36 : 30) : (v4 ? (el.innerText.trim().split(/\s+/).length >= 6 ? 20 : 18) : 16);
+  var fs = parseFloat(getComputedStyle(el).fontSize);
+  var min = /^H[1-3]$/.test(el.tagName) ? 30 : 16;
   var nfs = Math.max(min, Math.floor(fs * 0.9));
   if (nfs < fs) { el.style.fontSize = nfs + 'px'; el.querySelectorAll('*').forEach(function(c){ var cf = parseFloat(getComputedStyle(c).fontSize); if (cf > nfs * 1.05 || c.style.fontSize) c.style.fontSize = Math.max(12, Math.floor(cf * 0.9)) + 'px'; }); changed.push(id + ':' + fs + '→' + nfs); }
 });
@@ -413,7 +339,7 @@ var s = document.querySelector('section.slide').cloneNode(true);
 s.querySelectorAll('[data-v3-text],[data-v3-img],[data-v3-inl],[data-v3-svgt]').forEach(function(e){ e.removeAttribute('data-v3-text'); e.removeAttribute('data-v3-img'); e.removeAttribute('data-v3-inl'); e.removeAttribute('data-v3-svgt'); });
 // drawn component layers are regenerated on every load — never store them
 s.querySelectorAll('figure.v3-diagram > .v3d').forEach(function(e){ e.remove(); });
-// engine v4 icons are re-expanded on every render — store the compact placeholder
+// icons are re-expanded on every render — store the compact placeholder
 s.querySelectorAll('[data-ic-x]').forEach(function(e){ e.innerHTML = ''; e.removeAttribute('data-ic-x'); var st = e.getAttribute('style'); if (st){ st = st.replace(/--ic-(size|color):[^;]*;?/g, '').trim(); if (st) e.setAttribute('style', st); else e.removeAttribute('style'); } });
 return s.innerHTML;
 })()`;

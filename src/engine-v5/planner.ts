@@ -9,7 +9,7 @@ import { chatJson } from "../engine-v3/llm";
 import type { Brief, ResearchPack } from "../engine-v3/types";
 import { TEMPLATES, templateById, catalogText, type SlideContent, type SlotItem } from "./templates";
 import { THEMES } from "./themes";
-import { resolveIconName } from "../engine-v4/iconRender";
+import { resolveIconName } from "../engine-common/iconRender";
 
 export interface PlannedSlide extends SlideContent {
   n: number;

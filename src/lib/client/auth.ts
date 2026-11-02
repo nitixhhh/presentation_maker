@@ -15,8 +15,8 @@ export interface Me {
   auth: { configured: boolean; required: boolean; url: string | null; anonKey: string | null };
   payments: { provider: string; keyId?: string; testMode?: boolean } | null;
   pricing: { deck: number; firstDeck: number; pack5: number; referralCredits: number; freeEdits: number };
-  /** engine v4 beta: the owner may choose the engine per deck */
-  engine?: { default: "v3" | "v4" | "v5" | "v6"; canChoose: boolean };
+  /** the deck's engine: the site default, and the plans this visitor may pick from (owner only until PLANS_PUBLIC=true) */
+  engine?: { default: "v3" | "v5" | "v6"; canChoose: boolean; plansPublic?: boolean; plans?: { id: string; engine: "v3" | "v5" | "v6"; name: string; tagline: string; approxTime: string }[] };
 }
 
 let sb: SupabaseClient | null = null;

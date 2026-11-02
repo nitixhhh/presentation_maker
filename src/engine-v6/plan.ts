@@ -8,7 +8,7 @@
 import { titleClamp } from "../engine-v5/planner";
 import { runBrief } from "../engine-v3/agents/brief";
 import { runResearch } from "../engine-v3/agents/research";
-import { deepenResearch } from "../engine-v4/deepen";
+import { deepenResearch } from "../engine-common/deepen";
 import { boostScholarly } from "../engine-v5/scholarly";
 import { chatJson } from "../engine-v3/llm";
 import type { Brief, ResearchPack, V3Request } from "../engine-v3/types";

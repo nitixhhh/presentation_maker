@@ -22,9 +22,9 @@ export async function POST(req: Request) {
   }
   const parsed = parseV3Request(body);
   if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
-  // engine: v3 by default; only the owner may pick (body.engine "v4" / "v3"), ENGINE_DEFAULT switches everyone
-  parsed.value.engine = engineFor(user, body?.engine);
-  // engine v6 starts with the PLAN step (outline cards + styles for this topic); the deck is made after approval
+  // engine: ENGINE_DEFAULT (v3) for everyone; the owner (everyone once PLANS_PUBLIC=true) may pick a plan: body.engine "v3"|"v5"|"v6" or "basic"|"standard"|"advanced"
+  parsed.value.engine = engineFor(user, body?.engine ?? body?.plan);
+  // Advanced (v6) starts with the PLAN step (outline cards + styles for this topic); the deck is made after approval
   if (parsed.value.engine === "v6") parsed.value.v6 = { stage: "plan" };
   try {
     const job = await createJob(parsed.value, ownerKey, user?.id);

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Check, Loader2 } from "lucide-react";
 import type { LiveDeck, LiveSlide } from "./types";
 
-/** Engine v4: every slide shows up the moment its designer agent submits it; slides still being made show what the agent is doing. */
+/** Standard/Advanced: every slide shows up the moment it is rendered; slides still being made show what is happening. */
 export default function LiveSlides({ live }: { live: LiveDeck }) {
   const slides = live.slides;
   const shown = slides.filter((s) => s.image).length;

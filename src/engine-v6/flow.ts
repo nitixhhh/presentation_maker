@@ -1,8 +1,8 @@
 /**
- * Engine v6 — flowchart slot → a static themed SVG (Mermaid, rendered on the server by v4's renderer).
+ * Engine v6 — flowchart slot → a static themed SVG (own layered layout; Mermaid on the server as the fallback).
  * The planner writes plain nodes and edges; code writes the Mermaid text, so a model never writes diagram code.
  */
-import { renderMermaid } from "../engine-v4/mermaid";
+import { renderMermaid } from "../engine-common/mermaid";
 import type { DesignSystem } from "../engine-v3/types";
 import type { SlideContent } from "../engine-v5/templates";
 

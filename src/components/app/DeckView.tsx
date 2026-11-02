@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Download, Maximize2, FileText, Loader2, Lock, Pencil, Check } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Maximize2, Loader2, Lock, Pencil, Check } from "lucide-react";
 import type { DeckSummary } from "./types";
 import { api, signInWithGoogle, type Me } from "@/lib/client/auth";
 import { useJob } from "./useJob";
@@ -421,6 +421,3 @@ function SlideImage({ src, alt }: { src: string; alt: string }) {
   );
 }
 
-export function DeckIcon() {
-  return <FileText className="h-5 w-5" />;
-}
