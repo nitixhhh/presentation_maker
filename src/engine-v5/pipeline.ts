@@ -214,10 +214,14 @@ export async function generateDeckV5(req: V3Request, opts: V5Options = {}): Prom
     emit("Finding images", 32, "Images", `Finding real photos for ${wantsPhoto.length} slide(s): ${wantsPhoto.map((s) => `${s.n} “${s.visual.query}”`).join(", ")}`);
     for (const s of wantsPhoto) slideEvt({ n: s.n, state: "building", status: `Finding a photo: ${s.visual.query}` });
     // engine v6 "AI images": the photo slides get AI illustrations through the free image route (real photos when its daily allowance is used up)
-    const forSearch = v6 && req.imageMode === "ai-allowed" ? wantsPhoto.map((s) => ({ ...s, visual: { ...s.visual, kind: "generated" as const, prompt: (s.visual as any).prompt || `${s.visual.query}: a wide, calm editorial scene for a class presentation on "${brief.title}", natural light, no text, no logos, no close-up portrait` } })) : wantsPhoto;
-    assets = await sourceImages(forSearch as any, dir, { mode: req.imageMode || "real-first", topic: brief.title }, (m) => emit("Finding images", 36, "Images", m)).catch(() => []);
+    const forSearch = v6 && req.imageMode === "ai-allowed" ? wantsPhoto.map((s) => ({ ...s, visual: { ...s.visual, kind: "generated" as const, prompt: (s.visual as any).prompt || `${s.visual.query}, a calm editorial scene, natural light, no close-up portrait` } })) : wantsPhoto;
+    // Advanced plan (v6): AI images come from FLUX.2 klein 4B, sized to the template's photo slot
+    const aiOpts = v6 ? { aiTier: "advanced" as const, aspectFor: (n: number) => photoSlotAspect(plan.slides.find((p) => p.n === n)?.template) } : {};
+    assets = await sourceImages(forSearch as any, dir, { mode: req.imageMode || "real-first", topic: brief.title, ...aiOpts }, (m) => emit("Finding images", 36, "Images", m)).catch(() => []);
     for (const a of assets) v5log(`photo found for slide ${a.forSlides.join(",")}: “${a.title}” (${a.origin}) ${a.sourceUrl || ""}`);
     const dropped = await vetPhotos(assets, outline.slides, dir);
+    // Advanced plan: an AI image that came out with lettering (garbled words, fake signs) is dropped → real photo instead
+    if (v6) dropped.push(...(await aiImagesWithText(assets.filter((a) => !dropped.includes(a)), dir)));
     for (const a of dropped) v5log(`photo rejected for slide ${a.forSlides.join(",")} (vision vet / product rule): “${a.title}” ${a.sourceUrl || ""}`);
     if (dropped.length) {
       assets = assets.filter((a) => !dropped.includes(a));
@@ -231,7 +235,7 @@ export async function generateDeckV5(req: V3Request, opts: V5Options = {}): Prom
     const retry = missing.map((s) => ({ ...s, visual: { kind: "photo" as const, query: plan.slides.find((p) => p.n === s.n)?.photoAlt || (s.n === 1 ? coreQ : "") } })).filter((s) => s.visual.query && s.visual.query !== wantsPhoto.find((w) => w.n === s.n)?.visual.query);
     if (retry.length) {
       emit("Finding images", 38, "Images", `second search for ${retry.length} slide(s): ${retry.map((s) => `${s.n} “${s.visual.query}”`).join(", ")}`);
-      const more = await sourceImages(retry, path.join(dir, "alt"), { mode: req.imageMode || "real-first", topic: brief.title }, (m) => emit("Finding images", 38, "Images", m)).catch(() => [] as Asset[]);
+      const more = await sourceImages(retry, path.join(dir, "alt"), { mode: req.imageMode || "real-first", topic: brief.title, ...(v6 ? { aiTier: "advanced" as const, aspectFor: (n: number) => photoSlotAspect(plan.slides.find((p) => p.n === n)?.template) } : {}) }, (m) => emit("Finding images", 38, "Images", m)).catch(() => [] as Asset[]);
       // the second batch lives in its own folder; ids stay unique next to the first batch
       for (const a of more) {
         a.file = `alt/${a.file}`;
@@ -379,6 +383,20 @@ export async function generateDeckV5(req: V3Request, opts: V5Options = {}): Prom
   return deck;
 }
 
+/** Width/height of each template's photo slot on the 1280×720 slide (styles.ts / templates.ts), so an AI image is made
+ *  in the shape it is shown in (object-fit: cover then crops almost nothing). Unknown templates → 4:3. */
+export const PHOTO_SLOT_ASPECT: Record<string, number> = {
+  "title-hero": 16 / 9, // full-bleed background
+  "photo-full": 16 / 9,
+  "title-split": 430 / 608, // right panel 430 px wide, 56 px top/bottom margins
+  "photo-split": 563 / 720, // right 44 % of the slide, full height
+  quote: 340 / 420,
+  definition: 360 / 420,
+  "icon-rows-photo": 1, // flex column beside the rows
+  "text-focus": 1,
+};
+export const photoSlotAspect = (template?: string) => (template && PHOTO_SLOT_ASPECT[template]) || 4 / 3;
+
 /** render → fit; if text still overflows at the type floor, trim the lowest-priority content and fit again */
 export async function renderFitted(deck: Deck, c0: SlideContent, ctx: RenderCtx, renderDir: string, status: (s: string) => void): Promise<{ html: string; fit: FitResult; trims: string[]; content: SlideContent }> {
   let c: SlideContent = JSON.parse(JSON.stringify(c0));
@@ -504,6 +522,28 @@ async function vetPhotos(assets: Asset[], slides: OutlineSlide[], dir: string): 
   } catch (e: any) {
     console.log(`[v5] photo vet unavailable (${String(e?.message || e).slice(0, 100)}) — keeping the photo editor's picks`);
     return pre;
+  }
+}
+
+/** Engine v6: one vision look at the deck's AI images; returns those showing any text, letters, numbers or logos. */
+export async function aiImagesWithText(assets: Asset[], dir: string): Promise<Asset[]> {
+  const list = assets.filter((a) => a.origin === "generated").slice(0, 8);
+  if (!list.length) return [];
+  try {
+    const tw = 384, th = 256, lab = 26;
+    const tiles = await Promise.all(list.map(async (a, i) => ({ input: await sharp(path.join(dir, a.file)).resize(tw, th, { fit: "contain", background: "#ffffff" }).jpeg({ quality: 80 }).toBuffer(), left: (i % 4) * (tw + 10), top: Math.floor(i / 4) * (th + lab + 10) + lab })));
+    const W = Math.min(4, list.length) * (tw + 10), H = Math.ceil(list.length / 4) * (th + lab + 10);
+    const labels = list.map((_, i) => `<text x="${(i % 4) * (tw + 10) + 4}" y="${Math.floor(i / 4) * (th + lab + 10) + 20}" font-size="20" font-family="sans-serif" font-weight="bold">${i + 1}</text>`).join("");
+    const sheet = await sharp({ create: { width: W, height: H, channels: 3, background: "#ffffff" } }).composite([...tiles, { input: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">${labels}</svg>`), left: 0, top: 0 }]).jpeg({ quality: 80 }).toBuffer();
+    const msgs = [{ role: "user", content: [{ type: "text", text: `These ${list.length} numbered pictures are AI-generated and go on presentation slides. Look closely: does a picture contain ANY visible writing — words, letters, numbers, a title, a caption, signs, labels, a logo or a watermark, even small, blurred or garbled? (The bold number above each picture is ours; ignore it.)\nReply ONLY JSON: {"text":[numbers of pictures with writing],"what":{"n":"the writing you see"}}` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${sheet.toString("base64")}` } }] }];
+    const data: any = await chatJson<any>("vision", msgs as any, { temperature: 0, maxTokens: 400, label: "v6 AI-image text check" }).then((r) => r.data);
+    const bad: number[] = (Array.isArray(data?.text) ? data.text : []).map(Number).filter((x: number) => Number.isInteger(x) && x >= 1 && x <= list.length);
+    console.log(`[v6] AI-image text check: ${list.length} checked, ${bad.length} with writing`);
+    for (const x of bad) console.log(`[v6] AI image for slide ${list[x - 1].forSlides.join(",")} dropped (has writing: ${String(data?.what?.[x] ?? data?.what?.[String(x)] ?? "").slice(0, 120)}) — real photo instead`);
+    return bad.map((x) => list[x - 1]);
+  } catch (e: any) {
+    console.log(`[v6] AI-image text check unavailable (${String(e?.message || e).slice(0, 100)}) — keeping the AI images`);
+    return [];
   }
 }
 

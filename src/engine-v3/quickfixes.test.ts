@@ -191,3 +191,75 @@ test("images: photo query from an AI subject sentence", async () => {
   assert.equal(photoQueryFromSubject("a person wearing a VR headset in a dark room", "x"), "person wearing VR headset dark");
   assert.equal(photoQueryFromSubject("", "Challenges"), "Challenges");
 });
+
+test("images: Advanced plan asks FLUX.2 klein 4B (multipart, sized to the slot); Basic asks FLUX.1 schnell at 4 steps; no SDXL", async () => {
+  process.env.DECKCRAFT_STORAGE = "local";
+  process.env.CLOUDFLARE_API_TOKEN = "test-token-0123456789";
+  process.env.CLOUDFLARE_ACCOUNT_ID = "acc123";
+  delete process.env.CF_IMAGE_DAILY_LIMIT;
+  const b = await import("./assets/imageBudget");
+  fs.rmSync(path.join(process.env.DECKCRAFT_DATA_DIR!, "meta"), { recursive: true, force: true });
+  b.resetBudgetForTests();
+  const sharp = (await import("sharp")).default;
+  const png = await sharp({ create: { width: 1024, height: 576, channels: 3, background: { r: 200, g: 120, b: 40 } } }).png().toBuffer();
+  const calls: { url: string; ct: string; body: any }[] = [];
+  const real = globalThis.fetch;
+  globalThis.fetch = (async (input: any, init: any) => {
+    const url = String(input?.url || input);
+    const ct = String(init?.headers?.["Content-Type"] || "");
+    calls.push({ url, ct, body: init?.body });
+    return Response.json({ result: { image: png.toString("base64") }, success: true });
+  }) as any;
+  const logs: string[] = [];
+  const realLog = console.log;
+  console.log = (...a: any[]) => logs.push(a.join(" "));
+  try {
+    const { generateImage, sizeForAspect, slidePrompt } = await import("./assets/images");
+    const k = await generateImage("a quiet library at dusk", "soft watercolour", undefined, { tier: "advanced", aspect: 16 / 9, slide: 3 });
+    assert.ok(k && k.length > 1000);
+    assert.match(calls[0].url, /@cf\/black-forest-labs\/flux-2-klein-4b$/);
+    assert.ok(calls[0].body instanceof FormData, "klein takes multipart/form-data");
+    assert.equal(calls[0].ct, "", "fetch writes the multipart boundary itself");
+    const f = calls[0].body as FormData;
+    assert.equal(f.get("width"), "1024");
+    assert.equal(f.get("height"), "576");
+    assert.match(String(f.get("prompt")), /no writing anywhere/);
+    assert.ok(!f.get("steps"), "klein's steps are fixed by Cloudflare");
+    const s = await generateImage("a quiet library at dusk");
+    assert.ok(s);
+    assert.match(calls[1].url, /@cf\/black-forest-labs\/flux-1-schnell$/);
+    assert.equal(JSON.parse(calls[1].body).steps, 4);
+    assert.ok(!calls.some((c) => /stable-diffusion|sdxl/i.test(c.url)));
+    // the daily counter: images, neurons and one log line per image
+    const snap = b.budgetSnapshot()!;
+    assert.equal(snap.images, 2);
+    assert.equal(snap.byModel["flux-2-klein-4b"], 1);
+    assert.equal(snap.neuronsEst, Math.round(104.2 + 57.6));
+    assert.ok(logs.some((l) => /\[ai-image\].*flux-2-klein-4b 1024x576 slide 3.*~104\.2 neurons/.test(l)), logs.join("\n"));
+    // slot shapes
+    assert.deepEqual(sizeForAspect(430 / 608), { width: 720, height: 1024 });
+    assert.deepEqual(sizeForAspect(1), { width: 1024, height: 1024 });
+    assert.deepEqual(sizeForAspect(undefined), { width: 1024, height: 768 });
+    assert.match(slidePrompt("a cell", "", 16 / 9), /plain soft background on the left/);
+    // a quoted deck title or "slide"/"presentation" words would be painted as lettering: they never reach the model
+    const p = slidePrompt('bleached coral reef: a calm editorial scene for a class presentation on "Why Coral Reefs Are Bleaching", title slide', "", 0.78);
+    assert.ok(!/Why Coral|presentation|slide|title/i.test(p), p);
+    assert.match(p, /^bleached coral reef: a calm editorial scene/);
+    // the neuron budget stops a day before Cloudflare does
+    process.env.CF_NEURON_DAILY_LIMIT = "150";
+    assert.match((await b.canGenerate()).reason!, /neuron budget reached/);
+    delete process.env.CF_NEURON_DAILY_LIMIT;
+    // a 4006-type answer counts as the daily allowance even without 429
+    assert.ok(b.isDailyQuotaError(400, '{"errors":[{"code":4006,"message":"you have used up your daily free allocation"}]}'));
+  } finally {
+    globalThis.fetch = real;
+    console.log = realLog;
+  }
+});
+
+test("images: config has no SDXL model left", async () => {
+  const cfg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "src/config/models.json"), "utf8"));
+  assert.ok(!/stable-diffusion|sdxl/i.test(JSON.stringify(cfg.engineV3.imageGeneration)));
+  const { PHOTO_SLOT_ASPECT, photoSlotAspect } = await import("../engine-v5/pipeline");
+  assert.ok(PHOTO_SLOT_ASPECT["photo-split"] < 1 && photoSlotAspect("title-hero") > 1.7 && photoSlotAspect("nope") === 4 / 3);
+});

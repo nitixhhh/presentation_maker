@@ -113,7 +113,7 @@ Put these in HF *Secrets* (or `.env.local` when running locally). Never commit t
 | `GOOGLE_AI_API_KEY_2` … `_9` | Optional — e.g. a paid key next to the free one. Limits are per Google *project*; don't create extra projects/accounts just to multiply free quota (Google's terms: "will not attempt to circumvent" limits) | same |
 | `GROQ_API_KEY` | Recommended — fast backup | console.groq.com/keys |
 | `OPENROUTER_API_KEY` | Recommended — more free backup models | openrouter.ai/keys |
-| `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` | Recommended — **AI images (Flux)** + last-resort text model | dash.cloudflare.com → AI → Workers AI → "Use REST API" |
+| `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` | Recommended — **AI images** (FLUX.1 schnell for Basic/Standard, FLUX.2 klein 4B for Advanced) + last-resort text model | dash.cloudflare.com → AI → Workers AI → "Use REST API" |
 | `OPENALEX_API_KEY` | Optional — avoids scholarly-search limits | openalex.org (free) |
 | `BENCHMARK_PASSWORD` | Optional — turns on `/benchmark` | any password you choose |
 | `NVIDIA_NIM_API_KEY` | Optional — Kimi K2.6, DeepSeek V4.1 Flash, GLM-5.3-Flash… free on NVIDIA. Used on **/benchmark only**, unless you also set `ALLOW_NVIDIA_PRODUCTION` | build.nvidia.com → Get API Key |
@@ -205,7 +205,18 @@ Each AI step has a role, and each role has its own ordered list of free models i
 * **OpenRouter** free models (`:free`, checked 31 Oct 2026 on openrouter.ai/api/v1/models): Gemma 4 31B / 26B (vision), Nemotron 3 Ultra 550B, Nemotron 3.5 Super VL (vision), Nemotron 3.5 Lightning, Inkling / Inkling Small (vision), Laguna, Dots 3 Note… There is **no** free Kimi, DeepSeek, Qwen, GLM or Llama on OpenRouter. Limits (openrouter.ai/docs/api-reference/limits): 20 req/min and 50 req/day per account across all free models; **1,000/day once the account has bought at least 10 credits ever** → set `V3_ACCOUNT_OPENROUTER_RPD=1000`. That one purchase is the biggest legit capacity boost.
 * **NVIDIA build.nvidia.com**: has Kimi K2.6, DeepSeek V4.1 Flash, GLM-5.3-Flash, MiniMax M3.1 Flash, Mistral Large 4 for free, but its Trial Terms allow use "only ... for internal testing and evaluation purposes, not in production". By default the engine offers NVIDIA models **only on /benchmark** (marked "testing only"). With `ALLOW_NVIDIA_PRODUCTION=true` they become the first designer choice for real decks (`engineV3.optInRoutes.nvidia`). **Risk, plainly:** that breaks NVIDIA's trial terms for a paid product; NVIDIA can cut the key off at any time without notice. If that happens the engine simply fails over to Gemini / OpenRouter / Gemma, so decks keep coming, but quality drops back. Fine for a small beta; for a real launch use Ollama Cloud or another paid route for the designer.
 * **Ollama Cloud — paid, optional, later** (docs.ollama.com/cloud, ollama.com/pricing, checked 31 Oct 2026). Dormant unless `OLLAMA_API_KEY` is set: hosted models through an API key — no server, no download (`https://ollama.com/v1`, OpenAI-compatible). **Not free:** "Pay as you go — Pay per token for every cloud model", 3 requests at a time. Models include `deepseek-v4.1-flash`, `glm-5.3-flash`, `kimi-k2.6`, `kimi-k3`, `gemma4:31b`, `minimax-m3.1-flash`. Prices per million tokens are on ollama.com/pricing (off-peak half price for some models outside 12:00–18:00 UTC on weekdays). A 12-slide deck uses roughly 170k input + 150k output tokens, so DeepSeek / GLM Flash cost only a few rupees to tens of rupees per deck — the cheapest legit way to get near-Kimi quality. Ollama: "one account per person"; prompts "never logged or trained on".
-* **Cloudflare Workers AI**: 10,000 Neurons/day free, shared by all models (≈15–20 slide designs with gpt-oss-120b, or ~200 Flux Schnell images). Kimi and GLM on Workers AI need a paid plan.
+* **Cloudflare Workers AI**: 10,000 Neurons/day free, shared by all models (≈15–20 slide designs with gpt-oss-120b, or ≈170 FLUX.1 schnell images at 4 steps, or ≈95 FLUX.2 klein 4B images). Kimi and GLM on Workers AI need a paid plan.
+
+### AI images (Nov 2026)
+
+| Plan | Model | Input | Size | ≈ neurons / image | ≈ images / day free |
+|---|---|---|---|---|---|
+| Basic, Standard | `@cf/black-forest-labs/flux-1-schnell` | JSON, 4 steps | 1024×1024 | 58 | ~170 |
+| Advanced | `@cf/black-forest-labs/flux-2-klein-4b` | multipart/form-data (prompt, width, height; steps fixed at 4) | sized to the template's photo slot, long side 1024 (16:9 cover → 1024×576, photo-split → 800×1024) | 104 | ~95 |
+
+* No other image model (SDXL removed). When an AI image fails, Cloudflare says the day's allowance is used (429 / 4006), or the Advanced text check sees lettering in it, the slot gets a real attributed photo.
+* Prompts (Advanced, `slidePrompt` in `src/engine-v3/assets/images.ts`): the subject with quoted titles and words like "slide"/"title" removed (they make the model paint garbled lettering), the slot's composition, and "no writing anywhere".
+* Daily counter (`src/engine-v3/assets/imageBudget.ts`): one `[ai-image]` server-log line per image (model, size, slide, seconds, ≈neurons, today's total) and `aiImages` in `/api/health`. Limits: `CF_IMAGE_DAILY_LIMIT` (images, default 90), `CF_NEURON_DAILY_LIMIT` (default 9500), `V3_AI_IMAGES_PER_DECK` (default 6). Day resets 00:00 UTC (5:30 AM IST).
 
 **Use the benchmark** (`/benchmark`, set `BENCHMARK_PASSWORD`) to run the same topic through several models for one role on *your* keys. It shows QA score, clean-slide count, time and the slides side by side, so you can reorder `engineV3.roles`.
 

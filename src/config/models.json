@@ -735,10 +735,10 @@
     },
     "imageGeneration": {
       "provider": "cloudflare",
-      "models": [
-        "@cf/black-forest-labs/flux-1-schnell",
-        "@cf/bytedance/stable-diffusion-xl-lightning"
-      ]
+      "_comment": "basic = Basic/Standard AI images (FLUX.1 schnell, 4 steps). advanced = the Advanced plan (engine v6): FLUX.2 klein 4B, multipart input, fixed 4 steps, width/height 256-1920. No fallback model: a failed or quota-limited AI image falls back to a real photo.",
+      "basic": "@cf/black-forest-labs/flux-1-schnell",
+      "basicSteps": 4,
+      "advanced": "@cf/black-forest-labs/flux-2-klein-4b"
     },
     "benchmarkCandidates": {
       "_comment": "Extra models offered ONLY on the /benchmark page (never used for real jobs). NVIDIA = free trial API, testing/evaluation only per NVIDIA's terms. Key: NVIDIA_NIM_API_KEY from build.nvidia.com.",

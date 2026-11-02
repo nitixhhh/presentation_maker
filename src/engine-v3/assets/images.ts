@@ -4,7 +4,9 @@
  *     (CC licences that allow commercial use), NASA Image Library (public domain, no key), and Pexels /
  *     Pixabay when a free key is set (PEXELS_API_KEY / PIXABAY_API_KEY — no card needed; skipped otherwise).
  *  2. A vision model picks relevant candidates from one contact sheet (Commons search is noisy).
- *  3. Cloudflare Workers AI Flux for conceptual images when no real photo fits.
+ *  3. Cloudflare Workers AI for conceptual images when no real photo fits: FLUX.1 schnell (Basic/Standard) or
+ *     FLUX.2 klein 4B sized to the slot (Advanced plan, opts.aiTier = "advanced"). No other model: a failed AI image
+ *     becomes a real photo.
  * Every image is stored as a real JPEG on disk (never SVG) with size + average colour,
  * so designers can use it full-bleed, masked, blended, framed …
  */
@@ -267,8 +269,54 @@ export async function store(buf: Buffer, dir: string, id: string): Promise<{ fil
   }
 }
 
-/** Cloudflare Workers AI text-to-image (Flux schnell → SDXL lightning), within the daily budget (assets/imageBudget.ts). */
-export async function generateImage(prompt: string, style?: string, log?: (m: string) => void): Promise<Buffer | null> {
+/** Which Cloudflare model makes an AI image: "basic" (Basic/Standard plans) or "advanced" (the Advanced plan, engine v6). */
+export type AiImageTier = "basic" | "advanced";
+const IMG_CFG = ((modelsConfig as any).engineV3?.imageGeneration || {}) as { basic?: string; basicSteps?: number; advanced?: string };
+export const AI_IMAGE_MODELS: Record<AiImageTier, { id: string; label: string }> = {
+  basic: { id: IMG_CFG.basic || "@cf/black-forest-labs/flux-1-schnell", label: "FLUX.1 schnell" },
+  advanced: { id: IMG_CFG.advanced || "@cf/black-forest-labs/flux-2-klein-4b", label: "FLUX.2 klein" },
+};
+export const aiImageCredit = (tier: AiImageTier = "basic") => `AI-generated image (${AI_IMAGE_MODELS[tier].label}, Cloudflare Workers AI)`;
+
+/** Output size for an image slot of this aspect (width / height): long side 1024, multiples of 16, within klein's
+ *  256–1920 range. ≤1024 on both sides keeps one image at ≤4 tiles (≈104 neurons). */
+export function sizeForAspect(aspect?: number): { width: number; height: number } {
+  const a = aspect && Number.isFinite(aspect) && aspect > 0 ? Math.min(2.4, Math.max(0.5, aspect)) : 4 / 3;
+  const r16 = (v: number) => Math.max(256, Math.min(1920, Math.round(v / 16) * 16));
+  return a >= 1 ? { width: 1024, height: r16(1024 / a) } : { width: r16(1024 * a), height: 1024 };
+}
+
+/** Words that make an image model paint lettering (a quoted title, "slide", "poster" …) are removed from the subject. */
+export function pictureSubject(prompt: string): string {
+  return String(prompt || "")
+    .replace(/["“”«»][^"“”«»]{0,160}["“”«»]/g, " ") // a quoted title would be painted as (garbled) lettering
+    .replace(/\b(for|in|on) (a|the|an) (class |college |school )?(presentation|slide|deck|seminar|lecture|poster)( on| about)?\b/gi, " ")
+    .replace(/\b(presentation|slides?|deck|poster|infographic|banner|title|caption|headline|label(l?ed|s)?|typography|text|words?|letters?|logo)\b/gi, " ")
+    .replace(/\s+([,.;:])/g, "$1")
+    .replace(/([,.;:])(\s*[,.;:])+/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^[,.;:\s]+|[,.;:\s]+$/g, "");
+}
+
+/** The Advanced plan's prompt: the subject, the deck's look, a calm composition for the slot's shape, and no text. */
+export function slidePrompt(prompt: string, style?: string, aspect?: number): string {
+  const shape = !aspect ? "" : aspect >= 1.5 ? "wide landscape photograph, main subject on the right third, plain soft background on the left, " : aspect <= 0.85 ? "vertical portrait photograph, subject centred, " : "";
+  return [
+    pictureSubject(prompt) || "a calm natural scene",
+    pictureSubject(style || "") || "Professional editorial photograph, natural light, sharp focus, rich detail",
+    `${shape}one clear subject, simple uncluttered background`,
+    "A pure photograph with no writing anywhere: no text, no letters, no words, no numbers, no signs, no logos, no watermark",
+  ].join(". ") + ".";
+}
+
+/**
+ * Cloudflare Workers AI text-to-image, within the daily budget (assets/imageBudget.ts). One model per call, no model
+ * fallback: when it fails or the day's allowance is used up the caller uses a real photo.
+ *  - basic (default): FLUX.1 schnell, JSON input, 4 steps, square 1024.
+ *  - advanced: FLUX.2 klein 4B, multipart/form-data input (prompt, width, height; steps are fixed at 4), sized to the slot.
+ */
+export async function generateImage(prompt: string, style?: string, log?: (m: string) => void, gen?: { tier?: AiImageTier; aspect?: number; slide?: number }): Promise<Buffer | null> {
   const token = process.env.CLOUDFLARE_API_TOKEN;
   const acc = process.env.CLOUDFLARE_ACCOUNT_ID;
   if (!token || !acc) return null;
@@ -278,50 +326,62 @@ export async function generateImage(prompt: string, style?: string, log?: (m: st
     return null;
   }
   const base = (process.env.CLOUDFLARE_API_BASE || "https://api.cloudflare.com/client/v4").replace(/\/$/, "");
-  const models: string[] = (modelsConfig as any).engineV3?.imageGeneration?.models || ["@cf/black-forest-labs/flux-1-schnell"];
-  for (const model of models) {
-    try {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 45000);
-      const res = await fetch(`${base}/accounts/${acc}/ai/run/${model}`, {
+  const tier: AiImageTier = gen?.tier === "advanced" ? "advanced" : "basic";
+  const model = AI_IMAGE_MODELS[tier].id;
+  const t0 = Date.now();
+  let size = { width: 1024, height: 1024 };
+  const steps = Math.max(1, Math.min(8, Number(IMG_CFG.basicSteps) || 4));
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 45000);
+    let init: RequestInit;
+    if (tier === "advanced") {
+      size = sizeForAspect(gen?.aspect);
+      const form = new FormData();
+      form.append("prompt", slidePrompt(prompt, style, gen?.aspect).slice(0, 2000));
+      form.append("width", String(size.width));
+      form.append("height", String(size.height));
+      // fetch writes the multipart Content-Type (with its boundary) itself
+      init = { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form, signal: ctrl.signal };
+    } else {
+      init = {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: `${prompt}. ${style || "Professional editorial photograph, natural light, sharp focus, rich detail"}. ${AI_IMAGE_SAFETY}.`,
-          steps: 8,
-        }),
+        body: JSON.stringify({ prompt: `${prompt}. ${style || "Professional editorial photograph, natural light, sharp focus, rich detail"}. ${AI_IMAGE_SAFETY}.`, steps }),
         signal: ctrl.signal,
-      });
-      clearTimeout(t);
-      if (!res.ok) {
-        // say why in the host log (daily free allowance used up, token without Workers AI permission …)
-        const body = (await res.text().catch(() => "")).slice(0, 300);
-        console.warn(`[v3/images] AI image ${model} failed: HTTP ${res.status} ${body.slice(0, 200)}`);
-        if (isDailyQuotaError(res.status, body)) {
-          // the allowance is per account, not per model: stop asking Cloudflare for the rest of the day
-          await recordGeneration("quota");
-          log?.("Cloudflare's free daily image allowance is used up — real photos instead");
-          return null;
-        }
-        continue;
-      }
-      const ct = res.headers.get("content-type") || "";
-      let out: Buffer | null = null;
-      if (ct.includes("json")) {
-        const j: any = await res.json();
-        const b64 = j?.result?.image;
-        if (b64) out = Buffer.from(b64, "base64");
-      } else {
-        const b = Buffer.from(await res.arrayBuffer());
-        if (b.length > 5000) out = b;
-      }
-      if (out) {
-        await recordGeneration("ok");
-        return out;
-      }
-    } catch {
-      /* next model */
+      };
     }
+    const res = await fetch(`${base}/accounts/${acc}/ai/run/${model}`, init);
+    clearTimeout(timer);
+    if (!res.ok) {
+      // say why in the host log (daily free allowance used up, token without Workers AI permission …)
+      const body = (await res.text().catch(() => "")).slice(0, 300);
+      console.warn(`[v3/images] AI image ${model} failed: HTTP ${res.status} ${body.slice(0, 200)}`);
+      if (isDailyQuotaError(res.status, body)) {
+        // the allowance is per account, not per model: stop asking Cloudflare for the rest of the day
+        await recordGeneration("quota");
+        log?.("Cloudflare's free daily image allowance is used up — real photos instead");
+        return null;
+      }
+      await recordGeneration("fail");
+      return null;
+    }
+    const ct = res.headers.get("content-type") || "";
+    let out: Buffer | null = null;
+    if (ct.includes("json")) {
+      const j: any = await res.json();
+      const b64 = j?.result?.image || j?.image;
+      if (b64) out = Buffer.from(b64, "base64");
+    } else {
+      const b = Buffer.from(await res.arrayBuffer());
+      if (b.length > 5000) out = b;
+    }
+    if (out && out.length > 1000) {
+      await recordGeneration("ok", { model, width: size.width, height: size.height, steps: tier === "basic" ? steps : 4, ms: Date.now() - t0, slide: gen?.slide });
+      return out;
+    }
+  } catch (e: any) {
+    console.warn(`[v3/images] AI image ${model} failed: ${String(e?.message || e).slice(0, 160)}`);
   }
   await recordGeneration("fail");
   return null;
@@ -384,7 +444,7 @@ function esc(s: string) {
 export async function sourceImages(
   slides: OutlineSlide[],
   dir: string,
-  opts: { mode: "real-first" | "ai-allowed" | "none"; topic: string; plan?: ImagePlan },
+  opts: { mode: "real-first" | "ai-allowed" | "none"; topic: string; plan?: ImagePlan; aiTier?: AiImageTier; aspectFor?: (n: number) => number | undefined },
   log: (m: string) => void
 ): Promise<Asset[]> {
   if (opts.mode === "none") return [];
@@ -426,7 +486,7 @@ export async function sourceImages(
       return null;
     }
     aiAsked++;
-    return generateImage(w.prompt || `${w.query}, related to ${opts.topic}`, style, log);
+    return generateImage(w.prompt || `${w.query}, related to ${opts.topic}`, style, log, { tier: opts.aiTier, aspect: opts.aspectFor?.(w.slide.n), slide: w.slide.n });
   };
   const searchFor = async (w: Want, query: string): Promise<Candidate[]> => {
     const [lead, c, o, nasa, px, pb] = await Promise.all([
@@ -535,7 +595,7 @@ export async function sourceImages(
   const storeGenerated = async (n: number, id: string, prompt: string, buf: Buffer) => {
     const st = await store(buf, dir, id);
     if (!st) return false;
-    assets.push({ id, ...st, mime: "image/jpeg", origin: "generated", title: prompt.slice(0, 80), description: `AI-generated illustration (deck style): ${prompt}`, credit: "AI-generated image (Flux, Cloudflare Workers AI)", forSlides: [n] });
+    assets.push({ id, ...st, mime: "image/jpeg", origin: "generated", title: prompt.slice(0, 80), description: `AI-generated illustration (deck style): ${prompt}`, credit: aiImageCredit(opts.aiTier), forSlides: [n] });
     return true;
   };
   await Promise.all(
