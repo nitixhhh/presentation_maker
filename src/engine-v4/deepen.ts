@@ -9,7 +9,7 @@ import { wikipedia, openalex, crossref } from "../engine-v3/research/sources";
 import { topicWordsOf, OFF_TOPIC_TITLE } from "../engine-v3/research/relevance";
 import type { Brief, ResearchPack, Source } from "../engine-v3/types";
 
-const FACTS_SYSTEM = `You extract facts for a university seminar from the numbered SOURCES below (Wikipedia extracts and scholarly abstracts).
+export const FACTS_SYSTEM = `You extract facts for a university seminar from the numbered SOURCES below (Wikipedia extracts and scholarly abstracts).
 Rules: use ONLY what the sources state; never add numbers, dates or names that are not in them. Each fact is one self-contained sentence (max ~30 words) with specific substance — names, years, numbers with units, mechanisms, results, examples — and lists its source ids, e.g. ["S5"]. Only facts that matter for the TOPIC. 12–24 facts, including at least 2 from every scholarly abstract (kind paper) when it states something relevant.
 Reply with ONLY JSON: {"facts":[{"text":"","sources":["S5"],"kind":"definition|principle|process|component|application|advantage|limitation|number|history|example"}]}`;
 

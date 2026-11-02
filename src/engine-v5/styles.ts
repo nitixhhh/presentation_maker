@@ -155,5 +155,6 @@ export const V5_CSS = String.raw`
 .slide .v5-refs li b{color:var(--primary);flex:none}
 .slide .v5-dark .v5-refs li b{color:var(--accent)}
 .slide .v5-credits{margin-top:auto;padding-top:10px;border-top:1px solid var(--line);font-size:14px;line-height:1.35;color:var(--muted);columns:2;column-gap:56px}
-.slide .v5-credits p{margin:0 0 3px 0;overflow-wrap:anywhere}
+.slide .v5-credits p{margin:0 0 3px 0;overflow-wrap:anywhere;break-inside:avoid}
+.slide .v5-credits p:first-child{column-span:all;margin-bottom:6px}
 `;

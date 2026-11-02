@@ -17,6 +17,8 @@ export interface FitResult {
   overflow: { where: string; px: number }[];
   /** share of the body's height the content occupies (0..1) — low = slide looks empty */
   fill: number;
+  /** panels / cards with a large empty band inside (share of their height) */
+  holes: { where: string; gap: number }[];
   screenshot?: Buffer;
 }
 
@@ -92,7 +94,30 @@ export const FIT_JS = String.raw`(function(){
     body.querySelectorAll('h3,p,li,td,figure,img,.v5-card,.v5-panel').forEach(function(e){ var r = e.getBoundingClientRect(); if (r.height) bottom = Math.max(bottom, r.bottom); });
     fill = br.height ? Math.min(1, (bottom - br.top) / br.height) : 1;
   }
-  return { s: Math.round(best * 1000) / 1000, ts: Math.round(ts * 1000) / 1000, overflow: probs.slice(0, 8), fill: Math.round(fill * 100) / 100 };
+  // holes: a tall panel / card whose content leaves a big empty band (the panel counts as "filled" for the body
+  // measure above, so an empty sidebar or a half-empty card needs its own check)
+  var holes = [];
+  root.querySelectorAll('.v5-panel, .v5-card').forEach(function(b){
+    if (b.closest('.v5-decor') || b.closest('[data-v5-chrome]') || b.hasAttribute('data-no-hole')) return;
+    var br = b.getBoundingClientRect();
+    if (br.height < 220 || br.width < 160) return;
+    var cs = getComputedStyle(b), top = br.top + parseFloat(cs.paddingTop), bot = br.bottom - parseFloat(cs.paddingBottom);
+    var inner = bot - top; if (inner < 120) return;
+    var spans = [];
+    b.querySelectorAll('h1,h2,h3,p,li,td,img,svg,figure,.v5-chip,.v5-bignum,[data-icon],i').forEach(function(e){
+      if (getComputedStyle(e).position === 'absolute' && e.tagName === 'IMG') return;
+      var r = e.getBoundingClientRect(); if (r.height < 4 || r.width < 4) return;
+      spans.push([Math.max(top, r.top), Math.min(bot, r.bottom)]);
+    });
+    if (!spans.length) { holes.push({ where: (b.className || '').toString().split(' ').slice(0,2).join('.'), gap: 1 }); return; }
+    spans.sort(function(a, c){ return a[0] - c[0]; });
+    var gap = 0, cur = top;
+    spans.forEach(function(sp){ if (sp[0] > cur) gap = Math.max(gap, sp[0] - cur); cur = Math.max(cur, sp[1]); });
+    gap = Math.max(gap, bot - cur);
+    var g = gap / inner;
+    if (g > 0.4 && gap > 140) holes.push({ where: (b.className || '').toString().split(' ').slice(0,2).join('.'), gap: Math.round(g * 100) / 100 });
+  });
+  return { s: Math.round(best * 1000) / 1000, ts: Math.round(ts * 1000) / 1000, overflow: probs.slice(0, 8), fill: Math.round(fill * 100) / 100, holes: holes.slice(0, 6) };
 })()`;
 
 /** put the fitted scales into the stored HTML (the root's inline style) */
@@ -105,7 +130,7 @@ export async function fitSlide(deck: Pick<Deck, "assets" | "design"> & { engine?
   const page = await openSlide(doc, path.join(renderDir), `fit-${String(n).padStart(2, "0")}`, 1);
   try {
     const r: any = await page.evaluate(FIT_JS);
-    if (r?.skip) return { html, s: 1, ts: 1, overflow: [], fill: 1 };
+    if (r?.skip) return { html, s: 1, ts: 1, overflow: [], fill: 1, holes: [] };
     const baked = bakeScales(html, r.s, r.ts);
     let screenshot: Buffer | undefined;
     if (opts.shot) {
@@ -117,9 +142,9 @@ export async function fitSlide(deck: Pick<Deck, "assets" | "design"> & { engine?
       } finally {
         await closePage(p2);
       }
-      return { html: baked, s: r.s, ts: r.ts, overflow: r.overflow || [], fill: r.fill ?? 1, screenshot };
+      return { html: baked, s: r.s, ts: r.ts, overflow: r.overflow || [], fill: r.fill ?? 1, holes: r.holes || [], screenshot };
     }
-    return { html: baked, s: r.s, ts: r.ts, overflow: r.overflow || [], fill: r.fill ?? 1 };
+    return { html: baked, s: r.s, ts: r.ts, overflow: r.overflow || [], fill: r.fill ?? 1, holes: r.holes || [] };
   } finally {
     await closePage(page).catch(() => {});
   }

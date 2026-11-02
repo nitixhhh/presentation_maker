@@ -15,14 +15,16 @@ import { addLogoAsset, logoSlides } from "../engine-v3/assets/logo";
 import { sourceImages } from "../engine-v3/assets/images";
 import { inspectSlide } from "../engine-v3/qa/inspect";
 import { visionReview } from "../engine-v3/qa/vision";
-import { formatReference } from "../engine-v3/research/sources";
+import { buildReferences, inferFactIds } from "./cite";
+import { boostScholarly } from "./scholarly";
+import { fittingTemplate, sparseProblems, sparseScore } from "./sparse";
 import { assetDir, deckDir, newDeckId, saveDeck } from "../engine-v3/store";
 import { availableProviders, chatJson, llmContext, usageSummary, usageLine } from "../engine-v3/llm";
 import { presenterFields } from "../engine-v3/privacy";
 import type { Asset, Deck, OutlineSlide, SlideDesign, V3Request } from "../engine-v3/types";
 import { isProductShot } from "../engine-v4/photoRules";
 import { previewFile, type LiveSlideEvent, type V4Options } from "../engine-v4/pipeline";
-import { runPlannerV5, type PlannedSlide } from "./planner";
+import { growSlide, runPlannerV5, type PlannedSlide } from "./planner";
 import { pickTheme, themeDesignSystem } from "./themes";
 import { renderSlide, NO_PHOTO } from "./render";
 import { templateById, type RenderCtx, type SlideContent } from "./templates";
@@ -71,8 +73,11 @@ export async function generateDeckV5(req: V3Request, opts: V5Options = {}): Prom
   const id = newDeckId();
   opts.onDeckId?.(id);
   const log: Deck["log"] = [];
+  // every step also goes to the server log (Render), so a deck can be matched against the logs line by line
+  const v5log = (m: string) => console.log(`[v5 ${id}] ${m}`);
   const emit = (step: string, percent: number, agent: string, action: string, details?: string) => {
     log.push({ t: new Date().toISOString(), agent, msg: action });
+    v5log(`${agent}: ${action}`);
     opts.onProgress?.({ step, percent, details, log: { agent, action, timestamp: new Date().toLocaleTimeString() } });
   };
   const slideEvt = (e: LiveSlideEvent) => {
@@ -92,7 +97,9 @@ export async function generateDeckV5(req: V3Request, opts: V5Options = {}): Prom
 
   tt = Date.now();
   emit("Researching real sources", 10, "Research", `Searching Wikipedia + OpenAlex for: ${brief.researchQueries.join("; ")}`);
-  const research = await deepenResearch(brief, await runResearch(brief, (m) => emit("Researching real sources", 14, "Research", m), req.topic), req.topic, (m) => emit("Researching real sources", 18, "Research", m));
+  const deep = await deepenResearch(brief, await runResearch(brief, (m) => emit("Researching real sources", 14, "Research", m), req.topic), req.topic, (m) => emit("Researching real sources", 18, "Research", m));
+  // papers before encyclopedia entries: top up to three peer-reviewed sources when research found fewer
+  const research = await boostScholarly(brief, deep, req.topic, (m) => emit("Researching real sources", 19, "Research", m));
   emit("Researching real sources", 20, "Research", `${research.facts.length} cited facts from ${research.sources.length} sources`);
   mark("research", tt);
 
@@ -105,6 +112,15 @@ export async function generateDeckV5(req: V3Request, opts: V5Options = {}): Prom
   emit("Planning the story", 30, "Planner", `${plan.slides.length} slides · theme ${theme.name} · layouts: ${plan.slides.map((s) => s.template).join(", ")}${plan.repaired.length ? ` — engine fixes: ${plan.repaired.join("; ")}` : ""}`);
   opts.onPlan?.(plan.slides.map((s) => ({ n: s.n, title: s.title, role: s.role, layout: s.template })));
 
+  // a content slide the planner left without fact ids still credits the facts its text uses (numbers, names)
+  for (const s of plan.slides) {
+    if ((s.factIds || []).length || /^title-/.test(s.template) || ["references", "closing", "agenda", "section"].includes(s.template)) continue;
+    const inferred = inferFactIds(slideText(s), research.facts);
+    if (inferred.length) {
+      s.factIds = inferred;
+      v5log(`slide ${s.n}: no fact ids from the planner — matched ${inferred.join(", ")} from its text`);
+    }
+  }
   // citations: sources numbered by first use; at least one credible non-Wikipedia source when research found one
   const citeMap = new Map<string, number>();
   const factSrc = new Map(research.facts.map((f) => [f.id, f.sources]));
@@ -114,10 +130,17 @@ export async function generateDeckV5(req: V3Request, opts: V5Options = {}): Prom
     const sch = research.sources.find((s) => s.kind !== "wikipedia" && research.facts.some((f) => f.sources.includes(s.id)));
     if (sch) citeMap.set(sch.id, citeMap.size + 1);
   }
-  const references = Array.from(citeMap.entries())
-    .sort((a, b) => a[1] - b[1])
-    .filter(([sid]) => research.sources.some((s) => s.id === sid))
-    .map(([sid, n]) => ({ n, sourceId: sid, text: formatReference(research.sources.find((s) => s.id === sid)!, brief.referenceStyle) }));
+  // the reference list in words (author, year, title, journal / site), numbered by first use; 3+ encyclopedia
+  // articles become one entry; every link goes to the presenter's notes on the references slide
+  const order = Array.from(citeMap.entries()).sort((a, b) => a[1] - b[1]).map(([sid]) => sid);
+  const built = buildReferences(order, research.sources, brief.language);
+  const references = built.refs;
+  for (const [sid, n] of built.numOf) citeMap.set(sid, n);
+  const refSlide = plan.slides.find((s) => s.template === "references");
+  if (refSlide) {
+    const links = references.flatMap((r) => r.urls.filter(Boolean).map((u) => `[${r.n}] ${u}`)).join("\n");
+    refSlide.notes = [refSlide.notes, links ? `${brief.language === "Hindi" ? "स्रोतों के लिंक" : "Links to the sources"}:\n${links}` : ""].filter(Boolean).join("\n\n");
+  }
   const citesOf = (s: PlannedSlide) => [...new Set((s.factIds || []).flatMap((f) => factSrc.get(f) || []).map((sid) => citeMap.get(sid)).filter((x): x is number => !!x))].sort((a, b) => a - b);
 
   // the outline (kept for exports, notes, live UI and the v3 tools)
@@ -156,7 +179,9 @@ export async function generateDeckV5(req: V3Request, opts: V5Options = {}): Prom
     emit("Finding images", 32, "Images", `Finding real photos for ${wantsPhoto.length} slide(s): ${wantsPhoto.map((s) => `${s.n} “${s.visual.query}”`).join(", ")}`);
     for (const s of wantsPhoto) slideEvt({ n: s.n, state: "building", status: `Finding a photo: ${s.visual.query}` });
     assets = await sourceImages(wantsPhoto, dir, { mode: req.imageMode || "real-first", topic: brief.title }, (m) => emit("Finding images", 36, "Images", m)).catch(() => []);
+    for (const a of assets) v5log(`photo found for slide ${a.forSlides.join(",")}: “${a.title}” (${a.origin}) ${a.sourceUrl || ""}`);
     const dropped = await vetPhotos(assets, outline.slides, dir);
+    for (const a of dropped) v5log(`photo rejected for slide ${a.forSlides.join(",")} (vision vet / product rule): “${a.title}” ${a.sourceUrl || ""}`);
     if (dropped.length) {
       assets = assets.filter((a) => !dropped.includes(a));
       emit("Finding images", 37, "Images", `dropped ${dropped.length} photo(s) that did not fit their slide`);
@@ -175,7 +200,9 @@ export async function generateDeckV5(req: V3Request, opts: V5Options = {}): Prom
         a.file = `alt/${a.file}`;
         a.id = `alt${a.id}`;
       }
+      for (const a of more) v5log(`photo found (second search) for slide ${a.forSlides.join(",")}: “${a.title}” (${a.origin}) ${a.sourceUrl || ""}`);
       const bad = more.length ? await vetPhotos(more, retry, dir) : [];
+      for (const a of bad) v5log(`photo rejected for slide ${a.forSlides.join(",")} (vision vet / product rule): “${a.title}” ${a.sourceUrl || ""}`);
       assets.push(...more.filter((a) => !bad.includes(a)));
     }
   }
@@ -183,6 +210,7 @@ export async function generateDeckV5(req: V3Request, opts: V5Options = {}): Prom
     const logo = await addLogoAsset(req.logoId, dir, logoSlides(outline.slides));
     if (logo) assets.push(logo);
   }
+  for (const a of assets.filter((x) => x.origin !== "upload")) v5log(`photo used on slide ${a.forSlides.join(",")}: “${a.title}” — ${a.credit || a.origin} ${a.sourceUrl || ""}`);
   mark("images", tt);
 
   const deck: Deck = { id, createdAt: new Date().toISOString(), request: req, brief, research, outline: outline as any, design, assets, slides: [], references, log };
@@ -196,7 +224,7 @@ export async function generateDeckV5(req: V3Request, opts: V5Options = {}): Prom
   const credits = assets.filter((a) => a.credit && a.origin !== "upload").map((a) => (a.origin === "generated" ? a.credit || "" : `“${a.title.replace(/[_]+/g, " ").replace(/\.\w{3,4}$/, "").slice(0, 50)}” — ${a.credit || ""}`));
   const deckIcons = [...new Set(plan.slides.flatMap((s) => [...(s.items || []).map((i) => i.icon), s.left?.icon, s.right?.icon]).filter((x): x is string => !!x && !/circle-dot|sparkles|hexagon|diamond|triangle|star$|(^|:)(info|circle|help-circle|circle-help|check|x|thumbs-up|thumbs-down)$/.test(x)))].slice(0, 3);
   const heroPhoto = assets.find((a) => a.origin !== "upload" && a.forSlides.includes(1))?.id;
-  const ctxBase = { theme, deckIcons, heroPhoto, deckTitle: brief.title, total: plan.slides.length, fields, language: brief.language, deckType: brief.deckType, subject: brief.subject, references: references.map((r) => ({ n: r.n, text: r.text })), credits };
+  const ctxBase = { theme, deckIcons, heroPhoto, deckTitle: brief.title, total: plan.slides.length, fields, language: brief.language, deckType: brief.deckType, subject: brief.subject, references: references.map((r) => ({ n: r.n, text: r.text, kind: r.kind, count: r.sourceIds.length })), credits };
   (deck as any).v5.ctx = ctxBase;
 
   const slides = new Map<number, SlideDesign>();
@@ -217,7 +245,17 @@ export async function generateDeckV5(req: V3Request, opts: V5Options = {}): Prom
         const photo = assets.find((a) => a.forSlides.includes(ps.n) && a.origin !== "upload");
         const c: SlideContent = { ...ps, photo: photo?.id, cites: ps.template === "references" ? [] : citesOf(ps) };
         const ctx: RenderCtx = { ...ctxBase, n: ps.n, logo: !!logo && !logo.forSlides.includes(ps.n), logoAsset: logo && logo.forSlides.includes(ps.n) ? logo.id : undefined } as RenderCtx;
-        const { html, fit, trims, content } = await renderFitted(deck, c, ctx, renderDir, (st) => slideEvt({ n: ps.n, state: "building", status: st }));
+        let rf = await renderFitted(deck, c, ctx, renderDir, (st) => slideEvt({ n: ps.n, state: "building", status: st }));
+        // a slide that came out half empty gets more content (one AI call) or a layout that fits what it has
+        rf = await fillSparse(deck, rf, ctx, renderDir, {
+          grow: (cur, why) => growSlide(cur as PlannedSlide, why, brief, research, plan.slides),
+          cites: (g) => citesOf(g as PlannedSlide),
+          neighbours: plan.slides.filter((o) => Math.abs(o.n - ps.n) === 1).map((o) => o.template),
+          say: (m) => emit("Designing slides", 60, `Slide ${ps.n}`, m),
+          status: (st) => slideEvt({ n: ps.n, state: "building", status: st }),
+        });
+        Object.assign(c, rf.content);
+        const { html, fit, trims, content } = rf;
         slideEvt({ n: ps.n, state: "building", status: "Checking text fits and contrast" });
         const insp = await inspectSlide(deck, ps.n, html, renderDir, ps.role);
         const issues = insp.issues.filter((i) => i.severity !== "low");
@@ -344,6 +382,43 @@ export async function renderFitted(deck: Deck, c0: SlideContent, ctx: RenderCtx,
   return { html: fit.html, fit, trims, content: c };
 }
 
+type Fitted = { html: string; fit: FitResult; trims: string[]; content: SlideContent };
+export async function fillSparse(
+  deck: Deck,
+  r0: Fitted,
+  ctx: RenderCtx,
+  renderDir: string,
+  h: { grow: (c: SlideContent, why: string[]) => Promise<SlideContent | null>; cites: (c: SlideContent) => number[]; neighbours: string[]; say: (m: string) => void; status: (s: string) => void }
+): Promise<Fitted> {
+  let best = r0;
+  const why = sparseProblems(best.content.template, best.fit);
+  if (!why.length) return best;
+  h.say(`${best.content.template} looks sparse (${why.join("; ")}) — writing fuller content for it`);
+  h.status("Filling the empty space with more substance");
+  try {
+    const g = await h.grow(best.content, why);
+    if (g && g.template === best.content.template) {
+      const r2 = await renderFitted(deck, { ...g, photo: best.content.photo, photoFocus: best.content.photoFocus, cites: h.cites(g) }, ctx, renderDir, h.status);
+      if (sparseScore(r2.content.template, r2.fit) < sparseScore(best.content.template, best.fit)) {
+        best = { ...r2, trims: [...best.trims, "re-filled a sparse slide", ...r2.trims] };
+        h.say(`re-filled: ${(g.items || []).length} items, ${sparseProblems(best.content.template, best.fit).join("; ") || "now fills the slide"}`);
+      }
+    }
+  } catch (e: any) {
+    h.say(`re-fill call failed (${String(e?.message || e).slice(0, 80)})`);
+  }
+  if (!sparseProblems(best.content.template, best.fit).length) return best;
+  const alt = fittingTemplate(best.content.template, (best.content.items || []).length, h.neighbours);
+  if (alt) {
+    const r3 = await renderFitted(deck, { ...best.content, template: alt }, ctx, renderDir, h.status);
+    if (sparseScore(alt, r3.fit) < sparseScore(best.content.template, best.fit)) {
+      h.say(`layout ${best.content.template} → ${alt} so the content fills the slide`);
+      best = { ...r3, trims: [...best.trims, `layout ${best.content.template} → ${alt} (sparse)`, ...r3.trims] };
+    }
+  }
+  return best;
+}
+
 /** the calmer layout for a slide the vision check disliked */
 function calmerTemplate(c: SlideContent): string | null {
   const n = (c.items || []).length;
@@ -375,12 +450,31 @@ async function vetPhotos(assets: Asset[], slides: OutlineSlide[], dir: string): 
       const s = slides.find((x) => a.forSlides.includes(x.n));
       return `${i + 1}. slide "${s?.title || "?"}" (message: ${(s?.keyMessage || "-").slice(0, 120)}) — photo searched as "${s?.visual.query || ""}"`;
     });
-    const { data } = await chatJson<any>("agent", [{ role: "user", content: [{ type: "text", text: `Each numbered picture was chosen for the slide listed below it. Be strict — a slide with no picture is better than a wrong one.\nREJECT a picture when it: is a product/brand/gadget shot or advert; is mainly a chart, diagram, map, document, screenshot or text; is blurry, tiny, a logo or clip-art; or does not clearly show the slide's subject.\n${lines.join("\n")}\nReply ONLY JSON: {"reject":[numbers],"why":{"n":"reason"}}` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${sheet.toString("base64")}` } }] }], { temperature: 0.1, maxTokens: 600, label: "v5 photo vet" });
+    const vetMsgs = [{ role: "user", content: [{ type: "text", text: `Each numbered picture was chosen for the slide listed below it. Be strict — a slide with no picture is better than a wrong one.\nREJECT a picture when it: is a product/brand/gadget shot or advert; is mainly a chart, diagram, map, document, screenshot or text; is blurry, tiny, a logo or clip-art; or does not clearly show the slide's subject.\n${lines.join("\n")}\nReply ONLY JSON: {"reject":[numbers],"why":{"n":"reason"}}` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${sheet.toString("base64")}` } }] }];
+    // the vet must not silently pass photos when the agent model is throttled (429): one try on the vision route
+    const data: any = await chatJson<any>("agent", vetMsgs as any, { temperature: 0.1, maxTokens: 600, label: "v5 photo vet" })
+      .catch(() => chatJson<any>("vision", vetMsgs as any, { temperature: 0.1, maxTokens: 600, label: "v5 photo vet (vision route)" }))
+      .then((r) => r.data);
     const rej: number[] = (Array.isArray(data?.reject) ? data.reject : []).map(Number).filter((x: number) => Number.isInteger(x) && x >= 1 && x <= list.length);
+    for (const x of rej) console.log(`[v5] photo vet rejected “${list[x - 1].title}”: ${String(data?.why?.[x] ?? data?.why?.[String(x)] ?? "").slice(0, 160)}`);
     return [...pre, ...rej.map((x) => list[x - 1])];
-  } catch {
+  } catch (e: any) {
+    console.log(`[v5] photo vet unavailable (${String(e?.message || e).slice(0, 100)}) — keeping the photo editor's picks`);
     return pre;
   }
 }
 
 export { NO_PHOTO };
+
+/** all the words a slide shows (for matching facts to it) */
+export function slideText(s: Partial<SlideContent>): string {
+  return [
+    s.title, s.lede, s.takeaway, s.term, s.center,
+    ...(s.items || []).flatMap((i) => [i.title, i.text, i.value, i.label]),
+    s.left?.title, ...(s.left?.points || []), s.right?.title, ...(s.right?.points || []),
+    s.stat ? `${s.stat.value} ${s.stat.label} ${s.stat.text || ""}` : "",
+    ...(s.chart?.items || []).map((i) => `${i.label} ${i.value}${s.chart?.unit || ""}`),
+    ...(s.table ? [s.table.columns.join(" "), ...s.table.rows.map((r) => r.join(" "))] : []),
+    s.quote ? `${s.quote.text} ${s.quote.author || ""}` : "",
+  ].filter(Boolean).join(" \n ");
+}

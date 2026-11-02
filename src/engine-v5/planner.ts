@@ -4,6 +4,7 @@
  * length-limited slots. Code then enforces the slide count, the opening/closing/references slots, layout variety,
  * slot limits and icon ids, and asks again (one small call per slide) only for a slide whose slots are unusable.
  */
+import { naturalText } from "./text";
 import { chatJson } from "../engine-v3/llm";
 import type { Brief, ResearchPack } from "../engine-v3/types";
 import { TEMPLATES, templateById, catalogText, type SlideContent, type SlotItem } from "./templates";
@@ -36,10 +37,11 @@ RULES
 - Pick the template that matches the SHAPE of the content: dates → timeline; ordered steps → process; loop → cycle; parts around a centre → hub (4–6 parts); levels → layers; A vs B → comparison; good vs bad → pros-cons; striking real number → big-stat; several real numbers → stats-row or chart; 2/3/4 parallel ideas → cards-2/cards-3/cards-4; concept intro → definition; summary → takeaways; a real concrete subject to show → icon-rows-photo / photo-split / photo-full.
 - VARIETY: never the same template on two neighbouring slides; each card grid (cards-2/3/4) at most ONCE per deck, other templates at most twice; use at least 6 different templates in 8 slides. Prefer shaped, visual templates (hub, process, timeline, cycle, stats-row, big-stat, chart, comparison, photo-split, icon-rows-photo, diagram) over plain cards and text-focus (max once). A deck with a real number should show it big (big-stat / stats-row / chart).
 - Fact ids (F1, F12…) go ONLY in "fact_ids" — never inside titles, text or notes.
+- NATURAL LANGUAGE: the FACTS are research notes, not slide copy. Rewrite each fact you use in your own clear words (paraphrase, keep the real number/name/date) so it reads like a teacher explaining it. Never paste a URL, a web address, a website or source name ("Wikipedia", "OpenAlex"), "[12]"-style markers or "Source: …" into any slot or note — the engine builds the references slide with proper citations. Always fill "fact_ids" with the facts each slide uses. When a "(paper)" fact and an "(encyclopedia)" fact make the same point, use the paper's.
 - COPY: slide titles are short ACTION titles that state the point ("Gravity bends light around black holes", not "Gravitational lensing"). Respect every character limit in the slots — shorter is better. No filler, no generic statements; concrete facts, names, numbers, examples from the research. Never invent numbers, dates, quotes or names: use only the FACTS given (cite their ids in fact_ids). A quote slide only for a real quote found in the facts.
 - Numbers in stat/stats-row/chart must come from the facts. If there are no real numbers, do not use those templates.
 - Icons: for every item give "icon" = ONE simple English noun that literally depicts THAT item's meaning (chloroplast → "leaf", ATP → "battery", water → "droplet", light → "sun", law → "scale", money → "coins", school → "graduation-cap", experiment → "flask", growth → "trending-up", risk → "alert-triangle", people → "users", idea → "lightbulb", protest → "megaphone", history → "landmark", data → "database", security → "lock"). Never a computer/tech icon for a non-tech idea. All icons on a slide different.
-- Photos make a deck feel premium: put a real photo on 2–3 slides (the title slide + 1–2 content slides) whenever the subject has a concrete, photographable side — a named person (e.g. "Nick Bostrom"), a famous work (e.g. "The Matrix film"), a place, an organism, an instrument, a building, an event. "photo_query" = 1–3 plain English words naming ONE concrete thing as it would be titled on Wikimedia Commons (good: "MRI scanner", "stethoscope", "Mahatma Gandhi", "Bombay Stock Exchange", "chloroplast"; bad: "AI driven MRI medical device hospital" — adjectives and abstractions find nothing); "photo_alt" = a second, different query for the same slide. Never for abstract ideas. Only on templates that take a photo.
+- Photos make a deck feel premium: put a real photo on 2–3 slides (the title slide + 1–2 content slides) whenever the subject has a concrete, photographable side — a named person (e.g. "Nick Bostrom"), a famous work (e.g. "The Matrix film"), a place, an organism, an instrument, a building, an event. "photo_query" = 1–3 plain English words naming ONE concrete, photographable thing as it would be titled on Wikimedia Commons (never a map, chart, graph, curve, index or statistic — those are not photos) (good: "MRI scanner", "stethoscope", "Mahatma Gandhi", "Bombay Stock Exchange", "chloroplast"; bad: "AI driven MRI medical device hospital" — adjectives and abstractions find nothing); "photo_alt" = a second, different query for the same slide. Never for abstract ideas. Only on templates that take a photo.
 - eyebrow: a 1–3 word section label for the slide (e.g. "Background", "How it works", "Evidence", "Impact").
 - notes: 2–3 sentences the presenter says, in the deck language.
 - LANGUAGE: write all slide text and notes in the deck language (Hindi = Devanagari script; Hinglish = Hindi words in Roman script). photo_query and icon stay in English.
@@ -55,7 +57,10 @@ Reply with ONLY JSON:
 Include only the slots the chosen template uses.`;
 
 export function factsBlock(research: ResearchPack): string {
-  const facts = research.facts.map((f) => `${f.id}: ${f.text}`).join("\n");
+  // each fact says what kind of source backs it, so the planner can prefer papers over encyclopedia entries
+  const kindOf = new Map((research.sources || []).map((s) => [s.id, s.kind === "wikipedia" ? "encyclopedia" : "paper"]));
+  const tag = (ids: string[] = []) => (ids.some((id) => kindOf.get(id) === "paper") ? " (paper)" : ids.length ? " (encyclopedia)" : "");
+  const facts = research.facts.map((f) => `${f.id}${tag(f.sources)}: ${f.text}`).join("\n");
   const terms = research.keyTerms.map((k) => `${k.term} — ${k.meaning}`).join("\n");
   return `FACTS (cite ids):\n${facts}\n\nKEY TERMS:\n${terms}`;
 }
@@ -140,7 +145,8 @@ Plan all ${N} slides now.`;
 // ── normalisation ─────────────────────────────────────────────────────────
 /** fact ids ("F12", "[F3, F36]", "(S2)") belong in fact_ids, never in slide text */
 export const stripIds = (t: string) => t.replace(/\s*[\[(]\s*(?:[FS]\d{1,3}\s*[,;/]?\s*(?:and\s*)?)+[\])]/g, "").replace(/\s+\b[FS]\d{1,3}(?:\s*,\s*[FS]\d{1,3})*\b(?=[\s.,;:]|$)/g, "").replace(/\s+([.,;:!?।])/g, "$1").trim();
-const str = (v: unknown, max = 400) => (typeof v === "string" || typeof v === "number" ? stripIds(String(v).replace(/\s+/g, " ").trim()).slice(0, max) : "");
+// every slot is natural language: links, wiki paths, citation markers and fact ids are removed (sources live on the references slide)
+const str = (v: unknown, max = 400) => (typeof v === "string" || typeof v === "number" ? naturalText(stripIds(String(v).replace(/\s+/g, " ").trim())).slice(0, max) : "");
 
 /** cut to a limit at a word boundary (only when a model ignored the limit by a lot) */
 export function clamp(s: string | undefined, max: number): string {
@@ -157,6 +163,17 @@ function item(x: any): SlotItem {
 }
 
 const LIMIT_TITLE = 90;
+
+/**
+ * A photo query names something photographable. Maps, charts, graphs and indices are rejected by the photo editor
+ * and the vision vet anyway (live deck 2026-11-02: "World map" and "Gini coefficient map" → no photo at all), so such
+ * a query is dropped here and the slide uses its no-photo layout or the alternative query.
+ */
+export const NOT_A_PHOTO = /\b(maps?|charts?|graphs?|diagrams?|curves?|plots?|infographics?|coefficients?|index|indices|statistics)\b/i;
+const photoQ = (v: unknown) => {
+  const q = str(v, 80);
+  return q && !NOT_A_PHOTO.test(q) ? q : "";
+};
 
 function normSlide(r: any, n: number, factIds: Set<string>): PlannedSlide {
     let template = str(r.template, 40).toLowerCase();
@@ -180,8 +197,8 @@ function normSlide(r: any, n: number, factIds: Set<string>): PlannedSlide {
       center: str(r.center, 60) || undefined,
       axes: r.axes ? { x: str(r.axes.x, 30), y: str(r.axes.y, 30) } : undefined,
       diagram: r.diagram === "tree" ? "tree" : "flow",
-      photoQuery: str(r.photo_query ?? r.photoQuery, 80) || undefined,
-      photoAlt: str(r.photo_alt ?? r.photoAlt, 80) || undefined,
+      photoQuery: photoQ(r.photo_query ?? r.photoQuery) || photoQ(r.photo_alt ?? r.photoAlt) || undefined,
+      photoAlt: photoQ(r.photo_alt ?? r.photoAlt) || undefined,
       notes: str(r.notes, 900),
       factIds: (Array.isArray(r.fact_ids) ? r.fact_ids : Array.isArray(r.factIds) ? r.factIds : []).map(String).filter((f: string) => factIds.has(f)),
     };
@@ -317,6 +334,32 @@ async function repairSlide(s: PlannedSlide, brief: Brief, research: ResearchPack
   ], { temperature: 0.4, maxTokens: 2500, label: `v5 slot repair ${s.n}` });
   const fixed = normalizeOne({ ...data, n: s.n, notes: data?.notes || s.notes, eyebrow: data?.eyebrow || s.eyebrow }, brief, research);
   return fixed;
+}
+
+/**
+ * One extra call for a slide that rendered half empty: same template, fuller slots (more items up to the template's
+ * maximum, a full sentence per item, a lede where the template has one) — from the research facts, in natural words.
+ */
+export async function growSlide(s: PlannedSlide, why: string[], brief: Brief, research: ResearchPack, others: PlannedSlide[] = []): Promise<PlannedSlide | null> {
+  const t = templateById(s.template);
+  if (!t) return null;
+  const used = new Set(others.filter((o) => o.n !== s.n).flatMap((o) => o.factIds || []));
+  const facts = research.facts.filter((f) => !used.has(f.id) || (s.factIds || []).includes(f.id));
+  const { data } = await chatJson<any>("planner", [
+    {
+      role: "system",
+      content: `You improve ONE slide of a premium presentation. On screen it looks half empty: ${why.join("; ")}. Keep the template "${s.template}" and its topic, and write FULLER content into its slots so it fills the layout: ${t.maxItems ? `use ${Math.max(t.minItems || 0, Math.min(t.maxItems, Math.max((s.items || []).length + 1, 4)))}–${t.maxItems} items, ` : ""}give every item a complete, specific sentence close to its character limit (a real number, name, date or example from the facts), and fill the lede if the template has one. SLOTS: ${t.slots}. Respect every character limit. Use only the facts given, paraphrased in natural ${brief.language} — never URLs, website names, "[1]" markers or fact ids in the text (ids only in fact_ids). Reply with ONLY JSON for the slide.`,
+    },
+    {
+      role: "user",
+      content: `Deck: ${brief.title}. Slide ${s.n} of ${brief.slideCount}. Other slides (do not repeat them): ${others.filter((o) => o.n !== s.n).map((o) => `${o.n}. ${o.title}`).join(" | ")}\nCurrent slide:\n${JSON.stringify({ template: s.template, eyebrow: s.eyebrow, title: s.title, lede: s.lede, items: s.items, stat: s.stat, left: s.left, right: s.right, takeaway: s.takeaway, term: s.term, center: s.center, fact_ids: s.factIds })}\n\n${factsBlock({ ...research, facts }).slice(0, 7000)}\n\nReturn the fuller slide JSON (keys: template, title, eyebrow, lede, items, stat, left, right, takeaway, term, center, fact_ids, notes).`,
+    },
+  ], { temperature: 0.45, maxTokens: 2500, label: `v5 fill sparse ${s.n}` });
+  const g = normalizeOne({ ...data, template: s.template, n: s.n, notes: data?.notes || s.notes, eyebrow: data?.eyebrow || s.eyebrow, title: data?.title || s.title, photo_query: s.photoQuery }, brief, research);
+  if (!g || problemsOf(g).length) return null;
+  resolveIcons(g);
+  g.factIds = [...new Set([...(s.factIds || []), ...(g.factIds || [])])];
+  return g;
 }
 
 export function normalizeOne(r: any, brief: Brief, research: ResearchPack): PlannedSlide | null {

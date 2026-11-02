@@ -45,7 +45,7 @@ export interface RenderCtx {
   logo: boolean;
   language: string;
   /** for the engine-built references slide */
-  references?: { n: number; text: string }[];
+  references?: { n: number; text: string; kind?: string; count?: number }[];
   credits?: string[];
   /** a few topic icons from the deck (art panel of hero slides without a photo) */
   deckIcons?: string[];
@@ -134,11 +134,11 @@ function foot(c: SlideContent, x: RenderCtx): string {
   return `<div class="v5-foot" data-v5-chrome><b>${pad2(x.n)}</b><span class="v5-dot"></span><span>${esc(shortTitle(x.deckTitle))}</span></div>${src}`;
 }
 
-function wrap(id: string, inner: string, c: SlideContent, x: RenderCtx, o: { hero?: boolean; cls?: string; noFoot?: boolean; decor?: boolean } = {}): string {
+function wrap(id: string, inner: string, c: SlideContent, x: RenderCtx, o: { hero?: boolean; cls?: string; noFoot?: boolean; decor?: boolean; maxS?: number } = {}): string {
   const heroDark = (() => { const h = (x.theme.heroInk || "#000").replace("#", ""); const v = parseInt(h.length === 3 ? h.split("").map((ch) => ch + ch).join("") : h, 16); return ((v >> 16) & 255) * 0.299 + ((v >> 8) & 255) * 0.587 + (v & 255) * 0.114 > 140; })();
   const cls = ["v5", `tpl-${id}`, x.theme.dark || (o.hero && heroDark) ? "v5-dark" : "", x.logo ? "v5-has-logo" : "", o.hero ? "v5-hero v5-on-hero" : "", o.cls || ""].filter(Boolean).join(" ");
   const d = o.decor === false ? "" : decor(x.theme, o.hero ? "hero" : "content");
-  return `<div class="${cls}" data-v5="${id}" style="--s:1;--ts:1">${d}${inner}${o.noFoot ? "" : foot(c, x)}</div>`;
+  return `<div class="${cls}" data-v5="${id}"${o.maxS ? ` data-max-s="${o.maxS}"` : ""} style="--s:1;--ts:1">${d}${inner}${o.noFoot ? "" : foot(c, x)}</div>`;
 }
 
 /** the icon composition used when a hero slide has no photo (topic icons from the deck) */
@@ -229,14 +229,22 @@ ${people(x) ? `<div style="flex:none;border-top:1.5px solid color-mix(in srgb,va
     slots: `title (e.g. "Agenda"), items 3–6 [{title ≤ 40 chars, text ≤ 70 chars optional}]`,
     render: (c, x) => {
       const its = items(c, 6);
+      const hi = x.language === "Hindi";
+      // without a photo the sidebar carries the deck's question (the part after the colon) and the parts' icons,
+      // so it never stands as an empty coloured block
+      const q = String(x.deckTitle || "").split(/[:：—–]\s+/).slice(1).join(": ").trim();
+      const lede = c.lede || (!x.heroPhoto ? (q && q.length >= 12 ? q : x.deckTitle !== c.title ? x.deckTitle : "") : "");
       return wrap("agenda", `<div style="display:flex;gap:64px;flex:1;min-height:0">
   <div class="v5-panel v5-panel-primary" style="flex:0 0 400px;margin:-58px 0 -56px -80px;padding:64px 44px 60px 80px;border-radius:0;justify-content:space-between;position:relative;overflow:hidden">
     ${x.heroPhoto ? `<img src="asset:${esc(x.heroPhoto)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0"><div style="position:absolute;inset:0;background:linear-gradient(180deg,color-mix(in srgb,var(--primary) 90%,transparent) 0%,color-mix(in srgb,var(--primary) 62%,transparent) 100%);z-index:0"></div>` : ""}
-    <div style="display:flex;flex-direction:column;gap:16px;position:relative;z-index:1"><div class="v5-eyebrow" style="color:var(--on-primary);opacity:.9">${esc(c.eyebrow || shortTitle(x.deckTitle))}</div><h2 class="v5-title" data-fit-title style="font-size:calc(var(--ts) * 60px);color:var(--on-primary)">${esc(c.title)}</h2>${c.lede ? `<p class="v5-lede" style="color:var(--on-primary);opacity:.85">${esc(c.lede)}</p>` : ""}</div>
-    <div style="color:var(--on-primary);opacity:.9;position:relative;z-index:1"><i data-icon="${esc(its[0]?.icon || "list-checks")}" style="width:84px;height:84px"></i></div>
+    <div style="display:flex;flex-direction:column;gap:16px;position:relative;z-index:1"><div class="v5-eyebrow" style="color:var(--on-primary);opacity:.9">${esc(c.eyebrow || shortTitle(x.deckTitle))}</div><h2 class="v5-title" data-fit-title style="font-size:calc(var(--ts) * 60px);color:var(--on-primary)">${esc(c.title)}</h2>${lede ? `<p class="v5-lede" style="color:var(--on-primary);opacity:.9;font-size:max(22px,calc(var(--s) * 22px));line-height:1.35">${esc(lede)}</p>` : ""}</div>
+    ${x.heroPhoto ? `<div style="color:var(--on-primary);opacity:.9;position:relative;z-index:1"><i data-icon="${esc(its[0]?.icon || "list-checks")}" style="width:84px;height:84px"></i></div>` : `<div style="position:relative;z-index:1;display:flex;flex-direction:column;gap:18px">
+      <div style="display:grid;grid-template-columns:repeat(${Math.min(its.length, 4) > 2 ? 2 : Math.max(1, Math.min(its.length, 2))},76px);gap:14px">${its.slice(0, 4).map((it) => `<div style="width:76px;height:76px;border-radius:18px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--on-primary) 16%,transparent);color:var(--on-primary)"><i data-icon="${esc(it.icon || "circle-dot")}" style="width:40px;height:40px"></i></div>`).join("")}</div>
+      <p style="margin:0;color:var(--on-primary);opacity:.85;font-size:20px;font-weight:600;letter-spacing:.04em">${hi ? `${its.length} भाग · ${x.total} स्लाइड` : `${its.length} parts · ${x.total} slides`}</p>
+    </div>`}
   </div>
   <div class="v5-rows" data-fit-box style="padding:6px 0">${its.map((it, k) => `<div class="v5-row"><div class="v5-bignum" style="font-size:max(30px,calc(var(--s) * 40px));width:calc(var(--s) * 70px)">${pad2(k + 1)}</div><div class="v5-row-txt"><h3 class="v5-h3">${esc(it.title)}</h3>${it.text ? `<p class="v5-p">${esc(it.text)}</p>` : ""}</div></div>`).join("")}</div>
-</div>`, c, x, { decor: false, noFoot: true });
+</div>`, c, x, { decor: false, noFoot: true, maxS: 1.25 });
     },
   },
   {
@@ -583,16 +591,22 @@ ${people(x) ? `<div style="flex:none;border-top:1.5px solid color-mix(in srgb,va
     render: (c, x) => {
       const refs = x.references || [];
       const hi = x.language === "Hindi";
-      const sch = refs.filter((r) => !/wikipedia|britannica|encyclop/i.test(r.text) && /doi\.org|journal|proceedings|arxiv|letters|review|nature\b|science\b|\d+\s*\(\d+\)|\b\d+,\s*\d+[–-]\d+/i.test(r.text)).length;
-      const enc = refs.filter((r) => /wikipedia|britannica|encyclop/i.test(r.text)).length;
-      const other = refs.length - sch - enc;
+      const isEnc = (r: (typeof refs)[number]) => (r.kind ? r.kind === "wikipedia" : /wikipedia|britannica|encyclop/i.test(r.text));
+      const isSch = (r: (typeof refs)[number]) => (r.kind ? ["openalex", "crossref", "semanticscholar"].includes(r.kind) : !isEnc(r) && /doi\.org|journal|proceedings|arxiv|letters|review|nature\b|science\b|\d+\s*\(\d+\)|\b\d+,\s*\d+[–-]\d+/i.test(r.text));
+      // a grouped encyclopedia entry counts every article it names
+      const cnt = (r: (typeof refs)[number]) => Math.max(1, r.count || 1);
+      const sum = (l: typeof refs) => l.reduce((a, r) => a + cnt(r), 0);
+      const total = sum(refs);
+      const sch = sum(refs.filter(isSch));
+      const enc = sum(refs.filter(isEnc));
+      const other = total - sch - enc;
       const chip = (n: number, en: string, hn: string, icon: string) => (n ? `<div class="v5-chip" style="background:color-mix(in srgb,var(--on-strong) 14%,transparent);color:var(--on-strong);font-size:18px;padding:8px 14px"><i data-icon="lucide:${icon}" style="width:22px;height:22px;flex:none"></i><span>${n} ${hi ? hn : en}</span></div>` : "");
       return wrap("references", `${head(c, x, { lede: false })}<div class="v5-body" style="gap:40px">
   <div class="v5-panel" style="flex:0 0 280px;background:var(--strong);color:var(--on-strong);display:flex;flex-direction:column;justify-content:center;gap:18px;padding:32px 28px">
     <span style="display:flex;color:var(--on-strong);opacity:.9"><i data-icon="lucide:book-open" style="width:56px;height:56px"></i></span>
-    <div style="font-family:var(--font-heading);font-weight:800;font-size:84px;line-height:1">${refs.length}</div>
-    <div style="font-size:20px;opacity:.85">${hi ? "स्रोत, जिनसे हर तथ्य लिया गया" : refs.length === 1 ? "source behind the facts" : "sources behind the facts"}</div>
-    <div style="display:flex;flex-direction:column;gap:10px;align-items:flex-start">${chip(sch, sch === 1 ? "scholarly paper" : "scholarly papers", "शोध पत्र", "graduation-cap")}${chip(enc, enc === 1 ? "encyclopedia entry" : "encyclopedia entries", "विश्वकोश लेख", "library")}${chip(other, other === 1 ? "other source" : "other sources", "अन्य स्रोत", "globe")}</div>
+    <div style="font-family:var(--font-heading);font-weight:800;font-size:84px;line-height:1">${total}</div>
+    <div style="font-size:20px;opacity:.85">${hi ? "स्रोत, जिनसे हर तथ्य लिया गया" : total === 1 ? "source behind the facts" : "sources behind the facts"}</div>
+    <div style="display:flex;flex-direction:column;gap:10px;align-items:flex-start">${chip(sch, sch === 1 ? "scholarly paper" : "scholarly papers", "शोध पत्र", "graduation-cap")}${chip(enc, enc === 1 ? "encyclopedia article" : "encyclopedia articles", "विश्वकोश लेख", "library")}${chip(other, other === 1 ? "other source" : "other sources", "अन्य स्रोत", "globe")}</div>
   </div>
   <div style="flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:14px" data-fit-box>
     <ol class="v5-refs" style="columns:1">${refs.map((r) => `<li><b>[${r.n}]</b><span>${esc(r.text)}</span></li>`).join("")}</ol>
