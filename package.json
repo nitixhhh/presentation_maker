@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test src/engine-v3/llm.test.ts src/engine-v3/fixes.test.ts src/engine-v3/quickfixes.test.ts src/engine-v3/render/geometry.test.ts src/engine-common/finalize.test.ts src/engine-common/icons/icons.test.ts src/engine-v5/v5.test.ts src/engine-v6/v6.test.ts src/server/keepAlive.test.ts src/server/access.test.ts src/server/plans.test.ts src/lib/client/store.test.ts"
+    "test": "tsx --test src/engine-v3/llm.test.ts src/engine-v3/fixes.test.ts src/engine-v3/quickfixes.test.ts src/engine-v3/render/geometry.test.ts src/engine-common/finalize.test.ts src/engine-common/icons/icons.test.ts src/engine-v5/v5.test.ts src/engine-v6/v6.test.ts src/server/keepAlive.test.ts src/server/access.test.ts src/server/plans.test.ts src/lib/client/store.test.ts src/engine-v7/v7.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
