@@ -256,6 +256,21 @@ ${people(x) ? `<div style="flex:none;border-top:1.5px solid color-mix(in srgb,va
     render: (c, x) => {
       const st = c.stat || { value: items(c)[0]?.value || "", label: items(c)[0]?.label || "" };
       const minis = items(c, 2).filter((i) => i.value && i.value !== st.value);
+      if (!minis.length) {
+        // one number alone: a full-width band — the number on a strong panel, its meaning beside it (no half-empty slide)
+        const icon = items(c)[0]?.icon || (x.deckIcons || [])[0];
+        return wrap("big-stat", `${head(c, x, { lede: false })}<div class="v5-body" style="align-items:stretch">
+  <div class="v5-panel v5-panel-primary" style="flex:0 0 46%;justify-content:center;align-items:flex-start;gap:14px;position:relative;overflow:hidden">
+    ${icon ? `<div style="position:absolute;inset:0;overflow:hidden;border-radius:inherit"><span style="position:absolute;right:-30px;bottom:-40px;opacity:.16;color:var(--on-strong);display:flex"><i data-icon="${esc(icon)}" style="width:260px;height:260px"></i></span></div>` : ""}
+    <p class="v5-statval" style="position:relative;color:var(--on-strong);font-size:${String(st.value).length > 5 ? Math.max(64, Math.floor(470 / (String(st.value).length * 0.68))) : 160}px;white-space:nowrap">${esc(st.value)}</p>
+    <div style="position:relative;width:80px;height:6px;border-radius:3px;background:var(--accent)"></div>
+  </div>
+  <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:calc(var(--s) * 20px);min-width:0" data-fit-box>
+    <p class="v5-statlabel" style="font-size:max(26px,calc(var(--s) * 36px));line-height:1.2">${esc(st.label)}</p>
+    ${st.text || c.lede ? `<p class="v5-p" style="color:var(--ink);opacity:.85;font-size:max(20px,calc(var(--s) * 22px))">${esc(st.text || c.lede)}</p>` : ""}
+  </div>
+</div>`, c, x);
+      }
       return wrap("big-stat", `${head(c, x, { lede: false })}<div class="v5-body">
   <div class="v5-panel v5-panel-soft" style="flex:1.35;justify-content:center;gap:calc(var(--s) * 18px)" data-fit-box>
     <p class="v5-statval" style="font-size:${String(st.value).length > 6 ? Math.max(64, Math.floor(620 / (String(st.value).length * 0.68))) : 150}px;white-space:nowrap">${esc(st.value)}</p>

@@ -709,6 +709,18 @@
      "icon": "star"
     }
    ]
+  },
+  "bs_alone": {
+   "title": "The first image of a black hole needed an Earth-sized telescope",
+   "stat": {
+    "value": "6.5 bn",
+    "label": "solar masses — the black hole at the centre of M87",
+    "text": "Imaged in 2019 by the Event Horizon Telescope, a network of radio dishes on four continents acting as one."
+   },
+   "items": [],
+   "cites": [
+    2
+   ]
   }
  },
  "Hindi": {
