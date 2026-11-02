@@ -25,7 +25,7 @@ export interface V3Request {
   imageMode?: "real-first" | "ai-allowed" | "none";
   styleHint?: string; // e.g. "dark and modern", "clean white academic"
   /** which engine makes the deck (set by the server: ENGINE_DEFAULT, or the owner's "New engine (beta)" switch) */
-  engine?: "v3" | "v4";
+  engine?: "v3" | "v4" | "v5";
 }
 
 export interface Brief {

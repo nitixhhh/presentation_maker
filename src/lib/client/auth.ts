@@ -16,7 +16,7 @@ export interface Me {
   payments: { provider: string; keyId?: string; testMode?: boolean } | null;
   pricing: { deck: number; firstDeck: number; pack5: number; referralCredits: number; freeEdits: number };
   /** engine v4 beta: the owner may choose the engine per deck */
-  engine?: { default: "v3" | "v4"; canChoose: boolean };
+  engine?: { default: "v3" | "v4" | "v5"; canChoose: boolean };
 }
 
 let sb: SupabaseClient | null = null;

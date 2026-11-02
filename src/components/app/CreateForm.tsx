@@ -16,7 +16,7 @@ export interface CreateRequest {
   presenter: { names: string; rollNo: string; department: string; institute: string; guide: string; course: string };
   ageConfirmed?: boolean;
   /** owner only: which engine makes the deck (the server ignores it for everyone else) */
-  engine?: "v3" | "v4";
+  engine?: "v3" | "v4" | "v5";
 }
 
 const EMPTY: CreateRequest = {
@@ -39,10 +39,17 @@ const label = "label";
 
 export const ENGINE_KEY = "dc_engine_v4";
 
-export default function CreateForm({ onSubmit, busy, error, canChooseEngine = false, engineDefault = "v3" }: { onSubmit: (r: CreateRequest) => void; busy: boolean; error: string | null; canChooseEngine?: boolean; engineDefault?: "v3" | "v4" }) {
+export default function CreateForm({ onSubmit, busy, error, canChooseEngine = false, engineDefault = "v3" }: { onSubmit: (r: CreateRequest) => void; busy: boolean; error: string | null; canChooseEngine?: boolean; engineDefault?: "v3" | "v4" | "v5" }) {
   const [r, setR] = useState<CreateRequest>(EMPTY);
   // owner-only "New engine (beta)" switch, remembered on this phone
-  const [useV4, setUseV4] = useState(() => (typeof window !== "undefined" && localStorage.getItem(ENGINE_KEY) ? localStorage.getItem(ENGINE_KEY) === "1" : engineDefault === "v4"));
+  const [engine, setEngine] = useState<"v3" | "v4" | "v5">(() => {
+    const saved = typeof window !== "undefined" ? localStorage.getItem(ENGINE_KEY) : null;
+    // older phones saved "1" (= the v4 switch on) / "0"
+    if (saved === "v3" || saved === "v4" || saved === "v5") return saved;
+    if (saved === "1") return "v4";
+    if (saved === "0") return "v3";
+    return engineDefault;
+  });
   const [more, setMore] = useState(false);
   // Gemini API terms: users must be 18+. Asked once per phone, remembered in localStorage.
   const [ageOk, setAgeOk] = useState(() => typeof window !== "undefined" && localStorage.getItem(AGE_KEY) === "1");
@@ -79,7 +86,7 @@ export default function CreateForm({ onSubmit, busy, error, canChooseEngine = fa
           ageRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
           return;
         }
-        onSubmit({ ...r, ageConfirmed: true, ...(canChooseEngine ? { engine: useV4 ? "v4" : "v3" } : {}) });
+        onSubmit({ ...r, ageConfirmed: true, ...(canChooseEngine ? { engine } : {}) });
       }}
       className="space-y-6"
     >
@@ -168,23 +175,32 @@ export default function CreateForm({ onSubmit, busy, error, canChooseEngine = fa
       </div>
 
       {canChooseEngine && (
-        <label className="flex cursor-pointer items-center justify-between gap-3 rounded-[var(--r-md)] border border-[var(--rule)] bg-[rgba(255,253,248,.7)] px-4 py-3.5">
-          <span className="min-w-0">
-            <span className="block text-[15px] font-medium text-[var(--ink)]">New engine (beta)</span>
-            <span className="block text-[12.5px] text-[var(--muted)]">Slide-by-slide agents with icons and diagrams. Only you see this switch.</span>
-          </span>
-          <input
-            type="checkbox"
-            className="check"
-            role="switch"
-            aria-checked={useV4}
-            checked={useV4}
-            onChange={(e) => {
-              setUseV4(e.target.checked);
-              localStorage.setItem(ENGINE_KEY, e.target.checked ? "1" : "0");
-            }}
-          />
-        </label>
+        <div className="rounded-[var(--r-md)] border border-[var(--rule)] bg-[rgba(255,253,248,.7)] px-4 py-3.5">
+          <span className="block text-[15px] font-medium text-[var(--ink)]">Engine</span>
+          <span className="mb-2.5 block text-[12.5px] text-[var(--muted)]">Only you see this choice. Classic is what every user gets.</span>
+          <div role="radiogroup" aria-label="Engine" className="grid grid-cols-3 gap-2">
+            {([
+              ["v3", "Classic", "v3"],
+              ["v5", "Templates", "v5 beta"],
+              ["v4", "Agents", "v4 beta"],
+            ] as const).map(([id, name, tag]) => (
+              <button
+                key={id}
+                type="button"
+                role="radio"
+                aria-checked={engine === id}
+                onClick={() => {
+                  setEngine(id);
+                  localStorage.setItem(ENGINE_KEY, id);
+                }}
+                className={`rounded-[10px] border px-2 py-2.5 text-center transition-colors ${engine === id ? "border-[var(--ink)] bg-[var(--ink)] text-[var(--paper,#fffdf8)]" : "border-[var(--rule)] text-[var(--ink)]"}`}
+              >
+                <span className="block text-[14px] font-medium">{name}</span>
+                <span className="block text-[11.5px] opacity-75">{tag}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
       {error && <p className="rounded-[var(--r-md)] border border-[#EBC3B6] bg-[var(--bad-soft)] px-4 py-3 text-[14px] text-[var(--bad)]">{error}</p>}

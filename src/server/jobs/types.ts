@@ -30,7 +30,7 @@ export interface LiveSlide {
 }
 
 export interface LiveDeck {
-  engine: "v4";
+  engine: "v4" | "v5";
   slides: LiveSlide[];
 }
 
@@ -60,7 +60,7 @@ export interface JobRecord {
 export interface JobView extends Omit<JobRecord, "ownerKey" | "userId" | "request"> {
   topic: string;
   slideCount?: number;
-  engine?: "v3" | "v4";
+  engine?: "v3" | "v4" | "v5";
   queuePosition?: number; // 1 = next to start
   etaSeconds?: number; // until the deck is ready
   elapsedSeconds?: number;

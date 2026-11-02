@@ -1,0 +1,846 @@
+{
+ "English": {
+  "title-hero": {
+   "title": "Black Holes: Where Space and Time Break Down",
+   "lede": "How collapsed stars bend light, swallow matter and test Einstein's theory"
+  },
+  "title-split": {
+   "title": "Black Holes: Where Space and Time Break Down",
+   "lede": "How collapsed stars bend light, swallow matter and test Einstein's theory",
+   "items": [
+    {
+     "icon": "orbit"
+    },
+    {
+     "icon": "telescope"
+    },
+    {
+     "icon": "atom"
+    }
+   ],
+   "photo": ""
+  },
+  "title-type": {
+   "title": "Black Holes: Where Space and Time Break Down",
+   "lede": "How collapsed stars bend light and test Einstein's theory"
+  },
+  "agenda": {
+   "title": "Agenda",
+   "items": [
+    {
+     "title": "What is a black hole?",
+     "text": "Escape velocity and the event horizon"
+    },
+    {
+     "title": "How they form",
+     "text": "From massive stars to supermassive giants"
+    },
+    {
+     "title": "Seeing the invisible",
+     "text": "Accretion disks, gravitational waves, EHT"
+    },
+    {
+     "title": "Hawking radiation",
+     "text": "Do black holes evaporate?"
+    },
+    {
+     "title": "Open questions",
+     "text": "Information paradox and beyond"
+    }
+   ]
+  },
+  "section": {
+   "eyebrow": "Part 2",
+   "title": "How Black Holes Form",
+   "lede": "From the death of massive stars to the giants at galaxy centres"
+  },
+  "big-stat": {
+   "title": "The first image of a black hole needed an Earth-sized telescope",
+   "stat": {
+    "value": "6.5 bn",
+    "label": "solar masses — the black hole at the centre of M87",
+    "text": "Imaged in 2019 by the Event Horizon Telescope, a network of radio dishes on four continents acting as one."
+   },
+   "items": [
+    {
+     "value": "55 M",
+     "label": "light-years away from Earth"
+    },
+    {
+     "value": "8",
+     "label": "observatories linked across the planet"
+    }
+   ],
+   "cites": [
+    2
+   ]
+  },
+  "stats-row": {
+   "title": "Black holes come in very different sizes",
+   "lede": "Mass decides how they form and where we find them",
+   "items": [
+    {
+     "value": "5–100",
+     "label": "Stellar-mass",
+     "text": "Solar masses; left behind when a massive star collapses",
+     "icon": "star"
+    },
+    {
+     "value": "10³–10⁵",
+     "label": "Intermediate",
+     "text": "Rare middle-weights, found in dense star clusters",
+     "icon": "sparkles"
+    },
+    {
+     "value": "10⁶–10¹⁰",
+     "label": "Supermassive",
+     "text": "Sit at the centre of almost every large galaxy",
+     "icon": "orbit"
+    }
+   ]
+  },
+  "cards-3": {
+   "title": "Three properties describe every black hole",
+   "lede": "The “no-hair” theorem: nothing else survives the collapse",
+   "items": [
+    {
+     "icon": "weight",
+     "title": "Mass",
+     "text": "Sets the size of the event horizon and the strength of gravity around it."
+    },
+    {
+     "icon": "rotate-cw",
+     "title": "Spin",
+     "text": "Rotation drags space-time around with it, an effect called frame dragging."
+    },
+    {
+     "icon": "zap",
+     "title": "Charge",
+     "text": "Possible in theory, but real black holes are almost perfectly neutral."
+    }
+   ],
+   "cites": [
+    1
+   ]
+  },
+  "cards-4": {
+   "title": "How we detect something that emits no light",
+   "items": [
+    {
+     "icon": "orbit",
+     "title": "Star orbits",
+     "text": "Stars whipping around an unseen mass at Sagittarius A*"
+    },
+    {
+     "icon": "flame",
+     "title": "Accretion disks",
+     "text": "Gas heated to millions of degrees glows in X-rays"
+    },
+    {
+     "icon": "waves",
+     "title": "Gravitational waves",
+     "text": "Ripples from merging black holes, caught by LIGO in 2015"
+    },
+    {
+     "icon": "telescope",
+     "title": "Direct imaging",
+     "text": "The shadow of M87* and Sgr A* seen by the EHT"
+    }
+   ]
+  },
+  "cards-2": {
+   "title": "Two ways a black hole grows",
+   "items": [
+    {
+     "icon": "git-merge",
+     "title": "Mergers",
+     "text": "Two black holes spiral together and become one, releasing a burst of gravitational waves that LIGO can hear."
+    },
+    {
+     "icon": "utensils",
+     "title": "Accretion",
+     "text": "Gas, dust and stars fall in over millions of years; quasars are black holes feeding fastest."
+    }
+   ]
+  },
+  "icon-rows-photo": {
+   "title": "Inside the event horizon nothing can escape",
+   "items": [
+    {
+     "icon": "circle-dot",
+     "title": "Event horizon",
+     "text": "The boundary where escape speed equals the speed of light"
+    },
+    {
+     "icon": "target",
+     "title": "Singularity",
+     "text": "Where our current physics stops making predictions"
+    },
+    {
+     "icon": "sun",
+     "title": "Photon sphere",
+     "text": "Light can orbit the black hole in unstable circles"
+    }
+   ]
+  },
+  "photo-split": {
+   "title": "Gravity bends light around a black hole",
+   "lede": "Massive objects curve space-time, so light follows curved paths.",
+   "items": [
+    {
+     "title": "Lensing",
+     "text": "Background galaxies appear stretched into arcs"
+    },
+    {
+     "title": "Shadow",
+     "text": "A dark region about 2.5× the horizon size"
+    },
+    {
+     "title": "Photon ring",
+     "text": "A thin bright ring of light that circled the hole"
+    }
+   ]
+  },
+  "photo-full": {
+   "title": "We finally saw the shadow of a black hole",
+   "lede": "In 2019 the Event Horizon Telescope released the first image: M87*, 55 million light-years away."
+  },
+  "timeline": {
+   "title": "A century from idea to image",
+   "items": [
+    {
+     "label": "1916",
+     "title": "Schwarzschild",
+     "text": "First exact solution of Einstein's equations"
+    },
+    {
+     "label": "1939",
+     "title": "Oppenheimer",
+     "text": "Shows massive stars can collapse completely"
+    },
+    {
+     "label": "1974",
+     "title": "Hawking radiation",
+     "text": "Black holes should slowly glow and evaporate"
+    },
+    {
+     "label": "2015",
+     "title": "LIGO detection",
+     "text": "Gravitational waves from two merging holes"
+    },
+    {
+     "label": "2019",
+     "title": "First image",
+     "text": "EHT photographs the shadow of M87*"
+    }
+   ]
+  },
+  "process": {
+   "title": "How a massive star becomes a black hole",
+   "items": [
+    {
+     "icon": "sun",
+     "title": "Fuel runs out",
+     "text": "Fusion stops in a star above ~20 solar masses"
+    },
+    {
+     "icon": "arrow-down-to-dot",
+     "title": "Core collapse",
+     "text": "Gravity crushes the core in under a second"
+    },
+    {
+     "icon": "sparkles",
+     "title": "Supernova",
+     "text": "Outer layers are blasted into space"
+    },
+    {
+     "icon": "circle-dot",
+     "title": "Black hole",
+     "text": "The core keeps collapsing past the horizon"
+    }
+   ]
+  },
+  "cycle": {
+   "title": "Matter around a black hole moves in a cycle",
+   "lede": "Gas spirals in, heats up, and part of it is blasted back out as jets.",
+   "items": [
+    {
+     "icon": "wind",
+     "title": "Infall",
+     "text": "Gas drawn in"
+    },
+    {
+     "icon": "disc",
+     "title": "Accretion disk",
+     "text": "Spirals and heats"
+    },
+    {
+     "icon": "zap",
+     "title": "Jets",
+     "text": "Launched by magnetic fields"
+    },
+    {
+     "icon": "cloud",
+     "title": "Outflow",
+     "text": "Heats the galaxy"
+    },
+    {
+     "icon": "sun",
+     "title": "Radiation",
+     "text": "Glows in X-rays"
+    }
+   ],
+   "center": "Feeding cycle"
+  },
+  "hub": {
+   "title": "What shapes a black hole's surroundings",
+   "center": "Black hole",
+   "items": [
+    {
+     "icon": "circle-dot",
+     "title": "Event horizon",
+     "text": "Point of no return"
+    },
+    {
+     "icon": "disc",
+     "title": "Accretion disk",
+     "text": "Hot spiralling gas"
+    },
+    {
+     "icon": "zap",
+     "title": "Jets",
+     "text": "Near light-speed beams"
+    },
+    {
+     "icon": "sun",
+     "title": "Photon sphere",
+     "text": "Light in orbit"
+    },
+    {
+     "icon": "orbit",
+     "title": "Ergosphere",
+     "text": "Space dragged by spin"
+    }
+   ]
+  },
+  "layers": {
+   "title": "Black holes span a ladder of sizes",
+   "items": [
+    {
+     "title": "Supermassive",
+     "text": "Millions to billions of suns; in galaxy cores"
+    },
+    {
+     "title": "Intermediate",
+     "text": "Hundreds to thousands of suns; rare"
+    },
+    {
+     "title": "Stellar",
+     "text": "5–100 suns; from collapsed stars"
+    },
+    {
+     "title": "Primordial",
+     "text": "Hypothetical; may have formed after the Big Bang"
+    }
+   ]
+  },
+  "comparison": {
+   "title": "Neutron star vs black hole",
+   "left": {
+    "title": "Neutron star",
+    "icon": "atom",
+    "points": [
+     "Forms from stars of 8–20 solar masses",
+     "Has a solid surface of neutrons",
+     "Can be seen directly as a pulsar"
+    ]
+   },
+   "right": {
+    "title": "Black hole",
+    "icon": "circle-dot",
+    "points": [
+     "Forms from stars above ~20 solar masses",
+     "No surface — only an event horizon",
+     "Seen only through its effects"
+    ]
+   }
+  },
+  "pros-cons": {
+   "title": "What black hole research gives us — and what limits it",
+   "left": {
+    "title": "What we gain",
+    "points": [
+     "Tests of general relativity in extreme gravity",
+     "New tools like gravitational-wave astronomy",
+     "Clues to how galaxies grow"
+    ]
+   },
+   "right": {
+    "title": "What limits us",
+    "points": [
+     "Nothing escapes, so we only see effects",
+     "Observations need planet-scale telescopes",
+     "Quantum gravity is still unsolved"
+    ]
+   }
+  },
+  "quote": {
+   "title": "A shift in how we see them",
+   "quote": {
+    "text": "Black holes ain't as black as they are painted. They are not the eternal prisons they were once thought.",
+    "author": "Stephen Hawking",
+    "role": "Theoretical physicist, 1942–2018"
+   },
+   "photo": ""
+  },
+  "chart": {
+   "title": "The black holes LIGO hears are heavier than expected",
+   "chart": {
+    "kind": "bars",
+    "unit": " M☉",
+    "items": [
+     {
+      "label": "GW150914",
+      "value": 62
+     },
+     {
+      "label": "GW170104",
+      "value": 49
+     },
+     {
+      "label": "GW170814",
+      "value": 53
+     },
+     {
+      "label": "GW190521",
+      "value": 142
+     }
+    ]
+   },
+   "stat": {
+    "value": "142",
+    "label": "solar masses — GW190521"
+   },
+   "takeaway": "The 2019 merger produced the first confirmed intermediate-mass black hole."
+  },
+  "table": {
+   "title": "Types of black holes at a glance",
+   "table": {
+    "columns": [
+     "Type",
+     "Mass (suns)",
+     "Where found"
+    ],
+    "rows": [
+     [
+      "Stellar",
+      "5–100",
+      "Throughout galaxies"
+     ],
+     [
+      "Intermediate",
+      "100–100,000",
+      "Dense star clusters"
+     ],
+     [
+      "Supermassive",
+      "Millions–billions",
+      "Galaxy centres"
+     ],
+     [
+      "Primordial",
+      "Any (hypothetical)",
+      "Early universe"
+     ]
+    ]
+   }
+  },
+  "definition": {
+   "title": "What is a black hole?",
+   "term": "Black hole",
+   "lede": "A region of space-time where gravity is so strong that nothing — not even light — can escape once it crosses the event horizon.",
+   "items": [
+    {
+     "icon": "circle-dot",
+     "title": "Event horizon",
+     "text": "The one-way boundary"
+    },
+    {
+     "icon": "weight",
+     "title": "Huge density",
+     "text": "Mass packed into a tiny volume"
+    },
+    {
+     "icon": "eye-off",
+     "title": "Invisible",
+     "text": "Seen only by its effects"
+    }
+   ]
+  },
+  "matrix": {
+   "title": "Ways to observe black holes",
+   "axes": {
+    "x": "Distance",
+    "y": "Detail"
+   },
+   "items": [
+    {
+     "icon": "telescope",
+     "title": "EHT imaging",
+     "text": "Close, very detailed"
+    },
+    {
+     "icon": "waves",
+     "title": "LIGO",
+     "text": "Far, signal only"
+    },
+    {
+     "icon": "orbit",
+     "title": "Star orbits",
+     "text": "Our galaxy only"
+    },
+    {
+     "icon": "flame",
+     "title": "X-ray glow",
+     "text": "Bright accretion"
+    }
+   ]
+  },
+  "diagram": {
+   "title": "Black holes classified by origin",
+   "diagram": "tree",
+   "items": [
+    {
+     "title": "Black holes",
+     "icon": "circle-dot"
+    },
+    {
+     "title": "Astrophysical",
+     "parent": "Black holes",
+     "icon": "star"
+    },
+    {
+     "title": "Primordial",
+     "parent": "Black holes",
+     "icon": "sparkles"
+    },
+    {
+     "title": "Stellar",
+     "parent": "Astrophysical"
+    },
+    {
+     "title": "Supermassive",
+     "parent": "Astrophysical"
+    }
+   ]
+  },
+  "text-focus": {
+   "title": "Why black holes matter for physics",
+   "lede": "They are the only places where gravity and quantum physics must both apply at once.",
+   "items": [
+    {
+     "icon": "atom",
+     "title": "Quantum meets gravity",
+     "text": "Hawking radiation hints at how the two theories fit together"
+    },
+    {
+     "icon": "file-question",
+     "title": "Information paradox",
+     "text": "Is information destroyed when matter falls in?"
+    },
+    {
+     "icon": "telescope",
+     "title": "Testing Einstein",
+     "text": "Every new observation so far agrees with general relativity"
+    }
+   ],
+   "photo": ""
+  },
+  "takeaways": {
+   "title": "Key takeaways",
+   "items": [
+    {
+     "title": "Gravity wins",
+     "text": "Black holes form when gravity overwhelms every other force"
+    },
+    {
+     "title": "Seen by effects",
+     "text": "We detect them through orbits, light and gravitational waves"
+    },
+    {
+     "title": "Three numbers",
+     "text": "Mass, spin and charge describe them completely"
+    },
+    {
+     "title": "Open frontier",
+     "text": "They are where quantum physics meets gravity"
+    }
+   ],
+   "takeaway": "Black holes turned from a mathematical curiosity into objects we can photograph."
+  },
+  "references": {
+   "title": "References"
+  },
+  "closing": {
+   "title": "Thank you",
+   "lede": "Questions? Let's explore the dark side of the universe together."
+  },
+  "hub3": {
+   "title": "What shapes a black hole's surroundings",
+   "center": "Black hole",
+   "items": [
+    {
+     "icon": "circle-dot",
+     "title": "Event horizon",
+     "text": "Point of no return"
+    },
+    {
+     "icon": "disc",
+     "title": "Accretion disk",
+     "text": "Hot spiralling gas"
+    },
+    {
+     "icon": "zap",
+     "title": "Jets",
+     "text": "Near light-speed beams"
+    }
+   ]
+  },
+  "process5": {
+   "title": "How a massive star becomes a black hole",
+   "items": [
+    {
+     "icon": "sun",
+     "title": "Fuel runs out",
+     "text": "Fusion stops in a star above ~20 solar masses"
+    },
+    {
+     "icon": "arrow-down-to-dot",
+     "title": "Core collapse",
+     "text": "Gravity crushes the core in under a second"
+    },
+    {
+     "icon": "sparkles",
+     "title": "Supernova",
+     "text": "Outer layers are blasted into space"
+    },
+    {
+     "icon": "circle-dot",
+     "title": "Black hole",
+     "text": "The core keeps collapsing past the horizon"
+    },
+    {
+     "icon": "sun",
+     "title": "Fuel runs out",
+     "text": "Fusion stops in a star above ~20 solar masses"
+    }
+   ]
+  },
+  "cycle3": {
+   "title": "Matter around a black hole moves in a cycle",
+   "lede": "Gas spirals in, heats up, and part of it is blasted back out as jets.",
+   "items": [
+    {
+     "icon": "wind",
+     "title": "Infall",
+     "text": "Gas drawn in"
+    },
+    {
+     "icon": "disc",
+     "title": "Accretion disk",
+     "text": "Spirals and heats"
+    },
+    {
+     "icon": "zap",
+     "title": "Jets",
+     "text": "Launched by magnetic fields"
+    }
+   ],
+   "center": "Feeding cycle"
+  },
+  "tf_nolede": {
+   "title": "Why black holes matter for physics",
+   "lede": "",
+   "items": [
+    {
+     "icon": "atom",
+     "title": "Quantum meets gravity",
+     "text": "Hawking radiation hints at how the two theories fit together"
+    },
+    {
+     "icon": "file-question",
+     "title": "Information paradox",
+     "text": "Is information destroyed when matter falls in?"
+    },
+    {
+     "icon": "telescope",
+     "title": "Testing Einstein",
+     "text": "Every new observation so far agrees with general relativity"
+    }
+   ],
+   "photo": ""
+  },
+  "sr_long": {
+   "title": "Black holes come in very different sizes",
+   "lede": "Mass decides how they form and where we find them",
+   "items": [
+    {
+     "value": "₹10,000 crore",
+     "label": "Fund of Funds",
+     "text": "Government corpus for SEBI-registered AIFs",
+     "icon": "landmark"
+    },
+    {
+     "value": "1.17 lakh",
+     "label": "Recognised startups",
+     "text": "DPIIT-recognised startups by 2024",
+     "icon": "rocket"
+    },
+    {
+     "value": "$25 bn",
+     "label": "VC in 2022",
+     "text": "Venture capital invested in Indian startups",
+     "icon": "trending-up"
+    },
+    {
+     "value": "110+",
+     "label": "Unicorns",
+     "text": "Startups valued above $1 billion",
+     "icon": "star"
+    }
+   ]
+  }
+ },
+ "Hindi": {
+  "title-split": {
+   "title": "कृत्रिम बुद्धिमत्ता और स्वास्थ्य सेवा",
+   "lede": "निदान, उपचार और अस्पताल प्रबंधन में AI की बढ़ती भूमिका",
+   "items": [
+    {
+     "icon": "brain"
+    },
+    {
+     "icon": "stethoscope"
+    },
+    {
+     "icon": "activity"
+    }
+   ]
+  },
+  "agenda": {
+   "title": "विषय सूची",
+   "items": [
+    {
+     "title": "AI क्या है?",
+     "text": "मशीनें जो सीखती हैं"
+    },
+    {
+     "title": "रोग निदान",
+     "text": "एक्स-रे और स्कैन का विश्लेषण"
+    },
+    {
+     "title": "दवा की खोज",
+     "text": "नई दवाएँ तेज़ी से"
+    },
+    {
+     "title": "चुनौतियाँ",
+     "text": "गोपनीयता और भरोसा"
+    },
+    {
+     "title": "निष्कर्ष",
+     "text": "आगे का रास्ता"
+    }
+   ]
+  },
+  "cards-3": {
+   "title": "AI तीन तरह से इलाज बेहतर बनाता है",
+   "lede": "डॉक्टर की जगह नहीं, डॉक्टर का सहायक",
+   "items": [
+    {
+     "icon": "scan",
+     "title": "तेज़ निदान",
+     "text": "स्कैन में छोटी-छोटी गड़बड़ियाँ भी पकड़ लेता है जो आँख से छूट सकती हैं।"
+    },
+    {
+     "icon": "pill",
+     "title": "व्यक्तिगत इलाज",
+     "text": "मरीज़ के डेटा के आधार पर सही दवा और खुराक सुझाता है।"
+    },
+    {
+     "icon": "hospital",
+     "title": "बेहतर प्रबंधन",
+     "text": "अस्पताल में बेड, स्टाफ और समय की योजना आसान बनाता है।"
+    }
+   ]
+  },
+  "timeline": {
+   "title": "स्वास्थ्य में AI का सफ़र",
+   "items": [
+    {
+     "label": "1972",
+     "title": "MYCIN",
+     "text": "संक्रमण पहचानने वाला पहला विशेषज्ञ सिस्टम"
+    },
+    {
+     "label": "2011",
+     "title": "IBM Watson",
+     "text": "कैंसर इलाज पर सलाह देने का प्रयास"
+    },
+    {
+     "label": "2018",
+     "title": "FDA मंज़ूरी",
+     "text": "आँख की बीमारी पहचानने वाला पहला AI उपकरण"
+    },
+    {
+     "label": "2020",
+     "title": "AlphaFold",
+     "text": "प्रोटीन की संरचना का सटीक अनुमान"
+    }
+   ]
+  },
+  "hub": {
+   "title": "AI के मुख्य उपयोग",
+   "center": "स्वास्थ्य में AI",
+   "items": [
+    {
+     "icon": "scan",
+     "title": "इमेजिंग",
+     "text": "एक्स-रे, MRI"
+    },
+    {
+     "icon": "dna",
+     "title": "जीनोमिक्स",
+     "text": "जीन विश्लेषण"
+    },
+    {
+     "icon": "pill",
+     "title": "दवा खोज",
+     "text": "नए अणु"
+    },
+    {
+     "icon": "heart-pulse",
+     "title": "निगरानी",
+     "text": "पहनने योग्य उपकरण"
+    }
+   ]
+  },
+  "takeaways": {
+   "title": "मुख्य बातें",
+   "items": [
+    {
+     "title": "सहायक, विकल्प नहीं",
+     "text": "AI डॉक्टर की मदद करता है"
+    },
+    {
+     "title": "डेटा ज़रूरी",
+     "text": "अच्छे डेटा से ही अच्छा AI"
+    },
+    {
+     "title": "नैतिकता",
+     "text": "गोपनीयता और पारदर्शिता ज़रूरी"
+    }
+   ],
+   "takeaway": "सही नियमों के साथ AI भारत में सस्ती और बेहतर स्वास्थ्य सेवा ला सकता है।"
+  }
+ }
+}

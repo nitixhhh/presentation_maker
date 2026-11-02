@@ -14,7 +14,8 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { generateDeckV3 } from "@/engine-v3/pipeline";
-import { generateDeckV4 } from "@/engine-v4/pipeline";
+import { generateDeckV4, type V4Options } from "@/engine-v4/pipeline";
+import { generateDeckV5 } from "@/engine-v5/pipeline";
 import { finalizePlaceholders, assertNoPlaceholdersInPptx } from "@/engine-v4/finalize";
 import { deckToken } from "../deckAuth";
 import { llmContext, type CallStat } from "@/engine-v3/llm";
@@ -23,6 +24,7 @@ import { exportPdf } from "@/engine-v3/export/pdf";
 import { exportPptx } from "@/engine-v3/export/pptx";
 import { exportNotesPdf } from "@/engine-v3/export/notes";
 import { editSlide } from "@/engine-v3/edit";
+import { editSlideV5 } from "@/engine-v5/edit";
 import { accounts } from "../accounts/store";
 import { renderPngs } from "@/engine-v3/export/png";
 import sharp from "sharp";
@@ -247,15 +249,14 @@ async function run(job: JobRecord) {
       job.deckId = id;
       persist(job, true);
     };
-    const v4 = job.request.engine === "v4";
-    const deck = await llmContext.run({ onWait, stats, routes: job.routes as any }, () =>
-      v4
-        ? generateDeckV4(job.request, {
+    const eng = job.request.engine === "v5" ? "v5" : job.request.engine === "v4" ? "v4" : "v3";
+    // engines v4 and v5 share the live slide-by-slide UI (each slide is shown the moment it is ready)
+    const liveOpts = (eng: "v4" | "v5"): V4Options => ({
             visionMode: job.visionMode,
             onProgress,
             onDeckId,
             onPlan: (slides) => {
-              job.progress.live = { engine: "v4", slides: slides.map((s) => ({ n: s.n, title: s.title, state: "waiting", statuses: [], v: 0 })) };
+              job.progress.live = { engine: eng, slides: slides.map((s) => ({ n: s.n, title: s.title, state: "waiting", statuses: [], v: 0 })) };
               persist(job, true);
               notify(job);
             },
@@ -272,7 +273,12 @@ async function run(job: JobRecord) {
               persist(job);
               notify(job);
             },
-          })
+          });
+    const deck = await llmContext.run({ onWait, stats, routes: job.routes as any }, () =>
+      eng === "v5"
+        ? generateDeckV5(job.request, liveOpts("v5"))
+        : eng === "v4"
+        ? generateDeckV4(job.request, liveOpts("v4"))
         : generateDeckV3(job.request, { visionMode: job.visionMode, onProgress, onDeckId })
     );
     job.deckId = deck.id;
@@ -324,7 +330,8 @@ async function runEdit(job: JobRecord, stats: CallStat[], onWait: (m: string) =>
     persist(job);
     notify(job);
   };
-  await llmContext.run({ onWait, stats }, () => editSlide(deck, e.n, e.instruction, emit));
+  // a v5 deck keeps its template: the slots are re-filled and re-rendered (the v3 designer edits every other deck)
+  await llmContext.run({ onWait, stats }, () => ((deck as any).engine === "v5" ? editSlideV5(deck, e.n, e.instruction, emit) : editSlide(deck, e.n, e.instruction, emit)));
   emit("Rebuilding PDF and PPTX", 90, "exporting");
   await buildExports(deck.id);
   await storage().persistDeck(deck.id, deckDir(deck.id));
@@ -359,7 +366,7 @@ export async function buildExports(deckId: string) {
   if (!deck) throw new Error("deck missing after generation");
   fs.mkdirSync(path.join(deckDir(deckId), "exports"), { recursive: true });
   // engine v4: hard final gate — real presenter details, empty detail rows removed, no "{{" in any exported slide
-  if ((deck as any).engine === "v4") {
+  if ((deck as any).engine === "v4" || (deck as any).engine === "v5") {
     const fixed = finalizePlaceholders(deck);
     if (fixed.length) {
       console.log(`[v4/export] deck ${deckId}: placeholder gate fixed ${fixed.join("; ")}`);
@@ -369,7 +376,7 @@ export async function buildExports(deckId: string) {
   // LOW_MEMORY (512 MB hosts): PDF then PPTX one after the other instead of both at once
   const lowMem = process.env.LOW_MEMORY === "true";
   const [pdf, pptx] = lowMem ? [await exportPdf(deck), await exportPptx(deck)] : await Promise.all([exportPdf(deck), exportPptx(deck)]);
-  if ((deck as any).engine === "v4") await assertNoPlaceholdersInPptx(pptx, deckId);
+  if ((deck as any).engine === "v4" || (deck as any).engine === "v5") await assertNoPlaceholdersInPptx(pptx, deckId);
   fs.writeFileSync(exportPath(deckId, "pdf"), pdf);
   fs.writeFileSync(exportPath(deckId, "pptx"), pptx);
   await buildPreviews(deckId);

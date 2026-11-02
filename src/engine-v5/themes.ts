@@ -1,0 +1,166 @@
+/**
+ * Engine v5 — premium THEMES. A theme is a set of design tokens (palette, font pair, card surface, radius, shadow,
+ * background treatment, title treatment) that every template reads through CSS variables, so one deck = one family.
+ * The AI never writes colours or CSS: the planner may suggest a theme id, code decides (topic, style hint, language).
+ */
+import { buildDesignSystem, FONT_PAIRS, DEVANAGARI_PAIRS, contrast } from "../engine-v3/agents/artDirector";
+import type { DesignSystem, FontPair } from "../engine-v3/types";
+import { V5_CSS } from "./styles";
+
+export type CardStyle = "soft" | "outline" | "tint" | "glass";
+export type Decor = "orbs" | "grid" | "band" | "blobs" | "rings" | "lines" | "mesh" | "arcs";
+
+export interface Theme {
+  id: string;
+  name: string;
+  mood: string;
+  dark: boolean;
+  palette: { bg: string; surface: string; ink: string; muted: string; primary: string; accent: string; accent2: string };
+  /** heading/body pair (Latin decks); Hindi decks use the Devanagari pair */
+  font: string;
+  hindiFont: string;
+  card: CardStyle;
+  decor: Decor;
+  radius: number;
+  /** background of title / section / closing slides (CSS background value) */
+  hero: string;
+  /** text colour on the hero background */
+  heroInk: string;
+  heroMuted: string;
+  /** subjects this theme suits (for code's pick) */
+  suits: string[];
+}
+
+export const THEMES: Theme[] = [
+  {
+    id: "aurora", name: "Aurora", mood: "dark, luminous, technical", dark: true,
+    palette: { bg: "#0b1022", surface: "#141b33", ink: "#eef2ff", muted: "#aab4d4", primary: "#7c9cff", accent: "#2dd4bf", accent2: "#c084fc" },
+    font: "technical", hindiFont: "hindi-sans", card: "glass", decor: "orbs", radius: 20,
+    hero: "radial-gradient(1100px 700px at 85% 10%, #3b2a8c 0%, transparent 60%), radial-gradient(900px 600px at 0% 100%, #0e5a6a 0%, transparent 55%), #0b1022",
+    heroInk: "#ffffff", heroMuted: "#c7d0ee",
+    suits: ["computer", "ai", "artificial", "technology", "space", "physics", "quantum", "data", "cyber", "software", "internet", "robot", "simulation", "universe", "black hole", "astronomy", "electronics", "network", "blockchain"],
+  },
+  {
+    id: "ivory", name: "Ivory Editorial", mood: "warm, scholarly, editorial", dark: false,
+    palette: { bg: "#f8f5ef", surface: "#ffffff", ink: "#1f1a17", muted: "#5b524b", primary: "#8c2f1b", accent: "#1f6f6b", accent2: "#c08a2b" },
+    font: "editorial", hindiFont: "hindi-serif", card: "outline", decor: "lines", radius: 6,
+    hero: "linear-gradient(180deg,#f8f5ef 0%,#f1ebe0 100%)",
+    heroInk: "#1f1a17", heroMuted: "#5b524b",
+    suits: ["history", "literature", "philosophy", "art", "culture", "politics", "law", "society", "religion", "language", "poetry", "ethics", "civilization", "independence", "constitution"],
+  },
+  {
+    id: "ocean", name: "Ocean Corporate", mood: "clean, confident, professional", dark: false,
+    palette: { bg: "#ffffff", surface: "#f2f6fc", ink: "#0e1a2f", muted: "#4a5a72", primary: "#1f5bd8", accent: "#f2a114", accent2: "#12a594" },
+    font: "geometric", hindiFont: "hindi-sans", card: "tint", decor: "arcs", radius: 18,
+    hero: "linear-gradient(135deg,#0f2f73 0%,#1f5bd8 60%,#3d8bfd 100%)",
+    heroInk: "#ffffff", heroMuted: "#d6e4ff",
+    suits: ["business", "marketing", "finance", "economics", "management", "startup", "bank", "market", "sales", "commerce", "trade", "strategy", "accounting", "gst", "tax"],
+  },
+  {
+    id: "forest", name: "Forest", mood: "natural, calm, organic", dark: false,
+    palette: { bg: "#f4f7f1", surface: "#ffffff", ink: "#15291c", muted: "#4b5e51", primary: "#2e6b46", accent: "#d4870b", accent2: "#7a9e3b" },
+    font: "classic", hindiFont: "hindi-serif", card: "soft", decor: "blobs", radius: 22,
+    hero: "radial-gradient(900px 600px at 100% 0%, #cfe3c9 0%, transparent 60%), linear-gradient(160deg,#f4f7f1 0%,#e6efe1 100%)",
+    heroInk: "#15291c", heroMuted: "#4b5e51",
+    suits: ["biology", "environment", "climate", "plant", "ecology", "agriculture", "photosynthesis", "forest", "water", "earth", "nature", "sustainab", "pollution", "wildlife", "geography", "health", "nutrition"],
+  },
+  {
+    id: "noir", name: "Noir & Gold", mood: "premium, dramatic, elegant", dark: true,
+    palette: { bg: "#121212", surface: "#1c1c1c", ink: "#f6f1e7", muted: "#bdb4a3", primary: "#d6a84f", accent: "#e8dcc2", accent2: "#a7743a" },
+    font: "friendly", hindiFont: "hindi-serif", card: "outline", decor: "rings", radius: 4,
+    hero: "radial-gradient(800px 600px at 80% 20%, #3a2e18 0%, transparent 60%), #121212",
+    heroInk: "#f6f1e7", heroMuted: "#cfc4ae",
+    suits: ["luxury", "fashion", "music", "film", "cinema", "architecture", "design", "leadership", "biography", "award"],
+  },
+  {
+    id: "coral", name: "Coral Pop", mood: "bold, energetic, modern", dark: false,
+    palette: { bg: "#fff8f4", surface: "#ffffff", ink: "#16213b", muted: "#555f78", primary: "#e5484d", accent: "#16213b", accent2: "#f59e0b" },
+    font: "modern", hindiFont: "hindi-sans", card: "soft", decor: "rings", radius: 24,
+    hero: "linear-gradient(135deg,#ff6b5e 0%,#e5484d 55%,#b83250 100%)",
+    heroInk: "#ffffff", heroMuted: "#ffe1dc",
+    suits: ["social media", "youth", "sport", "food", "travel", "media", "advertis", "brand", "entrepreneur", "psychology", "motivation", "communication"],
+  },
+  {
+    id: "mono", name: "Swiss Mono", mood: "minimal, precise, modern", dark: false,
+    palette: { bg: "#fafafa", surface: "#ffffff", ink: "#111111", muted: "#555555", primary: "#111111", accent: "#ff5a1f", accent2: "#2563eb" },
+    font: "geometric", hindiFont: "hindi-sans", card: "outline", decor: "grid", radius: 0,
+    hero: "#111111",
+    heroInk: "#ffffff", heroMuted: "#c8c8c8",
+    suits: ["engineering", "mathematics", "statistics", "research", "methodology", "design", "architecture", "algorithm", "mechanical", "civil"],
+  },
+  {
+    id: "royal", name: "Royal Indigo", mood: "rich, academic, vivid", dark: false,
+    palette: { bg: "#f6f5fd", surface: "#ffffff", ink: "#1b1640", muted: "#544e78", primary: "#4b3fc4", accent: "#e8a317", accent2: "#d9467a" },
+    font: "scholarly", hindiFont: "hindi-sans", card: "soft", decor: "mesh", radius: 16,
+    hero: "radial-gradient(900px 600px at 90% 0%, #6d5ef0 0%, transparent 60%), linear-gradient(150deg,#221a6b 0%,#3a2fa8 100%)",
+    heroInk: "#ffffff", heroMuted: "#d9d4ff",
+    suits: ["education", "chemistry", "medicine", "science", "psychology", "university", "seminar", "research", "neuroscience", "genetics", "dna", "cell"],
+  },
+];
+
+export function themeById(id: string): Theme | undefined {
+  return THEMES.find((t) => t.id === id);
+}
+
+function hash(s: string): number {
+  let h = 2166136261;
+  for (const c of s) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+  return h >>> 0;
+}
+
+/** code's pick: an explicit style hint wins, then the planner's suggestion if it suits, then subject keywords */
+export function pickTheme(opts: { topic: string; subject?: string; styleHint?: string; suggested?: string }): Theme {
+  const hint = String(opts.styleHint || "").toLowerCase();
+  if (hint) {
+    if (/\b(dark|black|night|neon|tech)\b/.test(hint)) return /gold|premium|luxur|elegant/.test(hint) ? themeById("noir")! : themeById("aurora")!;
+    if (/gold|premium|luxur|elegant/.test(hint)) return themeById("noir")!;
+    if (/minimal|simple|clean white|swiss|black and white/.test(hint)) return themeById("mono")!;
+    if (/green|nature|eco/.test(hint)) return themeById("forest")!;
+    if (/corporate|business|blue|professional/.test(hint)) return themeById("ocean")!;
+    if (/colou?rful|bold|vibrant|fun|bright/.test(hint)) return themeById("coral")!;
+    if (/classic|vintage|editorial|academic|formal/.test(hint)) return themeById("ivory")!;
+    if (/purple|indigo|violet|royal/.test(hint)) return themeById("royal")!;
+  }
+  const text = `${opts.topic} ${opts.subject || ""}`.toLowerCase();
+  const scored = THEMES.map((t) => ({ t, s: t.suits.reduce((a, k) => a + (text.includes(k) ? 1 : 0), 0) }));
+  const sug = opts.suggested ? scored.find((x) => x.t.id === opts.suggested) : undefined;
+  const best = Math.max(...scored.map((x) => x.s));
+  if (sug && (sug.s > 0 || best === 0)) return sug.t;
+  if (best > 0) {
+    const top = scored.filter((x) => x.s === best);
+    return top[hash(text) % top.length].t;
+  }
+  const fallback = ["royal", "ocean", "forest", "aurora", "ivory"];
+  return themeById(fallback[hash(text) % fallback.length])!;
+}
+
+export function fontPairFor(theme: Theme, language: string): FontPair {
+  if (language === "Hindi") return DEVANAGARI_PAIRS.find((p) => p.id === theme.hindiFont) || DEVANAGARI_PAIRS[0];
+  return FONT_PAIRS.find((p) => p.id === theme.font) || FONT_PAIRS[0];
+}
+
+/** The deck's DesignSystem: v3's base (fonts, variables, reset) + the v5 theme tokens + the template stylesheet. */
+export function themeDesignSystem(theme: Theme, language: string): DesignSystem & { v5Theme: string } {
+  const font = fontPairFor(theme, language);
+  const p = theme.palette;
+  const base = buildDesignSystem({
+    name: theme.name,
+    mood: theme.mood,
+    dark: theme.dark,
+    palette: { ...p },
+    font,
+    motif: `${theme.decor} background treatment, ${theme.card} cards`,
+    rules: [],
+  });
+  const onPrimary = contrast("#ffffff", p.primary) >= contrast("#111111", p.primary) ? "#ffffff" : "#111111";
+  const onAccent = contrast("#ffffff", p.accent) >= contrast("#111111", p.accent) ? "#ffffff" : "#111111";
+  const cardCss: Record<CardStyle, string> = {
+    soft: `background:var(--surface);border:1px solid color-mix(in srgb,var(--ink) 6%,transparent);box-shadow:0 18px 40px -18px color-mix(in srgb,var(--ink) 28%,transparent),0 2px 6px color-mix(in srgb,var(--ink) 5%,transparent);`,
+    outline: `background:var(--surface);border:1.5px solid color-mix(in srgb,var(--ink) 16%,transparent);`,
+    tint: `background:color-mix(in srgb,var(--primary) 7%,var(--surface));border:1px solid color-mix(in srgb,var(--primary) 14%,transparent);`,
+    glass: `background:color-mix(in srgb,#ffffff 6%,transparent);border:1px solid color-mix(in srgb,#ffffff 13%,transparent);box-shadow:inset 0 1px 0 color-mix(in srgb,#ffffff 8%,transparent);`,
+  };
+  const vars = `:root{--on-primary:${onPrimary};--on-accent:${onAccent};--radius:${theme.radius}px;--radius-sm:${Math.max(0, Math.round(theme.radius * 0.6))}px;--hero:${theme.hero};--hero-ink:${theme.heroInk};--hero-muted:${theme.heroMuted};--line:color-mix(in srgb,var(--ink) 14%,transparent);--soft:color-mix(in srgb,var(--primary) ${theme.dark ? 22 : 12}%,transparent);--soft2:color-mix(in srgb,var(--accent) ${theme.dark ? 22 : 14}%,transparent);--strong:${theme.dark ? `linear-gradient(150deg,color-mix(in srgb,${p.primary} 34%,${p.bg}),color-mix(in srgb,${p.accent2} 22%,${p.bg}))` : p.primary};--on-strong:${theme.dark ? p.ink : onPrimary};}
+.slide .v5-card{${cardCss[theme.card]}border-radius:var(--radius);}`;
+  return { ...base, css: `${base.css}\n${vars}\n${V5_CSS}`, v5Theme: theme.id };
+}

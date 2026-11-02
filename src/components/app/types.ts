@@ -13,7 +13,7 @@ export interface JobView {
   startedAt?: string;
   finishedAt?: string;
   progress: { stage: JobStage; step: string; percent: number; details?: string; notice?: string; log: { t: string; agent: string; msg: string }[]; live?: LiveDeck };
-  engine?: "v3" | "v4";
+  engine?: "v3" | "v4" | "v5";
   queuePosition?: number;
   etaSeconds?: number;
   elapsedSeconds?: number;
@@ -50,6 +50,6 @@ export interface LiveSlide {
   image?: string;
 }
 export interface LiveDeck {
-  engine: "v4";
+  engine: "v4" | "v5";
   slides: LiveSlide[];
 }

@@ -69,7 +69,7 @@ import { closeBrowser } from "../src/engine-v3/render/browser";
   const calls = deck.calls || [];
   const byRole: Record<string, number> = {};
   for (const c of calls) byRole[c.role] = (byRole[c.role] || 0) + 1;
-  const stats = { deckId: deck.id, jobId: job.id, seconds: secs, firstSlideReadyAt: Math.min(...Object.values(firstReady)), readyAt: firstReady, aiCalls: calls.length, failed: calls.filter((c: any) => !c.ok).length, byRole, usage: deck.usage, v4: deck.v4, review: deck.review, references: deck.references.map((r: any) => r.text), proof, log: deck.log.slice(-60).map((l: any) => `${l.agent}: ${l.msg}`) };
+  const stats = { deckId: deck.id, jobId: job.id, seconds: secs, firstSlideReadyAt: Math.min(...Object.values(firstReady)), readyAt: firstReady, aiCalls: calls.length, failed: calls.filter((c: any) => !c.ok).length, byRole, usage: deck.usage, v4: deck.v4, v5: deck.v5, review: deck.review, references: deck.references.map((r: any) => r.text), proof, log: deck.log.slice(-60).map((l: any) => `${l.agent}: ${l.msg}`) };
   fs.writeFileSync(path.join(out, "stats.json"), JSON.stringify(stats, null, 2));
   console.log(`DONE ${secs}s, ${calls.length} AI calls, deck ${deck.id}`);
   await closeBrowser();
