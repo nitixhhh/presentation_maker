@@ -18,6 +18,8 @@ Check ONLY for real defects:
 - garbled, misspelled or fake writing inside a picture
 - the slide looks unfinished, cramped, lopsided or like a plain web page instead of a designed slide
 - the visual does not help explain the idea
+- a header/footer strip or decoration repeated as page chrome, or wobbly hand-drawn lines that look messy rather than designed
+- a large blank region that makes the slide look empty or unfinished (a planned grid, chart or picture only partly drawn)
 Measured automatically in the page (trust these; they are exact): ${domIssues.length ? domIssues.join(" | ") : "no measured problems"}.
 Score 1–10 (8 = ready for a client; 9–10 = excellent). fix=true if anything above is wrong or score < 8.
 List at most 5 problems, each naming the element and the exact change to make (e.g. "the subtitle under the formula touches the bottom edge: move it up 60px or reduce it to 34px").

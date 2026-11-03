@@ -19,7 +19,7 @@ Avoid the generic AI-slide look: no default dark navy/slate background with glow
 - artDirection: one rich paragraph a designer could follow: the feeling, background treatment, how type is used, how much white space, how diagrams are drawn (line weight, fills, hand-drawn or geometric), how photos are treated, what makes this deck unmistakable.
 - palette: 4–6 colours with hex and what each is for (background, ink, accent…). Text/background pairs must have strong contrast.
 - fonts: Google Fonts family names that exist on fonts.google.com — a display face with character and a readable body face (an optional accent/mono face). Avoid Inter/Roboto/Arial/Poppins/Montserrat unless they fit the concept unusually well.
-- motif: one recurring visual element that ties the deck together (a line, a shape, a texture, a framing device, a number style…), described concretely.
+- motif: one recurring visual element that ties the deck together (a line, a shape, a texture, a number style…), described concretely. It must NOT be page chrome — no running header/footer, page number strip, ruled notebook band or tab repeated in the same place on every slide; it appears in a different role on each slide. Drawn cleanly (no wobbly hand-drawn or roughened lines).
 - imageStyle: one sentence describing how ALL AI images in this deck look (medium, lighting, colour grade, framing), so they are consistent. Describe only the picture itself — never frames, borders, captions or labels (those are drawn in HTML around the image). It may be photographic, illustrated, painterly, 3D, macro, etc. — whatever fits the concept.
 
 The storyboard (one entry per slide):
@@ -27,7 +27,7 @@ The storyboard (one entry per slide):
 - composition: where things sit on the 1920x1080 canvas (e.g. "formula centred huge, three annotations below linked by thin lines", "photo bleeds full-frame, title knocked out bottom-left").
 - image: {"subject": what the AI picture shows (concrete objects, scene, no words), "aspect": "16:9" | "4:3" | "1:1" | "3:4" | "9:16" | "21:9"} or null. Use an AI image where a picture beats a diagram (a metaphor, a real-world scene, a mood, a cover). When the concept uses imagery, plan 3–MAX_IMAGES images; never more than MAX_IMAGES. Image subjects must contain NO writing: avoid keyboards, signs, screens, books with readable pages, labelled machines, maps with names — the image model paints garbled letters on them. Diagrams and typography are drawn in code and need no image.
 Rules for the storyboard: every slide must look like it was designed for its own idea; no two slides share the same composition; vary scale, density and rhythm across the deck (some slides dense with a diagram, some almost empty with one big statement). The cover sets the concept boldly. The references slide is designed too (calm, readable, on-concept).
-Reply with ONLY JSON: {"directions":["","",""],"conceptName":"","artDirection":"","palette":[{"hex":"#000000","use":""}],"fonts":{"display":"","body":"","accent":""},"motif":"","imageStyle":"","storyboard":[{"n":1,"visual":"","composition":"","image":null}]}`;
+Keep the reply compact: directions one short sentence each, artDirection under 120 words, each visual and composition under 45 words. Reply with ONLY JSON: {"directions":["","",""],"conceptName":"","artDirection":"","palette":[{"hex":"#000000","use":""}],"fonts":{"display":"","body":"","accent":""},"motif":"","imageStyle":"","storyboard":[{"n":1,"visual":"","composition":"","image":null}]}`;
 
 /** Recently made decks (site-wide memory) so a new deck never repeats the last looks. */
 const recentFile = () => path.join(process.env.DECKCRAFT_DATA_DIR || "/tmp", "v7-recent-concepts.json");
@@ -48,14 +48,25 @@ Deck title: ${title}
 Audience: ${req.audience || "university students"}
 ${req.styleHint ? `The user's style wish: ${req.styleHint}\n` : ""}Slides:
 ${slides.map((s) => `${s.n}. ${s.title}\n   idea: ${s.idea}\n   body: ${s.body.replace(/\n/g, " / ")}`).join("\n")}`;
-  const meta = await chat("art", [
+  // a concept reply cut off mid-JSON (output limit) is repaired up to its last complete storyboard entry; a reply that
+  // cannot be used at all is asked for once more, shorter, before the deck gives up on the concept
+  const ask = (extra: string) => chat("art", [
     { role: "system", content: CONCEPT_SYSTEM.replace(/MAX_IMAGES/g, String(maxImages)) },
-    { role: "user", content: user },
-  ], { temperature: 0.9, maxTokens: 14000, timeoutMs: 300_000, label: "v7 concept", validate: (t) => {
-    try { const j: any = extractJson(t); return Array.isArray(j?.storyboard) && j.storyboard.length > 0; }
-    catch { if (process.env.V7_DEBUG_DIR) try { fs.writeFileSync(`${process.env.V7_DEBUG_DIR}/unusable-concept-${Date.now()}.txt`, t); } catch {} return false; }
+    { role: "user", content: user + extra },
+  ], { temperature: 0.9, maxTokens: 16000, timeoutMs: 300_000, label: "v7 concept", validate: (t) => {
+    const j: any = parseConcept(t);
+    if (j && Array.isArray(j.storyboard) && j.storyboard.length >= Math.ceil(slides.length * 0.6) && j.conceptName) return true;
+    if (process.env.V7_DEBUG_DIR) try { fs.writeFileSync(`${process.env.V7_DEBUG_DIR}/unusable-concept-${Date.now()}.txt`, t); } catch {}
+    return false;
   } });
-  const data = extractJson<V7Concept>(meta.text);
+  let meta;
+  try { meta = await ask(""); }
+  catch (e: any) {
+    log(`concept: no usable reply (${String(e?.message || e).slice(0, 120)}) — asking once more, shorter`);
+    meta = await ask("\n\nYour previous reply was cut off before the JSON ended. Reply again with the same JSON, much shorter: every text field one or two sentences.");
+  }
+  const data = parseConcept(meta.text) as V7Concept;
+  if ((data.storyboard || []).length < slides.length) log(`concept: reply was cut off — repaired, ${data.storyboard.length}/${slides.length} storyboard entries kept (the rest are designed freely)`);
   log(`concept: "${data.conceptName}" (${meta.provider}:${meta.model}, ${Math.round(meta.ms / 1000)} s)`);
   // keep at most maxImages image requests, in storyboard order
   let left = maxImages;
@@ -76,6 +87,21 @@ ${slides.map((s) => `${s.n}. ${s.title}\n   idea: ${s.idea}\n   body: ${s.body.r
   };
   rememberConcept(concept);
   return concept;
+}
+
+/** JSON from a model reply; a reply cut off inside the storyboard is closed after its last complete entry. */
+export function parseConcept(text: string): any | null {
+  try { return extractJson(text); } catch {}
+  const t = String(text || "");
+  const s = t.indexOf("{");
+  const sb = t.indexOf('"storyboard"');
+  if (s < 0 || sb < 0) return null;
+  // walk back from the end to each '}' after the storyboard opened and try closing the array + object there
+  for (let i = t.length - 1; i > sb; i--) {
+    if (t[i] !== "}") continue;
+    try { return JSON.parse(t.slice(s, i + 1) + "]}"); } catch {}
+  }
+  return null;
 }
 
 export function fontsLink(c: V7Concept): string {

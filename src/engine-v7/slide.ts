@@ -14,9 +14,13 @@ Hard technical rules:
 - html, body: margin 0; the slide is a 1920px x 1080px box with overflow hidden. Use absolute or grid/flex layout in px. Everything must fit inside 1920x1080 with at least 64px clear margin for all text.
 - No JavaScript, no external URLs except the image files listed (relative paths exactly as given). The fonts are already loaded: use them by their family names in CSS (font-family: 'Name', fallback). No <link> tags needed.
 - Diagrams, charts, icons and decorative shapes: draw them yourself with inline SVG or CSS. Charts use the real numbers given; label axes/values so they read clearly.
-- Text is real HTML text (never text baked into an image). Minimum font size 26px for EVERY piece of text — tags, captions, axis labels, page markers, footnotes included (24px only for a source line); body text usually 32–44px; titles big and confident. No running headers or footers with document codes or page numbers.
+- Text is real HTML text (never text baked into an image). Minimum font size 26px for EVERY piece of text — tags, captions, axis labels, diagram labels, footnotes included (24px only for a source line); body text usually 32–44px; titles big and confident. The engine measures the page: any text under 22px is an automatic failure. If a label does not fit at 26px, the drawing is too crowded — use fewer, shorter labels or a bigger drawing, never smaller type.
+- No running headers, footers, page numbers, document codes, section tabs or decorative strips repeated along the top or bottom edge. Each slide's space belongs to its content.
 - Readability first: strong contrast for all text; text placed over a photo gets a solid or gradient scrim behind it.
 - Nothing collides: boxes, cards, labels and pictures never overlap each other or the title unless the layering is a deliberate design move; keep at least 32px between separate elements. Size every text box so its text fits with room to spare (long labels wrap inside wide boxes).
+- SVG diagrams: the viewBox must contain every shape and label with 40px of padding (labels near an edge use text-anchor so they grow inward). Plan label positions before drawing: each label gets its own free space next to the thing it names — never on top of a line, bar, node or another label; use a short leader line when space is tight. Give the svg an explicit width and height in px that fits the slide.
+- Lines are clean and geometric: no sketch/roughen SVG filters (feTurbulence, feDisplacementMap), no wobbly hand-drawn paths imitating a pencil. A "hand-made" feel, if the concept wants it, comes from type, colour and composition, not from distorted lines.
+- Finish the visual completely: if the sketch says a grid of 100 dots, a full tree or a complete chart, draw all of it (an SVG <pattern> or many small shapes are fine). No empty frames, placeholder boxes or half-drawn diagrams; no large blank areas that the composition did not intend. The engine fails slides with empty boxes or big blank regions.
 - Symbols like ticks, stars, arrows or check marks are drawn in SVG, never typed as emoji or dingbat characters.
 - Keep words lean. Use exactly the slide's content (you may shorten wording or split it into labels, but do not invent facts or numbers). No emoji. No lorem ipsum. No markdown symbols.
 - Do not put the slide number, the deck title or a logo on the slide unless the design really needs it.
@@ -109,7 +113,7 @@ ${html}
 A reviewer looked at the rendered slide and found these problems:
 ${problems.map((p, i) => `${i + 1}. ${p}`).join("\n")}
 
-Fix every problem. Keep what already works (concept, idea, overall design) unless a problem requires changing it. Return the complete corrected HTML document.${needRefs ? " Keep the <!--REFS--> comment exactly where the list goes (the engine fills it; the rendered list you saw came from it)." : ""}`;
+Fix every problem — problems measured by the engine (cut off, overlapping, too small, empty, running header) are automatic failures and must all be gone. When a diagram is crowded, simplify it (fewer or shorter labels, bigger shapes, more space) rather than shrinking text; when there is a big blank area, enlarge the main visual or rebalance the composition. Keep what already works (concept, idea, overall design) unless a problem requires changing it. Return the complete corrected HTML document.${needRefs ? " Keep the <!--REFS--> comment exactly where the list goes (the engine fills it; the rendered list you saw came from it)." : ""}`;
   const content: any = screenshot
     ? [{ type: "text", text }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${screenshot.toString("base64")}` } }]
     : text;
